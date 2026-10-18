@@ -342,3 +342,14 @@ the same frame and retains the corpse serial for normal double-click container
 use. Installed assets verified monster/animal/human bodies in all eight directions.
 Death transitions, alternate death poses, body remapping and corpse equipment
 layers remain incomplete. Live kill-to-loot behavior still needs verification.
+
+### Separate local login profile
+
+The login screen has Saved Server and Local Test Center buttons. The local button
+loads a separate localhost profile and connects immediately when a saved local
+account/password exists; otherwise it presents its account fields. Primary keys
+and Keychain service remain unchanged for compatibility. Local preferences use a
+separate namespace and Keychain service, so saving or forgetting local credentials
+does not modify the primary profile. Switching is disabled during connection/play.
+Release build and an isolated-preferences UI harness verify local save/forget,
+profile switching, fixed local address and preservation of primary settings.

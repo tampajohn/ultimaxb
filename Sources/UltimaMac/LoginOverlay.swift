@@ -4,6 +4,10 @@ import UOCore
 @MainActor
 final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private let connection = GameConnection()
+    private var savedLogin:SavedLogin
+    private let loginDefaults:UserDefaults
+    private let localLoginButton = NSButton(title:"Local Test Center",target:nil,action:nil)
+    private let primaryLoginButton = NSButton(title:"Saved Server",target:nil,action:nil)
     private let characterSelection: CharacterSelectionPanel
     private let characterCreation: CharacterCreationPanel
     private let card = NSVisualEffectView()
@@ -503,21 +507,28 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     var onGroundItems: (([WorldTile]) -> Void)?
     var onMobiles: (([WorldMobile]) -> Void)?
     private enum Phase { case login, connecting, server, character, create, world }
-    private var phase = Phase.login
+    private var phase = Phase.login {
+        didSet {
+            localLoginButton.isEnabled = phase == .login
+            primaryLoginButton.isEnabled = phase == .login
+        }
+    }
     var onWorldEntry: ((WorldEntry) -> Void)?
 
     var onDismiss: (() -> Void)?
 
-    init(assets: ClientAssets) {
+    init(assets: ClientAssets, loginDefaults:UserDefaults = UserDefaults(suiteName:"com.ultimaxb.UltimaMac")!) {
+        self.loginDefaults = loginDefaults
+        self.savedLogin = SavedLogin(defaults:loginDefaults)
         characterSelection = CharacterSelectionPanel(assets: assets)
         characterCreation = CharacterCreationPanel(assets: assets)
         super.init(nibName: nil, bundle: nil)
         host.delegate = self; port.delegate = self; account.delegate = self
-        host.stringValue = SavedLogin.host
-        port.stringValue = SavedLogin.port
-        account.stringValue = SavedLogin.account
-        rememberPassword.state = SavedLogin.remembersPassword ? .on : .off
-        password.stringValue = SavedLogin.password() ?? ""
+        host.stringValue = savedLogin.host
+        port.stringValue = savedLogin.port
+        account.stringValue = savedLogin.account
+        rememberPassword.state = savedLogin.remembersPassword ? .on : .off
+        password.stringValue = savedLogin.password() ?? ""
         view = LoginBackdrop()
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
@@ -537,6 +548,9 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         title.font = .systemFont(ofSize: 24, weight: .semibold)
         stack.addArrangedSubview(title)
         stack.addArrangedSubview(NSTextField(labelWithString: "Connect to your shard"))
+        localLoginButton.target = self; localLoginButton.action = #selector(quickLocalLogin)
+        primaryLoginButton.target = self; primaryLoginButton.action = #selector(selectPrimaryLogin)
+        stack.addArrangedSubview(NSStackView(views:[primaryLoginButton,localLoginButton]))
         for (label, field) in [("Server", host), ("Port", port), ("Account", account), ("Password", password)] {
             let row = NSStackView(views: [NSTextField(labelWithString: label), field])
             row.orientation = .horizontal
@@ -636,13 +650,36 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    private func loadLoginProfile(_ profile:SavedLogin.Profile) {
+        view.window?.makeFirstResponder(nil)
+        savedLogin = SavedLogin(profile:profile,defaults:loginDefaults)
+        host.stringValue = savedLogin.host; port.stringValue = savedLogin.port
+        account.stringValue = savedLogin.account; password.stringValue = savedLogin.password() ?? ""
+        rememberPassword.state = savedLogin.remembersPassword ? .on : .off
+        host.isEditable = profile == .primary; port.isEditable = profile == .primary
+        status.stringValue = profile == .local
+            ? "Local Test Center · separate account and saved settings. New accounts are created on first login."
+            : "Connect using your saved server settings."
+        updateTabOrder(); view.window?.makeFirstResponder(account)
+    }
+    @objc private func quickLocalLogin() {
+        guard phase == .login else { return }
+        if savedLogin.profile != .local { loadLoginProfile(.local) }
+        Telemetry.shared.record("login_profile_selected",["profile":"local"])
+        if !account.stringValue.isEmpty && !password.stringValue.isEmpty { performAction() }
+    }
+    @objc private func selectPrimaryLogin() {
+        guard phase == .login else { return }
+        loadLoginProfile(.primary)
+        Telemetry.shared.record("login_profile_selected",["profile":"primary"])
+    }
     func controlTextDidChange(_ notification: Notification) {
         // A saved password must never follow an edited account/server tuple.
         password.stringValue = ""
     }
     func controlTextDidEndEditing(_ notification: Notification) {
-        if host.stringValue == SavedLogin.host, port.stringValue == SavedLogin.port, account.stringValue == SavedLogin.account {
-            password.stringValue = SavedLogin.password() ?? ""
+        if host.stringValue == savedLogin.host, port.stringValue == savedLogin.port, account.stringValue == savedLogin.account {
+            password.stringValue = savedLogin.password() ?? ""
         }
     }
     @objc private func performAction() {
@@ -657,7 +694,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                 }
                 // Validate before persisting; nothing sensitive is included in telemetry.
                 _ = try LoginPackets.account(name: account.stringValue, password: password.stringValue)
-                let saved = SavedLogin.save(host: host.stringValue, port: port.stringValue,
+                let saved = savedLogin.save(host: host.stringValue, port: port.stringValue,
                     account: account.stringValue, password: password.stringValue, remember: rememberPassword.state == .on)
                 Telemetry.shared.record("login_preferences_saved", ["remember_password": rememberPassword.state == .on,
                                                                     "keychain_status": saved])
@@ -710,7 +747,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         Telemetry.shared.record("character_creation_opened",["slot":slot])
     }
     @objc private func forgetPassword() {
-        let result = SavedLogin.forget()
+        let result = savedLogin.forget()
         password.stringValue = ""
         rememberPassword.state = .off
         Telemetry.shared.record("saved_password_forgotten", ["keychain_status": result])
@@ -722,7 +759,9 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         // A manually inserted overlay does not automatically join the window's
         // original key-view loop. Keep its traversal separate from the world view.
         view.window?.autorecalculatesKeyViewLoop = false
-        var controls: [NSView] = [host, port, account, password, rememberPassword]
+        var controls: [NSView] = [primaryLoginButton, localLoginButton]
+        if savedLogin.profile == .primary { controls += [host,port] }
+        controls += [account,password,rememberPassword]
         if !choices.isHidden { controls.append(choices) }
         if !characterName.isHidden { controls += [characterName, female, cityChoice] }
         if action.isEnabled { controls.append(action) }
@@ -740,8 +779,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         updateTabOrder()
         Telemetry.shared.record("login_shown")
         if phase == .login, password.stringValue.isEmpty,
-           host.stringValue == SavedLogin.host, port.stringValue == SavedLogin.port, account.stringValue == SavedLogin.account {
-            password.stringValue = SavedLogin.password() ?? ""
+           host.stringValue == savedLogin.host, port.stringValue == savedLogin.port, account.stringValue == savedLogin.account {
+            password.stringValue = savedLogin.password() ?? ""
         }
         parent.window?.makeFirstResponder(account)
     }
@@ -786,8 +825,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         cityChoice.isHidden = true
         status.stringValue = message
         updateTabOrder()
-        if host.stringValue == SavedLogin.host, port.stringValue == SavedLogin.port, account.stringValue == SavedLogin.account {
-            password.stringValue = SavedLogin.password() ?? ""
+        if host.stringValue == savedLogin.host, port.stringValue == savedLogin.port, account.stringValue == savedLogin.account {
+            password.stringValue = savedLogin.password() ?? ""
         }
     }
     private func handle(_ event: GameConnection.Event) {

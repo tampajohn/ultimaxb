@@ -4,9 +4,14 @@ This workspace has a separate OUO world in `build/local-shard`, listening only o
 `127.0.0.1:2593`. It does not share accounts or characters with UO1998.
 
 In UltimaMac, open the connection screen (Command-L), disconnect if needed,
-and set Server to `127.0.0.1`, Port to `2593`. Use a new local account name and
-password: OUO creates the account on its first successful login. Create a new
-character; choose Minoc to use the area we have been testing.
+and click **Local Test Center**. It selects `127.0.0.1:2593` without changing
+**Saved Server** settings. On the first visit, enter a new local account name and
+password and click Connect; OUO creates the account. Enable Remember password
+for a direct login from the Local Test Center button on later visits. Local
+preferences and Keychain credentials are separate, including Forget Saved Password.
+Click **Saved Server** to restore your normal shard settings. The app starts with
+your normal profile. Create a new local character and choose Minoc to use the
+area we have been testing.
 
 Press Enter for chat and use these Test Center commands:
 
