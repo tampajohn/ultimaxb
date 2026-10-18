@@ -32,7 +32,7 @@ Xbox port. The present client is experimental and is not at parity yet.
   edge cases. Large barriers can stop segmented routes.
 - Full equipment coverage, mounts, corpse/death animations and spell effects.
 - Complete combat, spell, skill, crafting, healer and housing workflows.
-- Live two-party secure-trade validation, additional text prompts and remaining
+- Live two-party secure-trade validation, live text-prompt validation and remaining
   server packet handlers.
 - Startup music selection when the server sends no music packet; no guessed
   region query or opening-theme fallback is currently used.
@@ -41,7 +41,7 @@ Xbox port. The present client is experimental and is not at parity yet.
 
 ## Local verification snapshot
 
-2026-10-18: 146 Swift tests executed, 2 opt-in integration tests skipped, no
+2026-10-18: 151 Swift tests executed, 2 opt-in integration tests skipped, no
 failures. The server-dialog harness additionally verifies page changes without
 replies, selection state and Unicode text across pages, plus formatted text, item art
 and overflowing scroll content. This does not establish
@@ -71,9 +71,8 @@ Secure trade groundwork: legacy OUO 0x6F open/update/close packets and 17-byte
 accept/cancel replies are modeled with server-confirmed acceptance. Offer changes
 (including known nested contents) invalidate the UI revision and withdraw pending
 or confirmed local acceptance. Tests cover exact replies, malformed packets, stale
-acceptance, cancellation and unrelated trade IDs. This is not yet a usable trade
-workflow: dispatch, original-art window, drag/drop, and live two-party validation
-remain outstanding. No live trades were initiated or accepted.
+acceptance, cancellation and unrelated trade IDs. Dispatch, original-art window and drag/drop are now connected as described below;
+live two-party validation remains outstanding. No live trades were initiated or accepted.
 
 Secure-trade UI integration: the original 0x0866 window now displays both offers
 and server-confirmed acceptance. Drag inventory into the left offer; drag your
@@ -95,3 +94,10 @@ disabled and cancellation is still available; that compatibility requires live
 two-party testing. The local OUO process is currently stopped, and an earlier
 runtime log records buffer-overflow failures, so it has not yet provided a reliable
 end-to-end trade test.
+
+Text prompts: legacy ASCII 0x9A and dialog 0xAB requests now open an original-art
+entry panel, with explicit submit/cancel replies preserving prompt identifiers.
+Dialog text-length and numeric limits are validated before sending; ASCII prompts
+use a client-side 239-byte cap. Local wire tests and an AppKit fixture verify invalid
+input, confirmation and cancellation. Live server prompts remain untested; ASCII
+entry currently uses a popup rather than the original console interaction.

@@ -540,6 +540,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var skillsPanel: SkillsPanel?
     private var mapPanel:MapPanel?
     private var deathPanel:DeathPanel?
+    private var textPromptPanel:TextPromptPanel?
     private var tradePanel:TradePanel?
     private var huePickerPanel:HuePickerPanel?
     private var serverGumpPanels:[UInt64:ServerGumpPanel] = [:]
@@ -727,6 +728,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 display.onChoice = { [weak panel] resurrect in panel?.respondToDeath(resurrect:resurrect) }
                 if display.superview == nil { view.addSubview(display) }
                 self.deathPanel = display
+            }
+            panel.onTextPrompt = { [weak self, weak panel] request in
+                guard let self,let view = self.worldView else { return }
+                self.textPromptPanel?.removeFromSuperview(); self.textPromptPanel = nil
+                guard let request else { view.window?.makeFirstResponder(view); return }
+                let display = TextPromptPanel(request:request,assets:self.assets)
+                display.frame.origin = NSPoint(x:max(0,(view.bounds.width-display.frame.width)/2),y:max(0,(view.bounds.height-display.frame.height)/2))
+                display.onReply = { [weak panel] text,accepted in panel?.respondToPrompt(request,text:text,accepted:accepted) }
+                self.textPromptPanel = display; view.addSubview(display)
             }
             panel.onTrade = { [weak self, weak panel] trade in
                 guard let self,let view = self.worldView else { return }

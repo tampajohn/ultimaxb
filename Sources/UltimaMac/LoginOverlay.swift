@@ -213,6 +213,13 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         connection.send(packet); onDeath?(death)
         Telemetry.shared.record("death_response",["resurrect":resurrect])
     }
+    private var textPrompt:TextPrompt?
+    var onTextPrompt:((TextPrompt?)->Void)?
+    func respondToPrompt(_ request:TextPrompt,text:String,accepted:Bool) {
+        guard loginComplete,textPrompt == request,let packet = try? request.response(text:text,accepted:accepted) else { return }
+        connection.send(packet); textPrompt = nil; onTextPrompt?(nil)
+        Telemetry.shared.record("text_prompt_response",["accepted":accepted,"bytes":packet.count])
+    }
     private var trade:SecureTrade?
     private var tradeTransfer:TradeTransfer?
     var onTrade:((SecureTrade?)->Void)?
@@ -643,6 +650,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         onPlayer?(nil)
         onEquipment?([])
         awaitingSpellbook = false
+        textPrompt = nil; onTextPrompt?(nil)
         trade = nil; tradeTransfer = nil; onTrade?(nil)
         huePicker = nil; onHuePicker?(nil)
         death = DeathState(); onDeath?(death)
@@ -736,6 +744,10 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         }
                         onDeath?(death)
                         Telemetry.shared.record("death_state",["alive":death.phase == .alive])
+                    case 0x9A,0xAB:
+                        let request = try TextPrompt.decode(packet)
+                        textPrompt = request; cancelRoute(); onTextPrompt?(request)
+                        Telemetry.shared.record("text_prompt_opened",["opcode":packet[0],"variant":request.variant,"limit":request.limit])
                     case 0x6F:
                         let event = try TradeEvent.decode(packet)
                         if let opened = SecureTrade(event:event) {
