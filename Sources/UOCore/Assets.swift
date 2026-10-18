@@ -93,6 +93,10 @@ enum ArtDecoder {
 
 public struct WorldTile {
     public let x: Int, y: Int, z: Int, art: Int, hue: Int
+    public var effectRotation: Double? = nil
+    public var effectFrameInterval: TimeInterval? = nil
+    public var effectGump: Int? = nil
+    public var effectYOffset: Int = 0
     public var effectAge: TimeInterval? = nil
     public var effectPose: MobilePresentation? = nil
     public var corpseBody:Int? = nil

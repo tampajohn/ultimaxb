@@ -167,13 +167,25 @@ public enum WorldRenderer {
                 }
                 items += 1
                 continue
-            } else if let age = tile.effectAge {
-                // Graphic effects use the same signed frame offsets as scenery, at 45 ms units.
-                let graphic = assets.staticAnimations?.graphic(tile.art-0x4000, at:age * (0.08/0.045)) ?? tile.art-0x4000
-                guard let art = try assets.sprite(graphic+0x4000) else { missing.insert(graphic+0x4000); continue }
+            } else if let gump = tile.effectGump {
+                guard let art = try assets.gumps?.sprite(gump) else { missing.insert(-0x10000-gump); continue }
                 sprite = art
                 sx = anchorX - sprite.width/2
-                sy = anchorY + 44 - sprite.height
+                sy = anchorY + 22 + tile.effectYOffset - sprite.height
+            } else if let age = tile.effectAge {
+                // Graphic effects use the same signed frame offsets as scenery, at 45 ms units.
+                let graphic = assets.staticAnimations?.graphic(tile.art-0x4000, at:tile.effectFrameInterval == nil ? age * (0.08/0.045) : age, frameInterval:tile.effectFrameInterval) ?? tile.art-0x4000
+                guard let art = try assets.sprite(graphic+0x4000) else { missing.insert(graphic+0x4000); continue }
+                if let angle = tile.effectRotation {
+                    let rotated = EffectRotation.rotate(art, radians:angle)
+                    sprite = rotated.sprite
+                    sx = anchorX + rotated.x
+                    sy = anchorY + 22 - art.height + rotated.y
+                } else {
+                    sprite = art
+                    sx = anchorX - sprite.width/2
+                    sy = anchorY + 44 - sprite.height
+                }
             } else if let body = tile.corpseBody, let corpse = try CorpseArt.frame(body:body,direction:tile.corpseDirection,assets:assets,hue:tile.hue,equipment:tile.corpseEquipment) {
                 sprite = corpse.sprite; mirrored = corpse.mirrored
                 sx = anchorX - (mirrored ? sprite.width-corpse.centerX : corpse.centerX)
@@ -184,7 +196,7 @@ public enum WorldRenderer {
                 sx = anchorX - sprite.width / 2
                 sy = anchorY + 44 - sprite.height
             }
-            if tile.isStatic { try addLight(graphic:tile.art-0x4000,atX:anchorX,atY:anchorY+22) }
+            if tile.isStatic && tile.effectGump == nil { try addLight(graphic:tile.art-0x4000,atX:anchorX,atY:anchorY+22) }
             let left = max(0, -sx), right = min(sprite.width, width - sx)
             let top = max(0, -sy), bottom = min(sprite.height, height - sy)
             if left >= right || top >= bottom { continue }

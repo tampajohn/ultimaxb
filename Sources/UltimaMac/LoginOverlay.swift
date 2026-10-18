@@ -954,7 +954,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         let effect = try GraphicEffect.decode(packet)
                         onGraphicEffect?(effect)
                         Telemetry.shared.record("graphic_effect", ["kind":effect.kind.rawValue,"graphic":effect.graphic,
-                            "duration_ms":Int(effect.duration*1000),"rendered_kind":effect.kind == .ground || effect.kind == .attached])
+                            "duration_ms":Int(effect.duration*1000),"rendered_kind":effect.kind != .screen])
                     case 0x6E:
                         let animation = try MobileAction.decode(packet)
                         onAnimation?(animation)

@@ -20,7 +20,7 @@ final class GraphicEffectTests: XCTestCase {
         XCTAssertEqual(try GraphicEffect.decode(packet(kind:4)).kind,.screen)
     }
     func testAttachmentLifetimeAndGroundStability() throws {
-        var effects = StationaryEffects()
+        var effects = WorldEffects()
         effects.append(try GraphicEffect.decode(packet()),at:10)
         effects.append(try GraphicEffect.decode(packet(kind:2)),at:10)
         let mobile = WorldMobile(serial:1,body:400,x:2510,y:510,z:20)
@@ -37,9 +37,65 @@ final class GraphicEffectTests: XCTestCase {
         XCTAssertTrue(effects.tiles(at:11,mobiles:[],items:[]).isEmpty)
         XCTAssertEqual(effects.count,0)
     }
+    func testLightningUsesGumpFramesAndFixedLifetime() throws {
+        var effects = WorldEffects()
+        var bytes = packet(kind:1,duration:0)
+        bytes[10] = 0; bytes[11] = 0 // Lightning commonly has no static-art graphic.
+        effects.append(try GraphicEffect.decode(bytes),at:0)
+        let mobile = WorldMobile(serial:1,body:400,x:2500,y:500,z:0)
+        let first = effects.tiles(at:0,mobiles:[mobile],items:[])
+        XCTAssertEqual(first.first?.effectGump,0x4E20)
+        XCTAssertEqual(first.first?.effectYOffset,-3)
+        XCTAssertEqual(effects.tiles(at:0.11,mobiles:[mobile],items:[]).first?.effectGump,0x4E22)
+        XCTAssertTrue(effects.tiles(at:0.2,mobiles:[],items:[]).isEmpty)
+        XCTAssertTrue(effects.tiles(at:0.4,mobiles:[mobile],items:[]).isEmpty)
+        XCTAssertEqual(effects.count,0)
+    }
+    func testProjectileTravelImpactAndExpiry() throws {
+        var bytes = packet(kind:0,duration:0)
+        bytes[10] = 0x36; bytes[11] = 0xD4
+        bytes[21] = 0xFB // Same destination elevation as source.
+        bytes[22] = 1 // 250 screen pixels per second.
+        bytes[26] = 0; bytes[27] = 1
+        var effects = WorldEffects()
+        effects.append(try GraphicEffect.decode(bytes),at:0)
+        let first = effects.tiles(at:0,mobiles:[],items:[])
+        XCTAssertEqual(first.first?.effectPose?.x,2500)
+        XCTAssertNotNil(first.first?.effectRotation)
+        let midpoint = effects.tiles(at:0.08,mobiles:[],items:[])
+        XCTAssertGreaterThan(midpoint[0].effectPose!.x,2500)
+        XCTAssertLessThan(midpoint[0].effectPose!.x,2501)
+        let impact = effects.tiles(at:0.2,mobiles:[],items:[])
+        XCTAssertEqual(impact.first?.art,0x4000+0x36CB)
+        XCTAssertEqual(impact.first?.effectPose?.x,2501)
+        XCTAssertNil(impact.first?.effectRotation)
+        XCTAssertTrue(effects.tiles(at:0.61,mobiles:[],items:[]).isEmpty)
+        bytes[27] = 0
+        effects.append(try GraphicEffect.decode(bytes),at:1)
+        XCTAssertTrue(effects.tiles(at:2,mobiles:[],items:[]).isEmpty)
+        XCTAssertEqual(effects.count,0)
+    }
+    func testProjectileTracksTargetAndHasTimeout() throws {
+        var effects = WorldEffects()
+        effects.append(try GraphicEffect.decode(packet(kind:0)),at:0)
+        let target = WorldMobile(serial:2,body:400,x:2600,y:600,z:20)
+        _ = effects.tiles(at:0,mobiles:[target],items:[])
+        let moving = effects.tiles(at:0.01,mobiles:[target],items:[])
+        XCTAssertLessThan(moving[0].effectPose!.x,2600)
+        XCTAssertGreaterThan(moving[0].effectPose!.x,2500)
+        XCTAssertTrue(effects.tiles(at:10,mobiles:[target],items:[]).isEmpty)
+    }
+    func testProjectileRotationPreservesArtAndTransparency() {
+        let art = Sprite(width:2,height:1,rgba:[255,0,0,255,0,255,0,255])
+        XCTAssertEqual(EffectRotation.rotate(art,radians:0).sprite.rgba,art.rgba)
+        let rotated = EffectRotation.rotate(art,radians:Double.pi)
+        let opaque = stride(from:0,to:rotated.sprite.rgba.count,by:4).filter { rotated.sprite.rgba[$0+3] != 0 }
+        XCTAssertEqual(opaque.count,2)
+        XCTAssertEqual(opaque.map { rotated.sprite.rgba[$0+1] },[255,0])
+    }
     func testBoundedStateAndUnsupportedKinds() throws {
-        var effects = StationaryEffects()
-        for kind:UInt8 in [0,1,4] { effects.append(try GraphicEffect.decode(packet(kind:kind)),at:0) }
+        var effects = WorldEffects()
+        for kind:UInt8 in [4] { effects.append(try GraphicEffect.decode(packet(kind:kind)),at:0) }
         effects.append(try GraphicEffect.decode(packet(duration:0)),at:0)
         XCTAssertEqual(effects.count,0)
         for _ in 0..<1000 { effects.append(try GraphicEffect.decode(packet()),at:0) }

@@ -406,3 +406,22 @@ advances animation frames, and leaves the exact original frame after expiry.
 Live spell appearance remains to be checked. Moving projectiles, lightning,
 screen fades, explosion chaining, 0xC0/0xC7 effects, and special blend modes remain
 parity gaps; those are not represented as supported by this change.
+
+### Lightning, traveling spells, and impacts (2026-10-18)
+
+Classic 0x70 kinds 0–3 now have render paths. Lightning attaches to its source
+entity, uses original gumps 0x4E20 onward at 50 ms intervals, and expires after
+400 ms. It accepts the zero graphic/zero duration used by lightning packets.
+Traveling effects use elapsed-time movement at the classic five-pixel step rate,
+follow updated destination positions/elevations, and rotate original art unless
+the packet requests a fixed direction. Requested impacts use 0x36CB for 400 ms
+at 50 ms frame intervals. All effects share the world's depth sorting; no visual
+effect enters collision or selection. Flights have a ten-second cleanup limit.
+
+Validation: 199 tests, two opt-in skips, no failures. Tests cover lightning
+attachment/expiry, missile progress, target tracking, no-impact cleanup, impact
+expiry, bounded lifetime and sprite rotation. Installed-asset renders verify
+lightning, moving fireball and impact art without missing sprites; lightning and
+fireball frames were visually inspected. One client rebuilt/restarted for live
+verification. Remaining: live comparison of trajectory/timing, special blend
+modes, screen effects, 0xC0/0xC7 extended effects, and broader spell workflows.
