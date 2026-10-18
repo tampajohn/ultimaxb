@@ -500,3 +500,9 @@ updates and full status replies do not trigger refresh loops. Unit coverage and
 a real local-server run verify all three `.set` commands update base stats without
 an unconditional status request in the fixture. Release suite: 201 tests, 2 skips,
 zero failures.
+
+Periodic-save check: an isolated build using the same save path at a 64-tick
+interval (16 seconds, versus the normal 4096 ticks) remained responsive through
+multiple saves and passed same-character reconnect/inventory/stat checks afterward.
+The accelerated interval was never installed in the user server. Normal-interval
+soak testing remains pending on the running port-2593 process.
