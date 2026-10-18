@@ -14,6 +14,12 @@ final class DoorOpeningWaitTests: XCTestCase {
         XCTAssertEqual(wait.result(door: door(graphic: 0x676), at: 11), .changed)
         XCTAssertEqual(wait.result(door: door(x: 11), at: 11), .changed)
     }
+    func testApproachSnapshotDetectsDoorAlreadyChanged() {
+        XCTAssertTrue(DoorOpeningWait.geometryChanged(from:door(),to:door(graphic:0x676)))
+        XCTAssertTrue(DoorOpeningWait.geometryChanged(from:door(),to:door(x:11)))
+        XCTAssertFalse(DoorOpeningWait.geometryChanged(from:door(),to:door(hue:5)))
+        XCTAssertFalse(DoorOpeningWait.geometryChanged(from:door(),to:door(serial:2,graphic:0x676)))
+    }
     func testLockedMissingOrLateDoorTimesOut() {
         let wait = DoorOpeningWait(door: door(), at: 10)
         XCTAssertEqual(wait.result(door: door(), at: 14), .timedOut)

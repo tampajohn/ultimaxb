@@ -1015,7 +1015,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                   let approach = WalkPath.find(from:start,x:door.x,y:door.y,adjacent:true,goalZ:door.z,
                                                 step:{ map.step(from:$0,direction:$1) }) else { continue }
             view.followPlayer = true
-            panel.followRoute(approach,action:.openDoor(door.serial,destination,remaining-1),running:running) { [weak self] position,blocked in
+            panel.followRoute(approach,action:.openDoor(door,destination,remaining-1),running:running) { [weak self] position,blocked in
                 guard let self,let view = self.worldView,
                       let current = try? NavigationMap(assets:self.assets,center:position,additional:view.groundItems) else { return nil }
                 return WalkPath.find(from:position,x:door.x,y:door.y,adjacent:true,goalZ:door.z) { point,direction in

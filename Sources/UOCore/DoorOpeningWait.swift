@@ -9,9 +9,12 @@ public struct DoorOpeningWait {
     public init(door: GroundItem, at time: TimeInterval) {
         original = door; deadline = time + 4
     }
+    public static func geometryChanged(from original: GroundItem, to door: GroundItem) -> Bool {
+        door.serial == original.serial && (door.graphic != original.graphic || door.x != original.x || door.y != original.y || door.z != original.z)
+    }
     public func result(door: GroundItem?, at time: TimeInterval) -> Result {
         guard time.isFinite, time < deadline else { return .timedOut }
         guard let door, door.serial == original.serial else { return .waiting }
-        return door.graphic != original.graphic || door.x != original.x || door.y != original.y || door.z != original.z ? .changed : .waiting
+        return Self.geometryChanged(from:original,to:door) ? .changed : .waiting
     }
 }

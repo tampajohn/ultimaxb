@@ -74,9 +74,9 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     enum ArrivalAction {
         case use(UInt32), pickup(UInt32, Int), attack(UInt32)
         case toolTarget(TargetRequest,TargetSelection,UInt32)
-        case openDoor(UInt32,TargetSelection,Int)
+        case openDoor(GroundItem,TargetSelection,Int)
         var serial: UInt32 {
-            switch self { case .use(let s), .pickup(let s,_), .attack(let s), .openDoor(let s,_,_): return s; case .toolTarget(_,let target,_): return target.serial }
+            switch self { case .use(let s), .pickup(let s,_), .attack(let s): return s; case .openDoor(let door,_,_): return door.serial; case .toolTarget(_,let target,_): return target.serial }
         }
     }
     private var routeAction: ArrivalAction?
@@ -154,6 +154,18 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         }
     }
     private func performArrival(_ action:ArrivalAction, player:WorldMobile) {
+        if case .openDoor(let planned,let destination,let remaining) = action {
+            guard let current = world.items[planned.serial] else {
+                onInventoryMessage?("The door is no longer nearby; route stopped."); return
+            }
+            if DoorOpeningWait.geometryChanged(from:planned,to:current) {
+                // Somebody may already have opened it. Replan before sending
+                // use, which is a toggle and could otherwise shut the doorway.
+                Telemetry.shared.record("door_route_changed_during_approach",["serial":planned.serial])
+                onDoorOpenedRoute?(destination,remaining,routeRunning)
+                return
+            }
+        }
         if case .toolTarget(let request,let original,let tool) = action {
             guard targetRequest == request,equippedTargetTool == tool,
                   let held = world.equipment[tool],held.owner == player.serial,
@@ -178,7 +190,9 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         case .toolTarget: return
         case .attack(let serial):
             target = world.mobiles[serial].map { WalkPoint(x:$0.x,y:$0.y,z:$0.z) }
-        case .use(let serial), .pickup(let serial,_), .openDoor(let serial,_,_):
+        case .openDoor(let door,_,_):
+            target = world.items[door.serial].map { WalkPoint(x:$0.x,y:$0.y,z:$0.z) }
+        case .use(let serial), .pickup(let serial,_):
             target = world.items[serial].map { WalkPoint(x:$0.x,y:$0.y,z:$0.z) }
         }
         guard let target, max(abs(target.x-player.x),abs(target.y-player.y)) <= 1,
@@ -188,7 +202,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         }
         switch action {
         case .toolTarget: return
-        case .openDoor(let serial,let destination,let remaining):
+        case .openDoor(let planned,let destination,let remaining):
+            let serial = planned.serial
             guard let door = world.items[serial] else { return }
             use(serial:serial)
             waitingDoor = (door,destination,remaining,routeRunning,DoorOpeningWait(door:door,at:ProcessInfo.processInfo.systemUptime))

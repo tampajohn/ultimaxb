@@ -239,3 +239,11 @@ This does not select arbitrary upstairs floors; live roof/door combinations stil
 need verification. Local coverage checks same-cell floors, eaves, invalid floor
 heights, bounded search and disconnected buildings. Full suite: 176 tests, 2 skips,
 no failures; the connected-footprint follow-up passed all three focused tests.
+
+Door routing follow-up: session metadata records two automatic use requests
+followed by server door changes; this verifies those transitions, not every house
+or complete route. The approach action now retains the originally selected door
+state. If that door changes before arrival, it replans without sending another
+use/toggle (which could close an already-open door). Missing doors stop with
+feedback. Release suite: 177 tests, 2 skipped, no failures. This follow-up was
+built without interrupting the currently running manual-test session.
