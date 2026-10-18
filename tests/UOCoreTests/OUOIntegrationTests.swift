@@ -185,6 +185,19 @@ final class OUOIntegrationTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(50))
         }
         XCTAssertEqual(characterStatus?.strength, 30)
+        if ProcessInfo.processInfo.environment["UO_LOCAL_TEST_CENTER"] == "1" {
+            connection.send(try SpeechPackets.say(".set str 100"))
+            connection.send(try SpeechPackets.say(".set all 1000"))
+            try await Task.sleep(for:.milliseconds(500))
+            if let entry { connection.send(CharacterStatus.request(serial:entry.serial)); connection.send(SkillState.request(serial:entry.serial)) }
+
+            for _ in 0..<100 {
+                if characterStatus?.strength == 100 && !skills.values.isEmpty && (skills.values[45] ?? 0) >= 1000 { break }
+                try await Task.sleep(for:.milliseconds(50))
+            }
+            XCTAssertEqual(characterStatus?.strength,100,"Test Center stat command was not applied")
+            XCTAssertTrue((skills.values[45] ?? 0) >= 1000,"Test Center skill command was not applied")
+        }
         XCTAssertNotNil(characterStatus?.maxHealth)
         XCTAssertNotNil(characterStatus?.gold)
         XCTAssertTrue(speechReceived, "No speech echo received")

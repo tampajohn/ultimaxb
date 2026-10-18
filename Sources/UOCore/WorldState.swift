@@ -145,7 +145,8 @@ public struct WorldState {
     public var groundTiles: [WorldTile] {
         items.values.sorted { $0.serial < $1.serial }.compactMap { item in
             guard item.graphic < 0x4000, item.flags & 0x80 == 0 else { return nil }
-            return WorldTile(x: item.x, y: item.y, z: item.z, art: item.graphic + 0x4000, hue: item.hue)
+            return WorldTile(x: item.x, y: item.y, z: item.z, art: item.graphic + 0x4000, hue: item.hue,
+                             corpseBody:item.graphic == 0x2006 ? item.amount : nil,corpseDirection:item.direction)
         }
     }
 }

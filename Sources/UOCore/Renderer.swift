@@ -91,7 +91,7 @@ public enum WorldRenderer {
             if mobile == nil && (tile.isStatic ? visibility.hides(z: tile.z, x: tile.x, y: tile.y) : visibility.hidesTerrain(z: tile.z, x: tile.x, y: tile.y)) { continue }
             if mobile == nil && tile.isStatic {
                 if !statics { continue }
-                if try assets.isNoDraw(graphic:tile.art-0x4000) { continue }
+                if tile.corpseBody == nil, try assets.isNoDraw(graphic:tile.art-0x4000) { continue }
             }
             if !tile.isStatic && !legacyTerrain {
                 if tile.art <= 2 { continue } // Invisible land markers, including NODRAW.
@@ -113,6 +113,7 @@ public enum WorldRenderer {
             }
             let sprite: Sprite
             let sx: Int, sy: Int
+            var mirrored = false
             let anchorX = width / 2 + offsetX + ((tile.x - x) - (tile.y - y)) * 22
             let anchorY = height / 2 + offsetY + ((tile.x - x) + (tile.y - y)) * 22 - tile.z * 4
             if let mobile {
@@ -162,6 +163,10 @@ public enum WorldRenderer {
                 }
                 items += 1
                 continue
+            } else if let body = tile.corpseBody, let corpse = try CorpseArt.frame(body:body,direction:tile.corpseDirection,assets:assets) {
+                sprite = corpse.sprite; mirrored = corpse.mirrored
+                sx = anchorX - (mirrored ? sprite.width-corpse.centerX : corpse.centerX)
+                sy = anchorY + 22 - sprite.height - corpse.centerY
             } else {
                 guard let art = try assets.worldSprite(tile.art,at:animationTime) else { missing.insert(tile.art); continue }
                 sprite = art
@@ -177,7 +182,7 @@ public enum WorldRenderer {
             if tile.hue & 0x3FFF != 0 && hue == nil { hued += 1 }
             for yy in top..<bottom {
                 for xx in left..<right {
-                    let source = (yy * sprite.width + xx) * 4
+                    let source = (yy * sprite.width + (mirrored ? sprite.width-1-xx : xx)) * 4
                     if sprite.rgba[source + 3] == 0 { continue }
                     let dest = ((sy + yy) * width + sx + xx) * 4
                     let r = sprite.rgba[source], g = sprite.rgba[source + 1], b = sprite.rgba[source + 2]

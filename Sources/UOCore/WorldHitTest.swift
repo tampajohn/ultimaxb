@@ -12,13 +12,18 @@ public enum WorldHitTest {
         }.sorted(by: DrawEntry.precedes)
         for entry in entries.reversed() {
             let item = visible[entry.originalIndex]
-            guard try !assets.isNoDraw(graphic:item.graphic), let sprite = try assets.worldSprite(item.graphic + 0x4000,at:animationTime) else { continue }
+            guard try item.graphic == 0x2006 || !assets.isNoDraw(graphic:item.graphic) else { continue }
+            let corpse = try item.graphic == 0x2006 ? CorpseArt.frame(body:item.amount,direction:item.direction,assets:assets) : nil
+            guard let sprite = try corpse?.sprite ?? assets.worldSprite(item.graphic+0x4000,at:animationTime) else { continue }
             let ax = Double(width / 2) + ((Double(item.x) - camera.x) - (Double(item.y) - camera.y)) * 22
             let ay = Double(height / 2) + ((Double(item.x) - camera.x) + (Double(item.y) - camera.y)) * 22 - Double(item.z * 4)
-            let x = Int(floor(screenX - (ax.rounded() - Double(sprite.width / 2))))
-            let y = Int(floor(screenY - (ay.rounded() + 44 - Double(sprite.height))))
+            let centerX = corpse.map { $0.mirrored ? sprite.width-$0.centerX : $0.centerX } ?? sprite.width/2
+            let top = corpse.map { 22-sprite.height-$0.centerY } ?? (44-sprite.height)
+            let x = Int(floor(screenX - (ax.rounded() - Double(centerX))))
+            let y = Int(floor(screenY - (ay.rounded() + Double(top))))
+            let sourceX = corpse?.mirrored == true ? sprite.width-1-x : x
             if x >= 0, y >= 0, x < sprite.width, y < sprite.height,
-               sprite.rgba[(y * sprite.width + x) * 4 + 3] != 0 { return item }
+               sprite.rgba[(y * sprite.width + sourceX) * 4 + 3] != 0 { return item }
         }
         return nil
     }

@@ -325,3 +325,20 @@ Spell projectiles/impact effects are still missing; this is scenery animation.
 Live metadata check: the new Help request received a 0x7C menu and controller
 button actions were recorded. This establishes menu delivery and input activity,
 not successful stuck recovery or complete controller usability.
+
+### Local Test Center and corpse visibility
+
+A separate OUO Test Center now runs on loopback port 2593; setup, commands and
+restart instructions are in [LOCAL_SERVER.md](LOCAL_SERVER.md). A fresh local
+account/character completed login, movement, inventory split/merge, equipment,
+skills and chat tests. Test Center stat/skill commands were also confirmed via
+server status/skill replies. Full suite with local integration enabled: 190 tests,
+1 skipped, no failures. The earlier overflow belongs to the older test runtime;
+the new separate world completed this run without that failure.
+
+World corpse markers (0x2006) now retain the body ID and direction and render the
+final classic death frame instead of invisible static art. Alpha hit-testing uses
+the same frame and retains the corpse serial for normal double-click container
+use. Installed assets verified monster/animal/human bodies in all eight directions.
+Death transitions, alternate death poses, body remapping and corpse equipment
+layers remain incomplete. Live kill-to-loot behavior still needs verification.

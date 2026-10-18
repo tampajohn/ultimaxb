@@ -137,3 +137,6 @@ Reference projects include [ClassicUO](https://github.com/ClassicUO/ClassicUO),
 Notices for adapted material are retained in [LICENSES](LICENSES/). Game artwork
 and trademarks belong to their respective owners; screenshots do not grant a
 license to redistribute the game assets.
+
+For a private world with adjustable skills/stats and a starter kit, see the
+[local Test Center instructions](docs/LOCAL_SERVER.md).
