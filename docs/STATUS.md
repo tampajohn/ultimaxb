@@ -41,7 +41,7 @@ Xbox port. The present client is experimental and is not at parity yet.
 
 ## Local verification snapshot
 
-2026-10-18: 155 Swift tests executed, 2 opt-in integration tests skipped, no
+2026-10-18: 157 Swift tests executed, 2 opt-in integration tests skipped, no
 failures. The server-dialog harness additionally verifies page changes without
 replies, selection state and Unicode text across pages, plus formatted text, item art
 and overflowing scroll content. This does not establish
@@ -143,3 +143,11 @@ brighter surrounding ground, movement starting at the prior displayed tile, and
 removal of illumination after unequip or owner removal. Current placement is centered
 on the mobile; exact facing/hand offsets and live equipped-lantern testing remain
 pending. No live inventory changes were made for this fixture.
+
+Overhead speech: independent speaker messages replace the previous single shared
+label. Up to three messages per speaker stack above the object, with wrapping,
+4–12 second expiry, a 64-message cap and a 512-character per-message cap. Mobile
+labels use interpolated positions. System messages stay in the journal/chat;
+object-label responses replace prior text for that object. Disconnect clears the
+in-memory buffer. Tests cover independent speakers, expiry and bounds. Original
+bitmap fonts, speech hues and collision avoidance between speakers remain pending.

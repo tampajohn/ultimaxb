@@ -65,9 +65,9 @@ final class WorldView: NSView {
     private var hoverRestPoint = NSPoint.zero
     private var hoverRestAt: TimeInterval = 0
     private var hoverInspected: UInt32?
-    private var objectLabel: (UInt32, String, TimeInterval)?
+    var overheadSpeech = OverheadSpeech()
     func showLabel(_ message: SpeechMessage) {
-        objectLabel = (message.serial, message.text, ProcessInfo.processInfo.systemUptime + 4)
+        overheadSpeech.append(message,at:ProcessInfo.processInfo.systemUptime)
         needsDisplay = true
     }
     override func updateTrackingAreas() {
@@ -179,7 +179,9 @@ final class WorldView: NSView {
             onInspect?(hovered.serial)
             Telemetry.shared.record("hover_inspect", ["serial": hovered.serial, "graphic": hovered.graphic])
         }
-        if let label = objectLabel, ProcessInfo.processInfo.systemUptime >= label.2 { objectLabel = nil; needsDisplay = true }
+        let priorSpeechCount = overheadSpeech.entries.count
+        overheadSpeech.expire(at:ProcessInfo.processInfo.systemUptime)
+        if overheadSpeech.entries.count != priorSpeechCount { needsDisplay = true }
         if window?.isKeyWindow != true { movementKeys.clear(); rightPoint = nil }
         // Responder changes can swallow keyUp/mouseUp. Reconcile tracked movement
         // inputs with physical state; never poll or log unrelated typing.
@@ -463,17 +465,33 @@ final class WorldView: NSView {
                 }
             }
         }
-        if let (serial,text,expiry) = objectLabel, ProcessInfo.processInfo.systemUptime < expiry {
+        let now = ProcessInfo.processInfo.systemUptime
+        overheadSpeech.expire(at:now)
+        let poses = motion.presentations(at:now)
+        NSGraphicsContext.saveGraphicsState(); imageRect.clip()
+        for serial in Set(overheadSpeech.entries.map(\.serial)).sorted() {
             let item = groundObjects.first { $0.serial == serial }
             let mobile = mobiles.first { $0.serial == serial }
-            guard let wx = item?.x ?? mobile?.x, let wy = item?.y ?? mobile?.y, let wz = item?.z ?? mobile?.z else { return }
-            let height = item.flatMap { try? assets.sprite($0.graphic + 0x4000)?.height } ?? 65
-            let x = imageRect.minX+(480+(Double(wx-wy)-displayedCamera.x+displayedCamera.y)*22)*scale
-            let y = imageRect.minY+(360+(Double(wx+wy)-displayedCamera.x-displayedCamera.y)*22-Double(wz*4)+44-Double(height))*scale-22
-            let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 14), .foregroundColor: NSColor.white, .backgroundColor: NSColor.black.withAlphaComponent(0.8)]
-            let string = text as NSString
-            string.draw(at: NSPoint(x: max(imageRect.minX,x-string.size(withAttributes: attrs).width/2), y: max(0,y)), withAttributes: attrs)
+            guard let wx = item?.x ?? mobile?.x,let wy = item?.y ?? mobile?.y,let wz = item?.z ?? mobile?.z else { continue }
+            let pose = mobile == nil ? nil : poses[serial]
+            let px = pose?.x ?? Double(wx), py = pose?.y ?? Double(wy), pz = pose?.z ?? Double(wz)
+            let height = item.flatMap { try? assets.sprite($0.graphic+0x4000)?.height } ?? 65
+            let x = imageRect.minX+(480+(px-py-displayedCamera.x+displayedCamera.y)*22)*scale
+            var y = imageRect.minY+(360+(px+py-displayedCamera.x-displayedCamera.y)*22-pz*4+44-Double(height))*scale-4
+            let style = NSMutableParagraphStyle(); style.alignment = .center
+            let attrs:[NSAttributedString.Key:Any] = [.font:NSFont.systemFont(ofSize:14),.foregroundColor:NSColor.white,
+                .backgroundColor:NSColor.black.withAlphaComponent(0.8),.paragraphStyle:style]
+            let textWidth = min(240,max(1,imageRect.width-8))
+            for entry in overheadSpeech.entries.filter({ $0.serial == serial }).reversed() {
+                let text = entry.text as NSString
+                let size = text.boundingRect(with:NSSize(width:textWidth,height:100),options:[.usesLineFragmentOrigin,.usesFontLeading],attributes:attrs).size
+                let height = min(100,ceil(size.height))
+                y -= height+2
+                let left = max(imageRect.minX+4,min(imageRect.maxX-textWidth-4,x-textWidth/2))
+                text.draw(with:NSRect(x:left,y:y,width:textWidth,height:height),options:[.usesLineFragmentOrigin,.usesFontLeading],attributes:attrs)
+            }
         }
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     func groundDropLocation(windowPoint:NSPoint)->TargetSelection? {
@@ -889,7 +907,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 view.sidebar?.updateEquipment(view.equipment, player:player?.serial, assets:view.assets)
                 if player == nil { self?.audio.stop(); view.sidebar?.updateStatus(nil); self?.skillsPanel?.update(SkillState()) }
                 view.needsLayout = true
-                if player == nil { self?.spellShortcuts.values.forEach { $0.removeFromSuperview() }; self?.spellShortcuts.removeAll(); self?.spellbooks.values.forEach { $0.removeFromSuperview() }; self?.spellbooks.removeAll(); self?.chatPanel.reset(); self?.journalPanel?.removeFromSuperview(); self?.characterPanel?.removeFromSuperview(); self?.characterPanel = nil; self?.containerPanels.values.forEach { $0.removeFromSuperview() }; self?.containerPanels.removeAll() }
+                if player == nil { self?.worldView?.overheadSpeech = OverheadSpeech(); self?.spellShortcuts.values.forEach { $0.removeFromSuperview() }; self?.spellShortcuts.removeAll(); self?.spellbooks.values.forEach { $0.removeFromSuperview() }; self?.spellbooks.removeAll(); self?.chatPanel.reset(); self?.journalPanel?.removeFromSuperview(); self?.characterPanel?.removeFromSuperview(); self?.characterPanel = nil; self?.containerPanels.values.forEach { $0.removeFromSuperview() }; self?.containerPanels.removeAll() }
                 if let player, view.followPlayer, player.x != view.cx || player.y != view.cy {
                     view.cx = player.x; view.cy = player.y; view.refresh()
                 }
