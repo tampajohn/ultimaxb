@@ -11,6 +11,8 @@ final class SpellbookPanel:NSView {
     private var pendingSelection:DispatchWorkItem?
     private var ordered:[Int] { known.sorted() }
     private var drag:NSPoint?
+    private var spellDrag:(id:Int,start:NSPoint)?
+    var onShortcut:((Int,NSPoint)->Void)?
     var onCast: ((Int)->Void)?
     override var isFlipped:Bool { true }
     init(serial:UInt32,assets:ClientAssets) {
@@ -98,6 +100,7 @@ final class SpellbookPanel:NSView {
     override func mouseDown(with event:NSEvent) {
         let p = convert(event.locationInWindow,from:nil)
         pendingSelection?.cancel()
+        spellDrag = nil; drag = nil
         if NSRect(x:50,y:8,width:28,height:16).contains(p) { turn(-1); return }
         if NSRect(x:321,y:8,width:28,height:16).contains(p) { turn(1); return }
         if NSRect(x:0,y:95,width:25,height:30).contains(p) { removeFromSuperview(); return }
@@ -105,6 +108,7 @@ final class SpellbookPanel:NSView {
             pair = tab/2; detailPair = nil; needsDisplay = true; return
         }
         if let id = spell(at:p) {
+            if event.clickCount == 1 { spellDrag = (id,event.locationInWindow) }
             if event.clickCount == 2 { onCast?(id) }
             else if detailPair == nil {
                 let work = DispatchWorkItem { [weak self] in
@@ -120,11 +124,19 @@ final class SpellbookPanel:NSView {
         drag = event.locationInWindow
     }
     override func mouseDragged(with event:NSEvent) {
+        if let spellDrag {
+            let point = event.locationInWindow
+            guard hypot(point.x-spellDrag.start.x,point.y-spellDrag.start.y)>=5 else { return }
+            pendingSelection?.cancel()
+            guard known.contains(spellDrag.id) else { return }
+            onShortcut?(spellDrag.id,point)
+            return
+        }
         guard let drag else { return }
         frame.origin.x += event.locationInWindow.x-drag.x
         frame.origin.y -= event.locationInWindow.y-drag.y
         self.drag = event.locationInWindow
     }
-    override func mouseUp(with event:NSEvent) { drag = nil }
+    override func mouseUp(with event:NSEvent) { drag = nil; spellDrag = nil }
     override func rightMouseDown(with event:NSEvent) { pendingSelection?.cancel(); removeFromSuperview() }
 }

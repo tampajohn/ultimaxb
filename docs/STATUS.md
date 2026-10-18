@@ -107,4 +107,11 @@ double-click a known name or detail icon to request casting. Original book icons
 page-turn artwork and circle tabs are used, with incantations and reagent lists
 from ClassicUO metadata. Local UI checks cover navigation, casting callbacks,
 unknown-spell rejection and inventory refresh during selection. Live casting,
-spell shortcut dragging and original bitmap/rune fonts remain unverified or pending.
+original bitmap/rune fonts and persistent spell shortcut layouts remain unverified or pending.
+
+Spell shortcuts: drag a known spell name or detail icon out of its book to create
+a movable original-art icon. Double-click casts through the active book validation;
+right-click removes it. Repeated drags reuse the same book/spell shortcut, with a
+64-icon session limit and cleanup on disconnect. UI fixtures verify the drag
+threshold, absence of casting during drag, screen clamping, casting callback and
+removal. Layout persistence and live casting remain pending.

@@ -545,6 +545,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var huePickerPanel:HuePickerPanel?
     private var serverGumpPanels:[UInt64:ServerGumpPanel] = [:]
     private var serverMenuPanel:ServerMenuPanel?
+    private var spellShortcuts:[UInt64:SpellShortcut] = [:]
     private var spellbooks:[UInt32:SpellbookPanel] = [:]
     private func toggleMap() {
         guard let view = worldView, view.player != nil else { return }
@@ -795,6 +796,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     panel?.castSpell(id,book:serial)
                     self?.window?.makeFirstResponder(self?.worldView)
                 }
+                book.onShortcut = { [weak self,weak panel,weak view] id,point in
+                    guard let self,let view else { return }
+                    let key = UInt64(serial)<<32 | UInt64(id)
+                    let shortcut:SpellShortcut
+                    if let existing = self.spellShortcuts[key] { shortcut = existing }
+                    else {
+                        guard self.spellShortcuts.count<64 else { return }
+                        shortcut = SpellShortcut(spell:id,assets:self.assets)
+                        shortcut.onCast = { [weak self,weak panel] in
+                            panel?.castSpell(id,book:serial)
+                            self?.window?.makeFirstResponder(self?.worldView)
+                        }
+                        shortcut.onClose = { [weak self] in self?.spellShortcuts.removeValue(forKey:key) }
+                        self.spellShortcuts[key] = shortcut
+                        Telemetry.shared.record("spell_shortcut_created",["id":id,"book":serial])
+                    }
+                    shortcut.removeFromSuperview(); view.addSubview(shortcut)
+                    shortcut.place(at:view.convert(point,from:nil),in:view)
+                }
                 book.removeFromSuperview(); view.addSubview(book)
             }
             panel.onGroundObjects = { [weak self] items in
@@ -860,7 +880,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 view.sidebar?.updateEquipment(view.equipment, player:player?.serial, assets:view.assets)
                 if player == nil { self?.audio.stop(); view.sidebar?.updateStatus(nil); self?.skillsPanel?.update(SkillState()) }
                 view.needsLayout = true
-                if player == nil { self?.spellbooks.values.forEach { $0.removeFromSuperview() }; self?.spellbooks.removeAll(); self?.chatPanel.reset(); self?.journalPanel?.removeFromSuperview(); self?.characterPanel?.removeFromSuperview(); self?.characterPanel = nil; self?.containerPanels.values.forEach { $0.removeFromSuperview() }; self?.containerPanels.removeAll() }
+                if player == nil { self?.spellShortcuts.values.forEach { $0.removeFromSuperview() }; self?.spellShortcuts.removeAll(); self?.spellbooks.values.forEach { $0.removeFromSuperview() }; self?.spellbooks.removeAll(); self?.chatPanel.reset(); self?.journalPanel?.removeFromSuperview(); self?.characterPanel?.removeFromSuperview(); self?.characterPanel = nil; self?.containerPanels.values.forEach { $0.removeFromSuperview() }; self?.containerPanels.removeAll() }
                 if let player, view.followPlayer, player.x != view.cx || player.y != view.cy {
                     view.cx = player.x; view.cy = player.y; view.refresh()
                 }

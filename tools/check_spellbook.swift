@@ -32,6 +32,25 @@ import UOCore
   click(180,x:60,count:1)
   click(95)
   precondition(casts == [4,4,7,4])
-  print("Spellbook index/detail navigation, original icons, inspection without casting and double-click casting verified")
+  var shortcuts:[Int] = []
+  panel.onShortcut = { id,_ in shortcuts.append(id) }
+  click(95,count:1)
+  func drag(_ x:CGFloat,_ y:CGFloat) {
+   let point = panel.convert(NSPoint(x:x,y:y),to:nil)
+   panel.mouseDragged(with:NSEvent.mouseEvent(with:.leftMouseDragged,location:point,modifierFlags:[],timestamp:0,windowNumber:window.windowNumber,context:nil,eventNumber:1,clickCount:1,pressure:1)!)
+  }
+  drag(72,95); precondition(shortcuts.isEmpty)
+  drag(300,200); precondition(shortcuts == [4])
+  precondition(casts == [4,4,7,4])
+  let shortcut = SpellShortcut(spell:4,assets:assets)
+  panel.addSubview(shortcut)
+  shortcut.place(at:NSPoint(x:1000,y:-100),in:panel)
+  precondition(shortcut.frame.maxX <= panel.bounds.maxX && shortcut.frame.minY == 0)
+  var shortcutCasts = 0, closed = false
+  shortcut.onCast = { shortcutCasts += 1 }; shortcut.onClose = { closed = true }
+  let event = NSEvent.mouseEvent(with:.leftMouseDown,location:.zero,modifierFlags:[],timestamp:0,windowNumber:window.windowNumber,context:nil,eventNumber:2,clickCount:2,pressure:1)!
+  shortcut.mouseDown(with:event); precondition(shortcutCasts == 1)
+  shortcut.rightMouseDown(with:event); precondition(closed && shortcut.superview == nil)
+  print("Spellbook details, drag threshold, shortcut placement/casting/removal and unknown-spell rejection verified")
  }
 }
