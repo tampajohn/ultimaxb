@@ -226,3 +226,16 @@ behavior, not proof of the deployed UO1998 server configuration. Movement packet
 carry direction and sequence, not a requested multi-tile destination; client
 pipelining remains bounded at five outstanding single-step requests. Batched
 movement speed behavior on the live shard has not been verified.
+
+### Roof clicks target covered floors
+
+Click-to-walk resolves roof art to a collision-valid floor below the same world
+cell. For eaves over an impassable wall, it considers covered cells within two
+tiles in the connected roof footprint. It does not project the screen pixel onto
+unrelated terrain behind the house or jump a roof gap into a neighbor. The
+resolved floor feeds ordinary routing and the door-opening continuation. Walking
+hit tests now also include server-provided house components and ground tiles.
+This does not select arbitrary upstairs floors; live roof/door combinations still
+need verification. Local coverage checks same-cell floors, eaves, invalid floor
+heights, bounded search and disconnected buildings. Full suite: 176 tests, 2 skips,
+no failures; the connected-footprint follow-up passed all three focused tests.

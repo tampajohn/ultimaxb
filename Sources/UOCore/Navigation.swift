@@ -89,6 +89,10 @@ public final class NavigationMap {
             cells[xy] = Cell(landZ:average,lowZ:corners.min()!,landBlocked:land.art<=2 || flags & 0xC0 != 0,surfaces:surfaces)
         }
     }
+    public func standingPoint(x:Int,y:Int,fromZ:Int)->WalkPoint? {
+        guard let z = cells[XY(x:x,y:y)]?.standingZ(from:fromZ) else { return nil }
+        return WalkPoint(x:x,y:y,z:z)
+    }
     public func step(from:WalkPoint,direction:UInt8, ignoringDoors:Bool = false)->WalkPoint? {
         let delta = WalkPath.directions[Int(direction&7)]
         let x=from.x+delta.0,y=from.y+delta.1
@@ -99,5 +103,32 @@ public final class NavigationMap {
                   cells[XY(x:from.x,y:y)]?.standingZ(from:from.z, ignoringDoors:ignoringDoors) != nil else { return nil }
         }
         return WalkPoint(x:x,y:y,z:z)
+    }
+}
+
+/// Resolve roof art to a floor in its nearby footprint, not terrain behind the
+/// building at the same screen pixel. Eaves often occupy an impassable wall cell.
+public enum WalkDestination {
+    public static func beneathRoof(_ roof:WalkPoint, footprint:[WalkPoint], player:WalkPoint,
+                                   standing:(Int,Int)->WalkPoint?)->WalkPoint? {
+        let nearby = Set(footprint + [roof]).filter {
+            max(abs($0.x-roof.x),abs($0.y-roof.y)) <= 2 && abs($0.z-roof.z) <= 16
+        }
+        var connected:Set<WalkPoint> = [roof], queue = [roof]
+        while let cell = queue.popLast() {
+            for neighbor in nearby where !connected.contains(neighbor) &&
+                abs(neighbor.x-cell.x)+abs(neighbor.y-cell.y) == 1 && abs(neighbor.z-cell.z)<=16 {
+                connected.insert(neighbor); queue.append(neighbor)
+            }
+        }
+        let cells = connected.sorted {
+            let a = (max(abs($0.x-roof.x),abs($0.y-roof.y)),max(abs($0.x-player.x),abs($0.y-player.y)),$0.x,$0.y)
+            let b = (max(abs($1.x-roof.x),abs($1.y-roof.y)),max(abs($1.x-player.x),abs($1.y-player.y)),$1.x,$1.y)
+            return a < b
+        }
+        for cell in cells {
+            if let floor = standing(cell.x,cell.y),floor.z < cell.z { return floor }
+        }
+        return nil
     }
 }

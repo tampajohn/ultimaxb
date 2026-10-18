@@ -41,8 +41,11 @@ public enum WorldHitTest {
         }
         return nil
     }
-    public static func location(assets: ClientAssets, camera: WorldCamera, screenX: Double, screenY: Double, visibility: WorldVisibility) throws -> TargetSelection? {
-        let tiles = try assets.region(x: Int(camera.x), y: Int(camera.y), radius: 24)
+    public static func location(assets: ClientAssets, camera: WorldCamera, screenX: Double, screenY: Double, visibility: WorldVisibility, additionalTiles:[WorldTile] = []) throws -> TargetSelection? {
+        let region = try assets.region(x: Int(camera.x), y: Int(camera.y), radius: 24)
+        let tiles = try (region + additionalTiles).enumerated().map {
+            DrawEntry(tile:$0.element,priority:try assets.drawPriority($0.element),originalIndex:$0.offset)
+        }.sorted(by:DrawEntry.precedes).map(\.tile)
         for tile in tiles.reversed() {
             let ax = 480 + ((Double(tile.x)-camera.x)-(Double(tile.y)-camera.y))*22
             let ay = 360 + ((Double(tile.x)-camera.x)+(Double(tile.y)-camera.y))*22

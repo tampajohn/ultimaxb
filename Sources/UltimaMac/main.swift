@@ -542,7 +542,7 @@ final class WorldView: NSView {
                 if event.clickCount == 2, (player?.flags ?? 0) & 0x40 != 0 { onAttack?(mobile.serial) }
             } else if event.clickCount == 1 {
                 let visibility = try player.map { try WorldVisibility.around(player:$0,assets:assets,additionalTiles:groundItems) } ?? WorldVisibility()
-                if let location = try WorldHitTest.location(assets:assets,camera:displayedCamera,screenX:screenX,screenY:screenY,visibility:visibility) {
+                if let location = try WorldHitTest.location(assets:assets,camera:displayedCamera,screenX:screenX,screenY:screenY,visibility:visibility,additionalTiles:groundItems) {
                     onWalkTo?(location,nil,running)
                 }
             }
@@ -1037,6 +1037,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         do {
             let map = try NavigationMap(assets:assets,center:start,additional:view.groundItems)
+            var location = location
+            if action == nil, location.graphic != 0,
+               try assets.itemFlags(graphic:location.graphic) & 0x10000000 != 0 {
+                let tiles = try assets.region(x:location.x,y:location.y,radius:2) + view.groundItems
+                let roofs = try tiles.filter { tile in
+                    guard tile.isStatic else { return false }
+                    return try assets.itemFlags(graphic:tile.art-0x4000) & 0x10000000 != 0
+                }.map { WalkPoint(x:$0.x,y:$0.y,z:$0.z) }
+                let roof = WalkPoint(x:location.x,y:location.y,z:location.z)
+                guard let floor = WalkDestination.beneathRoof(roof,footprint:roofs,player:start,standing:{
+                    map.standingPoint(x:$0,y:$1,fromZ:start.z)
+                }) else { chatPanel.append("No reachable floor beneath that roof."); return }
+                location = TargetSelection(x:floor.x,y:floor.y,z:floor.z,graphic:0)
+                Telemetry.shared.record("roof_walk_floor",["roof_x":roof.x,"roof_y":roof.y,"roof_z":roof.z,"x":floor.x,"y":floor.y,"z":floor.z])
+            }
             // A mineable cliff face is not a floor to stand on. Reach a neighboring
             // walkable tile without requiring the clicked cliff's elevation.
             let goalZ:Int?
