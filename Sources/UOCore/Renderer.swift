@@ -155,6 +155,11 @@ public enum WorldRenderer {
                         }
                     }
                 }
+                // Use the same interpolated world position as the mobile, so carried
+                // illumination does not jump ahead to its next server tile.
+                for item in equipment where item.owner == mobile.serial {
+                    try addLight(graphic:item.graphic,atX:Int(screenX.rounded()),atY:Int(screenY.rounded())+22)
+                }
                 items += 1
                 continue
             } else {

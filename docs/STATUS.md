@@ -126,7 +126,7 @@ Ambient lighting: legacy global 0x4F and player-specific 0x4E packets now drive
 world brightness using the ClassicUO level calculation. Menus, chat and interaction
 feedback retain their brightness. Unrelated personal-light updates are ignored,
 levels clamp to 30, and disconnect resets lighting. Wire/state tests cover these
-cases. Local world-tile lights are now implemented as described below; carried and spell
+cases. Local world-tile and carried lights are implemented as described below; spell
 lights remain incomplete.
 
 Local lighting: LIGHTIDX.MUL/LIGHT.MUL masks decode bounded dimensions and signed
@@ -134,5 +134,12 @@ Local lighting: LIGHTIDX.MUL/LIGHT.MUL masks decode bounded dimensions and signe
 additive masks modulate the world pixels with the ambient level. A frame caps light
 sources at 100 and reuses decoded masks within that frame. A dark Minoc fixture
 verifies ambient dimming plus brighter lamp-lit pixels and produces the published
-night screenshot. Carried lights, dynamic light-ID overrides, colored lights,
+night screenshot. Dynamic light-ID overrides, colored lights,
 light blocking by walls, verdata light patches and spell effects remain pending.
+
+Carried lights: equipped light sources illuminate around their visible owner using
+the same interpolated position as the mobile renderer. The render fixture verifies
+brighter surrounding ground, movement starting at the prior displayed tile, and
+removal of illumination after unequip or owner removal. Current placement is centered
+on the mobile; exact facing/hand offsets and live equipped-lantern testing remain
+pending. No live inventory changes were made for this fixture.
