@@ -7,6 +7,7 @@ import UOCore
     private let accept = NSButton(title:"Accept trade",target:nil,action:nil)
     private let partner = NSTextField(labelWithString:"")
     private var drag:NSPoint?, candidate:ContainerItem?, start:NSPoint?
+    private var quantityPanel:StackQuantityPanel?
     private var hits:[(NSRect,ContainerItem)] = []
     var onAccept:((Bool,UInt64)->Void)?
     var onCancel:(()->Void)?
@@ -26,7 +27,10 @@ import UOCore
     }
     required init?(coder:NSCoder) { fatalError() }
     func update(_ value:SecureTrade) {
-        if value.revision != trade.revision { candidate = nil; start = nil }
+        if value.revision != trade.revision || value.closed || value.cancelling || value.pendingAcceptance != nil || value.awaitingOfferUpdate {
+            candidate = nil; start = nil
+            quantityPanel?.removeFromSuperview(); quantityPanel = nil
+        }
         trade = value; partner.stringValue = value.partnerName
         accept.image = gump(value.ownAccepted ? 0x869 : 0x867)
         accept.alternateImage = gump(value.ownAccepted ? 0x86A : 0x868)
@@ -87,6 +91,27 @@ import UOCore
         defer { candidate = nil; start = nil; drag = nil }
         guard let candidate,let start,trade.pendingAcceptance == nil,!trade.awaitingOfferUpdate,!trade.cancelling,
               hypot(event.locationInWindow.x-start.x,event.locationInWindow.y-start.y)>3 else { return }
-        onDrop?(candidate,event.locationInWindow)
+        let point = event.locationInWindow
+        guard quantityPanel == nil else { return }
+        let revision = trade.revision
+        let finish:(Int)->Void = { [weak self] amount in
+            guard let self, self.trade.revision == revision, !self.trade.closed,
+                  !self.trade.cancelling, self.trade.pendingAcceptance == nil,
+                  !self.trade.awaitingOfferUpdate, self.trade.items.contains(candidate) else { return }
+            self.onDrop?(ContainerItem(serial:candidate.serial,graphic:candidate.graphic,
+                amount:amount,x:candidate.x,y:candidate.y,container:candidate.container,hue:candidate.hue),point)
+        }
+        if candidate.amount > 1 && (try? assets.isStackable(graphic:candidate.graphic)) == true {
+            let picker = StackQuantityPanel(maximum:min(65535,candidate.amount),assets:assets)
+            picker.frame.origin = .zero
+            picker.onConfirm = { [weak self, weak picker] amount in
+                picker?.removeFromSuperview(); self?.quantityPanel = nil
+                finish(amount)
+            }
+            picker.onCancel = { [weak self, weak picker] in
+                picker?.removeFromSuperview(); self?.quantityPanel = nil
+            }
+            quantityPanel = picker; addSubview(picker)
+        } else { finish(1) }
     }
 }

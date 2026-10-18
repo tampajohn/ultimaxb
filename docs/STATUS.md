@@ -86,8 +86,10 @@ Right-click requests cancellation and waits for the server. Pending transfers an
 acceptance replies disable acceptance, and known nested items on the other side
 cannot be moved. Trade status, revision and item metadata are logged, never the
 partner name. Local fixtures cover the window and drop regions; live two-party
-trades have not been tested. Trade-item drag previews, partial-stack removal and
-opening offered nested bags remain incomplete.
+trades have not been tested. Dragging an offered stack opens the original quantity
+picker for partial withdrawal; a changed offer cancels the picker and prevents a
+stale request. Local UI tests cover selection, cancellation and revision changes.
+Trade-item drag previews and opening offered nested bags remain incomplete.
 
 Trade transfer ordering: acceptance now waits for both DROPOBJ_OK and an item
 update at the requested destination (or the merged destination stack). Removal
