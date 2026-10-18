@@ -262,3 +262,15 @@ font bounds and truncation. The installed file supplies ten complete fonts.
 The UI fixture verifies artwork, history scrolling, tail following, preserved
 reading position, fallback layout and clearing. Release suite: 179 tests,
 2 skipped, no failures. Visual fixture: docs/screenshots/journal.png.
+
+### Static object targets (trees)
+
+Live metadata showed the axe requesting an object cursor, followed by no target
+reply: local validation incorrectly required every object target to have a serial.
+Map trees have static graphics and coordinates but no serial. Target validation
+now accepts a valid static graphic for object cursors and sends the XYZ-form reply,
+while bare ground still requires a location cursor. This follows ClassicUO's
+TargetManager behavior. A regression checks the exact tree reply, preserved cursor
+identity, and rejection of bare terrain/invalid static IDs. Local rejection now
+records only target metadata. Release suite: 180 tests, 2 skipped, no failures.
+Live resource collection after this correction still needs verification.

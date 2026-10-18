@@ -396,7 +396,10 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             connection.send(response)
             targetRequest = nil; equippedTargetTool = nil; onTargeting?(false)
             Telemetry.shared.record(selection == nil ? "target_cancelled" : "target_selected", ["cursor": request.cursor, "serial": selection?.serial ?? 0, "x":selection?.x ?? -1,"y":selection?.y ?? -1,"z":selection?.z ?? 0,"graphic":selection?.graphic ?? 0])
-        } catch { onInventoryMessage?("Select an object for this target.") }
+        } catch {
+            Telemetry.shared.record("target_rejected_locally",["allows_location":request.allowsLocation,"serial":selection?.serial ?? 0,"graphic":selection?.graphic ?? 0])
+            onInventoryMessage?("Select an object for this target.")
+        }
     }
     func targetPaperdoll(serial:UInt32)->Bool {
         guard targeting,let playerSerial,let player = world.mobiles[playerSerial] else { return false }

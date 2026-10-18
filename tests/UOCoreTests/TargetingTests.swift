@@ -9,7 +9,7 @@ final class TargetingTests: XCTestCase {
         let object = try request()
         XCTAssertEqual(try object.response(TargetSelection(serial: 0x40000001, x: 100, y: 200, z: -5, graphic: 0xEED)),
             Data([0x6C,0,0x12,0x34,0x56,0x78,1,0x40,0,0,1,0,100,0,200,0xFF,0xFB,0x0E,0xED]))
-        let point = TargetSelection(x: 100, y: 200, z: 0, graphic: 3)
+        let point = TargetSelection(x: 100, y: 200, z: 0, graphic: 0)
         XCTAssertThrowsError(try object.response(point))
         XCTAssertEqual(try request(1).response(point)[1], 1)
         let cancel = try object.response(nil)
@@ -17,6 +17,14 @@ final class TargetingTests: XCTestCase {
         XCTAssertEqual(Array(cancel[11..<15]), [255,255,255,255])
         for count in 0..<19 { XCTAssertThrowsError(try TargetRequest.decode(Data(cancel.prefix(count)))) }
         XCTAssertThrowsError(try object.response(TargetSelection(serial: 1, x: -1, y: 1, z: 0, graphic: 3)))
+    }
+    func testObjectCursorAcceptsStaticTreeWithoutSerial() throws {
+        let object = try request()
+        let tree = TargetSelection(x:2557,y:377,z:0,graphic:0x0CCA)
+        let packet = try object.response(tree)
+        XCTAssertEqual(packet,Data([0x6C,1,0x12,0x34,0x56,0x78,1,0,0,0,0,0x09,0xFD,0x01,0x79,0,0,0x0C,0xCA]))
+        XCTAssertThrowsError(try object.response(TargetSelection(x:2557,y:377,z:0,graphic:0)))
+        XCTAssertThrowsError(try object.response(TargetSelection(x:2557,y:377,z:0,graphic:0xFFFF)))
     }
     func testMobileHitUsesAnimationTransparency() throws {
         try AssetTests().withClient { root in

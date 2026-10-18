@@ -18,7 +18,11 @@ public struct TargetRequest: Equatable {
     }
     public func response(_ selection: TargetSelection?) throws -> Data {
         if let selection {
-            guard selection.serial != 0 || allowsLocation, (0..<65535).contains(selection.x), (0..<65535).contains(selection.y),
+            // Object cursors also accept statics (trees, furniture, etc.) even
+            // though map statics have no serial. Only bare land requires a
+            // location cursor; static replies still use the XYZ packet form.
+            let isStatic = selection.serial == 0 && (1..<0x4000).contains(selection.graphic)
+            guard selection.serial != 0 || isStatic || allowsLocation, (0..<65535).contains(selection.x), (0..<65535).contains(selection.y),
                   (-128...127).contains(selection.z), (0...65535).contains(selection.graphic) else { throw LoginProtocolError.malformedPacket }
         }
         func word(_ n: Int) -> [UInt8] { [UInt8((n >> 8) & 255), UInt8(n & 255)] }
