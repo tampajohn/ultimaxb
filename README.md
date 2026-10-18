@@ -77,6 +77,8 @@ The appearance preview uses optional 1.26-era UI assets; the world uses 1.25.32.
 
 ![Spellbook detail pages with original icons](docs/screenshots/spellbook.png)
 
+![Minoc lighting fixture at night](docs/screenshots/minoc-night.png)
+
 ## Development
 
 ```sh

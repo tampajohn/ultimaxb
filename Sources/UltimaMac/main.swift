@@ -88,7 +88,7 @@ final class WorldView: NSView {
         }
         needsDisplay = true
     }
-    var lighting = WorldLighting() { didSet { needsDisplay = true } }
+    var lighting = WorldLighting() { didSet { if lighting != oldValue { refresh() } } }
     var targeting = false { didSet { window?.invalidateCursorRects(for: self); needsDisplay = true } }
     var onTarget: ((TargetSelection?) -> Void)?
     override func resetCursorRects() {
@@ -250,7 +250,7 @@ final class WorldView: NSView {
                 lastCeiling = visibility.ceiling
             }
             displayedCamera = camera ?? WorldCamera(x: Double(cx), y: Double(cy))
-            let frame = try WorldRenderer.render(assets, x: cx, y: cy, statics: showStatics, legacyTerrain: legacyTerrain, visibility: visibility, camera: camera, groundItems: groundItems, mobiles: mobiles, equipment: equipment, mobilePresentations: presentations)
+            let frame = try WorldRenderer.render(assets, x: cx, y: cy, statics: showStatics, legacyTerrain: legacyTerrain, visibility: visibility, camera: camera, groundItems: groundItems, mobiles: mobiles, equipment: equipment, mobilePresentations: presentations, lighting:lighting)
             let provider = CGDataProvider(data: Data(frame.rgba) as CFData)!
             frameImage = CGImage(width: frame.width, height: frame.height, bitsPerComponent: 8,
                 bitsPerPixel: 32, bytesPerRow: frame.width * 4, space: CGColorSpaceCreateDeviceRGB(),
@@ -293,10 +293,6 @@ final class WorldView: NSView {
             NSGraphicsContext.current?.imageInterpolation = .none
             image.draw(in: imageRect, from: .zero, operation: .copy, fraction: 1,
                        respectFlipped: true, hints: nil)
-        }
-        if frameImage != nil, lighting.brightness<1 {
-            NSColor.black.withAlphaComponent(1-lighting.brightness).setFill()
-            imageRect.fill(using:.sourceOver)
         }
         drawWalkRoute()
         drawObjectFeedback()

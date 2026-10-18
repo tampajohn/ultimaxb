@@ -32,7 +32,7 @@ public struct WorldCamera {
 public enum WorldRenderer {
     public static func render(_ assets: ClientAssets, x: Int, y: Int,
                               statics: Bool = true, width: Int = 960, height: Int = 720,
-                              legacyTerrain: Bool = false, visibility: WorldVisibility = WorldVisibility(), camera: WorldCamera? = nil, groundItems: [WorldTile] = [], mobiles: [WorldMobile] = [], equipment: [EquippedItem] = [], mobilePresentations: [UInt32: MobilePresentation] = [:]) throws -> Frame {
+                              legacyTerrain: Bool = false, visibility: WorldVisibility = WorldVisibility(), camera: WorldCamera? = nil, groundItems: [WorldTile] = [], mobiles: [WorldMobile] = [], equipment: [EquippedItem] = [], mobilePresentations: [UInt32: MobilePresentation] = [:], lighting:WorldLighting = WorldLighting()) throws -> Frame {
         guard (1...2048).contains(width), (1...2048).contains(height) else {
             throw AssetError("Frame dimensions must be 1...2048")
         }
@@ -42,6 +42,27 @@ public enum WorldRenderer {
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
         for p in stride(from: 0, to: pixels.count, by: 4) {
             pixels[p] = 16; pixels[p + 1] = 22; pixels[p + 2] = 27; pixels[p + 3] = 255
+        }
+        let ambient = UInt16((lighting.brightness*255).rounded())
+        var illumination = ambient<255 ? [UInt16](repeating:ambient,count:width*height) : []
+        var lightCount = 0
+        var masks:[Int:LightMask] = [:]
+        func addLight(graphic:Int,atX:Int,atY:Int) throws {
+            guard !illumination.isEmpty,lightCount<100,let id = try assets.lightIndex(graphic:graphic) else { return }
+            let mask:LightMask
+            if let cached = masks[id] { mask = cached }
+            else if let loaded = try assets.lights?.mask(id) { mask = loaded; masks[id] = loaded }
+            else { return }
+            let sx = atX-mask.width/2,sy = atY-mask.height/2
+            let left = max(0,-sx),right = min(mask.width,width-sx),top = max(0,-sy),bottom = min(mask.height,height-sy)
+            guard left<right,top<bottom else { return }
+            lightCount += 1
+            for yy in top..<bottom {
+                for xx in left..<right {
+                    let dest = (sy+yy)*width+sx+xx
+                    illumination[dest] = min(255,illumination[dest]+UInt16(mask.intensity[yy*mask.width+xx]))
+                }
+            }
         }
         var land = 0, items = 0, missing = Set<Int>(), hued = 0
         let radius = min(64, max(24, (width + height) / 88 + 5))
@@ -142,6 +163,7 @@ public enum WorldRenderer {
                 sx = anchorX - sprite.width / 2
                 sy = anchorY + 44 - sprite.height
             }
+            if tile.isStatic { try addLight(graphic:tile.art-0x4000,atX:anchorX,atY:anchorY+22) }
             let left = max(0, -sx), right = min(sprite.width, width - sx)
             let top = max(0, -sy), bottom = min(sprite.height, height - sy)
             if left >= right || top >= bottom { continue }
@@ -159,6 +181,11 @@ public enum WorldRenderer {
                     pixels[dest + 1] = color.1
                     pixels[dest + 2] = color.2
                 }
+            }
+        }
+        if !illumination.isEmpty {
+            for i in 0..<width*height {
+                for c in 0..<3 { pixels[i*4+c] = UInt8(UInt16(pixels[i*4+c])*illumination[i]/255) }
             }
         }
         return Frame(width: width, height: height, rgba: pixels, landCount: land,

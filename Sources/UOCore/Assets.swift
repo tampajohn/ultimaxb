@@ -128,6 +128,7 @@ public final class ClientAssets {
     public let width: Int
     public let height = 4096
     public let reportedVersion: String
+    public let lights:LightAssets?
     public let sounds:SoundAssets?
     public let animations: AnimationAssets?
     public let skills: [SkillDefinition]
@@ -161,6 +162,8 @@ public final class ClientAssets {
         if files["anim.idx"] != nil, files["anim.mul"] != nil {
             animations = try AnimationAssets(index: load("anim.idx").data, data: load("anim.mul").data)
         } else { animations = nil }
+        lights = try files["lightidx.mul"] != nil && files["light.mul"] != nil
+            ? LightAssets(index:load("lightidx.mul").data,data:load("light.mul").data) : nil
         sounds = try files["soundidx.mul"] != nil && files["sound.mul"] != nil
             ? SoundAssets(index:load("soundidx.mul").data,data:load("sound.mul").data) : nil
         gumps = try files["gumpidx.mul"] != nil && files["gumpart.mul"] != nil
@@ -336,6 +339,12 @@ public final class ClientAssets {
         let offset = 512 * 836 + graphic / 32 * 1188 + 4 + graphic % 32 * 37
         guard offset + 37 <= tileData.count else { return 0 }
         return try tileData.u32(offset)
+    }
+    public func lightIndex(graphic:Int) throws -> Int? {
+        guard try itemFlags(graphic:graphic) & 0x800000 != 0,let tileData else { return nil }
+        if (0x3E02...0x3E0B).contains(graphic) || (0x3914...0x3929).contains(graphic) || graphic == 0xB1D { return 2 }
+        let offset = 512*836+graphic/32*1188+4+graphic%32*37
+        return try tileData.u8(offset+5)
     }
     public func isStackable(graphic: Int) throws -> Bool {
         try itemFlags(graphic: graphic) & 0x00000800 != 0
