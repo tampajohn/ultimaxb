@@ -1000,7 +1000,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 view.player = player
                 if self?.mapPanel?.superview != nil { self?.mapPanel?.update(player:player,mobiles:view.mobiles) }
                 if modeChanged { self?.characterPanel?.update(player:player,equipment:view.equipment) }
-                view.sidebar?.updateMode(war:(player?.flags ?? 0) & 0x40 != 0)
+                view.sidebar?.updateMode(war:(player?.flags ?? 0) & 0x40 != 0, hidden:(player?.flags ?? 0) & 0x80 != 0)
                 view.window?.invalidateCursorRects(for:view)
                 view.sidebar?.isHidden = player == nil
                 view.sidebar?.updateEquipment(view.equipment, player:player?.serial, assets:view.assets)

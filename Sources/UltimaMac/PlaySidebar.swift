@@ -7,6 +7,7 @@ final class PlaySidebar: NSView {
     let skills: SkillsPanel
     private let status = NSTextField(wrappingLabelWithString: "Waiting for character status…")
     private let targetLabel = NSTextField(wrappingLabelWithString:"No combat target")
+    private let title = NSTextField(labelWithString: "Character status")
     private let held = NSTextField(wrappingLabelWithString: "")
     private var warButton: NSButton?
     var onCommand: ((Int) -> Void)?
@@ -16,7 +17,6 @@ final class PlaySidebar: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = NSColor(calibratedWhite: 0.11, alpha: 1).cgColor
-        let title = NSTextField(labelWithString: "Character status")
         title.font = .boldSystemFont(ofSize: 18)
         title.frame = NSRect(x:16,y:14,width:248,height:24); addSubview(title)
         status.font = .monospacedSystemFont(ofSize:12,weight:.regular)
@@ -49,7 +49,8 @@ final class PlaySidebar: NSView {
         let maximum = target.status?.maxHealth.map(String.init) ?? "—"
         targetLabel.stringValue = "\(title)\nHealth \(health) / \(maximum)"
     }
-    func updateMode(war:Bool) {
+    func updateMode(war:Bool, hidden:Bool = false) {
+        title.stringValue = hidden ? "Character · Hidden" : "Character status"
         warButton?.title = war ? "War · A" : "Peace · A"
         warButton?.toolTip = "Toggle peace/war mode. In war mode, double-click a mobile to attack."
     }

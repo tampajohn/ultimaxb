@@ -136,7 +136,10 @@ public enum WorldRenderer {
                     let sprite = frame.sprite
                     let sx = Int(screenX.rounded()) - (frame.mirrored ? sprite.width - frame.centerX : frame.centerX)
                     let sy = Int(screenY.rounded()) + 22 - sprite.height - frame.centerY
-                    let palette = try assets.huePalette(hue, art: art)
+                    // Classic clients tint visible hidden mobiles and all worn
+                    // layers with the full hidden hue, regardless of item hues.
+                    let hidden = mobile.flags & 0x80 != 0
+                    let palette = try assets.huePalette(hidden ? 0x038E : hue, art: hidden ? nil : art)
                     let left = max(0, -sx), right = min(sprite.width, width - sx)
                     let top = max(0, -sy), bottom = min(sprite.height, height - sy)
                     guard left < right, top < bottom else { return }

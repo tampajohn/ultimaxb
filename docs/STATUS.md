@@ -525,3 +525,25 @@ Normal-cadence save observation: the original port-2593 server (PID 85184)
 remained listening after its index save advanced to 19:36, approximately 17
 minutes after startup. This verifies one normal periodic save after the fix,
 in addition to the accelerated isolated test; it is not a long-duration soak.
+
+Skill commands: traced nonsensical skill values and unusable skills to OUO's
+loader interpreting a leading skills.txt comment banner as the version header.
+A tracked source patch skips banners before parsing the header. The isolated
+Anatomy-target integration test passes and now asserts all 46 skills equal 1000
+tenths after `.set all 1000`, replacing the earlier Mining-only assertion. The
+port-2593 server was cleanly saved and restarted with the correction.
+
+Hidden appearance: renderer now applies full classic hidden hue 0x038E to a
+mobile and its equipment when the server's 0x80 flag is present, following the
+local CrossUO reference. The player remains visible to themselves; a sidebar
+label confirms Hidden. Installed-asset harness verifies a distinct visible
+appearance and exact original-color restoration when revealed. Release suite:
+203 tests, 3 opt-in skips, zero failures.
+
+Spell integration remains incomplete: the new opt-in classic spell test opens a
+Test Center starter spellbook but receives no contents and no Night Sight target.
+It currently fails against the isolated server, even after the skill-loader fix;
+this is recorded as an unresolved gameplay gap, not a passing spell workflow.
+The user's indoor-lighting report also remains under investigation: telemetry
+shows server ambient level 22 (brightness 0.3125), but that alone does not explain
+reported indoor appearance. No speculative brightness override was installed.

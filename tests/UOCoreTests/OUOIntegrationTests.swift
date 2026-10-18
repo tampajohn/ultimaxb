@@ -15,7 +15,15 @@ final class OUOIntegrationTests: XCTestCase {
         try await exerciseWorld(verifySkillTarget: true)
     }
     @MainActor
-    private func exerciseWorld(verifySkillTarget: Bool) async throws {
+    func testClassicSpellCasting() async throws {
+        guard ProcessInfo.processInfo.environment["UO_VERIFY_SPELLS"] == "1",
+              ProcessInfo.processInfo.environment["UO_LOCAL_TEST_CENTER"] == "1" else {
+            throw XCTSkip("Requires an isolated complete-script Test Center and UO_VERIFY_SPELLS=1")
+        }
+        try await exerciseWorld(verifySkillTarget: false, verifySpells: true)
+    }
+    @MainActor
+    private func exerciseWorld(verifySkillTarget: Bool, verifySpells: Bool = false) async throws {
         guard let value = ProcessInfo.processInfo.environment["UO_LOCAL_TEST_PORT"],
               let port = UInt16(value) else { throw XCTSkip("Set UO_LOCAL_TEST_PORT for a local OUO integration run") }
         let connection = GameConnection()
@@ -27,6 +35,8 @@ final class OUOIntegrationTests: XCTestCase {
         var characterStatus: CharacterStatus?
         var skills = SkillState()
         var skillTarget: TargetRequest?
+        var spellEffects: [GraphicEffect] = []
+        var spellActions: [MobileAction] = []
         var fixtureMessages: [String] = []
         var complete = false
         var movement = PlayerMovement()
@@ -67,6 +77,8 @@ final class OUOIntegrationTests: XCTestCase {
                             }
                         }
                         switch opcode {
+                        case 0x70: if verifySpells { spellEffects.append(try GraphicEffect.decode(packet)) }
+                        case 0x6E: if verifySpells { spellActions.append(try MobileAction.decode(packet)) }
                         case 0x3A: try skills.apply(packet)
                         case 0x6C: skillTarget = try TargetRequest.decode(packet)
                         case 0xA9:
@@ -211,7 +223,38 @@ final class OUOIntegrationTests: XCTestCase {
             XCTAssertEqual(characterStatus?.strength,100,"Test Center stat command was not applied")
             XCTAssertEqual(characterStatus?.dexterity,100,"DEX did not refresh after stamina maximum changed")
             XCTAssertEqual(characterStatus?.intelligence,100,"INT did not refresh after mana maximum changed")
-            XCTAssertTrue((skills.values[45] ?? 0) >= 1000,"Test Center skill command was not applied")
+            XCTAssertEqual(skills.values.count, 46, "Chosen classic skill definitions were not loaded")
+            for id in 0..<46 {
+                XCTAssertEqual(skills.values[id], 1000, "Test Center skill \(id) did not become 100.0")
+            }
+        }
+        if verifySpells {
+            let player = try XCTUnwrap(entry)
+            let book = try XCTUnwrap(world.containerItems.values.first { $0.graphic == 0x0EFA })
+            connection.send(InteractionPackets.use(serial: book.serial))
+            for _ in 0..<100 {
+                if ClassicSpells.contents(book: book.serial, items: Array(world.containerItems.values)).count == 64 { break }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            XCTAssertEqual(ClassicSpells.contents(book: book.serial, items: Array(world.containerItems.values)).count, 64)
+            for (id, kind): (Int, GraphicEffect.Kind) in [(6, .attached), (30, .lightning)] {
+                try await Task.sleep(for: .seconds(2))
+                skillTarget = nil; spellEffects.removeAll(); spellActions.removeAll()
+                connection.send(try ClassicSpells.cast(id: id, book: book.serial))
+                for _ in 0..<200 {
+                    if skillTarget != nil || failure != nil { break }
+                    try await Task.sleep(for: .milliseconds(50))
+                }
+                let target = try XCTUnwrap(skillTarget, "Spell \(id) did not request a target")
+                let mobile = try XCTUnwrap(world.mobiles[player.serial])
+                connection.send(try target.response(TargetSelection(serial: player.serial, x: mobile.x, y: mobile.y, z: mobile.z, graphic: mobile.body)))
+                for _ in 0..<200 {
+                    if spellEffects.contains(where: { $0.kind == kind && $0.source == player.serial }) { break }
+                    try await Task.sleep(for: .milliseconds(50))
+                }
+                XCTAssertTrue(spellEffects.contains { $0.kind == kind && $0.source == player.serial }, "Spell \(id) effect missing")
+                XCTAssertTrue(spellActions.contains { $0.serial == player.serial }, "Spell \(id) casting animation missing")
+            }
         }
         XCTAssertNotNil(characterStatus?.maxHealth)
         XCTAssertNotNil(characterStatus?.gold)

@@ -1,0 +1,20 @@
+diff --git a/skill.c b/skill.c
+index 124a857..e081831 100644
+--- a/skill.c
++++ b/skill.c
+@@ -559,6 +559,15 @@ CSkillManager_LoadSkills(CSkillManager *mgr)
+ 			break;
+ 
+ 		if (headerFlag == 1) {
++			// Standalone skills.txt may start with document comment banners.
++			// They are not the version line; treating one as the header shifts
++			// every fixed-order field, including skill script names.
++			while (line[0] == '#' || line[0] == '\n' || line[0] == '\r') {
++				if (fgets_ServerSide(line, 0x1FF, f) == NULL) {
++					fclose_ServerSide(f);
++					return 0;
++				}
++			}
+ 			headerFlag = 0;
+ 
+ 			sscanfRet = sscanf(line, "%s %d\n", name, &headerVersion);

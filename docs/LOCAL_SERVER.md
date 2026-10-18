@@ -78,3 +78,13 @@ required to keep this test server local. Existing world/account data stays in
 place. Reusing `UO_LOCAL_TEST_ACCOUNT` with the opt-in integration test now checks
 that the fixture's modified Test Center strength survived the restart. Only use
 a disposable fixture account with that test, never a playing character.
+
+## Skill definition header correction
+
+`tools/server-patches/ouo-skill-header.patch` skips leading document-comment
+banners before reading the skills.txt version header. Without it, the fixed-order
+parser shifted every field, corrupting effective skill values and script names.
+Apply this patch alongside the other server patches before building. Verified
+with a disposable character: all 46 skills become exactly 100.0 after `.set all
+1000`, and Anatomy returns a target cursor. The local server was saved and
+restarted with this correction; reconnect to refresh displayed values.
