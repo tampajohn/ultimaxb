@@ -340,8 +340,7 @@ World corpse markers (0x2006) now retain the body ID and direction and render th
 final classic death frame instead of invisible static art. Alpha hit-testing uses
 the same frame and retains the corpse serial for normal double-click container
 use. Installed assets verified monster/animal/human bodies in all eight directions.
-Death transitions, alternate death poses, body remapping and corpse equipment
-layers remain incomplete. Live kill-to-loot behavior still needs verification.
+Death transitions, alternate death poses and body remapping remain incomplete. Live kill-to-loot behavior still needs verification.
 
 ### Separate local login profile
 
@@ -353,3 +352,15 @@ separate namespace and Keychain service, so saving or forgetting local credentia
 does not modify the primary profile. Switching is disabled during connection/play.
 Release build and an isolated-preferences UI harness verify local save/forget,
 profile switching, fixed local address and preservation of primary settings.
+
+### Corpse equipment layers
+
+0x89 corpse equipment lists are now decoded with length, layer and duplicate-entry
+validation. They join with container item descriptions in either arrival order;
+only items still owned by that corpse can appear on it. Clothing uses final death
+frames, classic layer order and individual hues. The composite preserves body
+anchors and is shared with alpha hit-testing. Looted/deleted items are omitted,
+and corpse equipment metadata is pruned with distant scenery. This does not put
+corpse contents into the player's equipped-item model. Tests cover reordered
+updates, wrong owners, loot removal and malformed packets; installed human assets
+verify hued clothing and selection in eight directions. 192 tests passed, 2 skipped.

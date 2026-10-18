@@ -21,6 +21,7 @@ public struct GroundItem: Equatable, Sendable {
     public let direction: UInt8
     public let hue: Int
     public let flags: UInt8
+    public var corpseEquipment:[EquippedItem] = []
 
     public static func decode(_ packet: Data) throws -> GroundItem {
         var r = PacketReader(packet)
@@ -50,11 +51,18 @@ public struct WorldState {
     public private(set) var items: [UInt32: GroundItem] = [:]
     public private(set) var equipment: [UInt32: EquippedItem] = [:]
     public private(set) var containerItems: [UInt32: ContainerItem] = [:]
+    private var corpseLayers:[UInt32:[UInt8:UInt32]] = [:]
     public private(set) var openContainer: OpenContainer?
     public init() {}
     @discardableResult public mutating func apply(_ packet: Data) throws -> Bool {
         guard let opcode = packet.first else { throw LoginProtocolError.malformedPacket }
         switch opcode {
+        case 0x89:
+            let contents = try CorpseEquipment.decode(packet)
+            guard corpseLayers[contents.serial] != contents.layers else { return false }
+            guard corpseLayers[contents.serial] != nil || corpseLayers.count < 4096 else { throw LoginProtocolError.bufferLimit }
+            corpseLayers[contents.serial] = contents.layers
+            return true
         case 0x1B, 0x20, 0x77, 0x78:
             let mobile = try WorldMobile.decode(packet)
             var equipmentChanged = false
@@ -90,6 +98,7 @@ public struct WorldState {
             guard packet.count == 5 else { throw LoginProtocolError.malformedPacket }
             var r = PacketReader(packet, offset: 1)
             let serial = try r.dword()
+            corpseLayers.removeValue(forKey:serial)
             let removedItem = items.removeValue(forKey: serial) != nil
             let removedMobile = opcode == 0x1D ? mobiles.removeValue(forKey: serial) != nil : false
             let oldEquipment = equipment.count
@@ -128,6 +137,9 @@ public struct WorldState {
         }
         let previous = items.count + mobiles.count + equipment.count
         items = items.filter { nearby($0.value.x, $0.value.y) }
+        let expiredCorpses = Set(corpseLayers.keys.filter { items[$0] == nil })
+        corpseLayers = corpseLayers.filter { !expiredCorpses.contains($0.key) }
+        containerItems = containerItems.filter { !expiredCorpses.contains($0.value.container) }
         let removed = Set(mobiles.values.filter { $0.serial != playerSerial && !nearby($0.x, $0.y) }.map(\.serial))
         mobiles = mobiles.filter { !removed.contains($0.key) }
         equipment = equipment.filter { !removed.contains($0.value.owner) }
@@ -142,11 +154,23 @@ public struct WorldState {
         guard mobiles[mobile.serial] != nil else { return }
         mobiles[mobile.serial] = mobile
     }
+    public var groundObjects:[GroundItem] {
+        items.values.sorted { $0.serial < $1.serial }.map { item in
+            var result = item
+            if item.graphic == 0x2006 {
+                result.corpseEquipment = (corpseLayers[item.serial] ?? [:]).compactMap { layer,serial in
+                    guard let equipment = containerItems[serial], equipment.container == item.serial else { return nil }
+                    return EquippedItem(serial:serial,graphic:equipment.graphic,layer:layer,owner:item.serial,hue:equipment.hue)
+                }.sorted { $0.layer < $1.layer }
+            }
+            return result
+        }
+    }
     public var groundTiles: [WorldTile] {
-        items.values.sorted { $0.serial < $1.serial }.compactMap { item in
+        groundObjects.compactMap { item in
             guard item.graphic < 0x4000, item.flags & 0x80 == 0 else { return nil }
             return WorldTile(x: item.x, y: item.y, z: item.z, art: item.graphic + 0x4000, hue: item.hue,
-                             corpseBody:item.graphic == 0x2006 ? item.amount : nil,corpseDirection:item.direction)
+                             corpseBody:item.graphic == 0x2006 ? item.amount : nil,corpseDirection:item.direction,corpseEquipment:item.corpseEquipment)
         }
     }
 }

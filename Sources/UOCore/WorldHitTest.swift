@@ -13,7 +13,7 @@ public enum WorldHitTest {
         for entry in entries.reversed() {
             let item = visible[entry.originalIndex]
             guard try item.graphic == 0x2006 || !assets.isNoDraw(graphic:item.graphic) else { continue }
-            let corpse = try item.graphic == 0x2006 ? CorpseArt.frame(body:item.amount,direction:item.direction,assets:assets) : nil
+            let corpse = try item.graphic == 0x2006 ? CorpseArt.frame(body:item.amount,direction:item.direction,assets:assets,hue:item.hue,equipment:item.corpseEquipment) : nil
             guard let sprite = try corpse?.sprite ?? assets.worldSprite(item.graphic+0x4000,at:animationTime) else { continue }
             let ax = Double(width / 2) + ((Double(item.x) - camera.x) - (Double(item.y) - camera.y)) * 22
             let ay = Double(height / 2) + ((Double(item.x) - camera.x) + (Double(item.y) - camera.y)) * 22 - Double(item.z * 4)

@@ -95,6 +95,7 @@ public struct WorldTile {
     public let x: Int, y: Int, z: Int, art: Int, hue: Int
     public var corpseBody:Int? = nil
     public var corpseDirection:UInt8 = 0
+    public var corpseEquipment:[EquippedItem] = []
     public var isStatic: Bool { art >= 0x4000 }
 }
 

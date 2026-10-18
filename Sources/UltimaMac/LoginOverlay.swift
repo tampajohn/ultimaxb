@@ -1073,7 +1073,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                     Telemetry.shared.record("world_update", ["mobiles": world.mobiles.count, "ground_items": world.items.count, "equipment": world.equipment.count])
                     onEquipment?(Array(world.equipment.values))
                     onContainerItems?(Array(world.containerItems.values))
-                    onGroundObjects?(world.items.values.sorted { $0.serial < $1.serial })
+                    onGroundObjects?(world.groundObjects)
                     onGroundItems?(world.groundTiles)
                     onMobiles?(world.mobiles.values.sorted { $0.serial < $1.serial })
                 }

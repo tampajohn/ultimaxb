@@ -163,7 +163,7 @@ public enum WorldRenderer {
                 }
                 items += 1
                 continue
-            } else if let body = tile.corpseBody, let corpse = try CorpseArt.frame(body:body,direction:tile.corpseDirection,assets:assets) {
+            } else if let body = tile.corpseBody, let corpse = try CorpseArt.frame(body:body,direction:tile.corpseDirection,assets:assets,hue:tile.hue,equipment:tile.corpseEquipment) {
                 sprite = corpse.sprite; mirrored = corpse.mirrored
                 sx = anchorX - (mirrored ? sprite.width-corpse.centerX : corpse.centerX)
                 sy = anchorY + 22 - sprite.height - corpse.centerY
@@ -178,7 +178,7 @@ public enum WorldRenderer {
             let top = max(0, -sy), bottom = min(sprite.height, height - sy)
             if left >= right || top >= bottom { continue }
             if tile.isStatic { items += 1 } else { land += 1 }
-            let hue = try assets.huePalette(tile.hue, art: mobile == nil ? tile.art : nil)
+            let hue = try assets.huePalette(tile.corpseBody == nil ? tile.hue : 0, art: mobile == nil ? tile.art : nil)
             if tile.hue & 0x3FFF != 0 && hue == nil { hued += 1 }
             for yy in top..<bottom {
                 for xx in left..<right {
