@@ -44,3 +44,10 @@ failures. The server-dialog harness additionally verifies page changes without
 replies, selection state and Unicode text across pages, plus formatted text, item art
 and overflowing scroll content. This does not establish
 live dialog compatibility or completion of the full parity goal.
+
+Live integration check (2026-10-18): saved-Keychain login, shard selection and
+existing-character world entry succeeded in Minoc. Status/skills requests and
+backpack open/contents completed without packet errors, inventory rejection or
+disconnect during the check. No items or character position were changed. Ambient
+0xFFFF sound requests are ignored rather than reported as missing samples; this
+does not stop other sounds. General server dialogs remain locally tested only.

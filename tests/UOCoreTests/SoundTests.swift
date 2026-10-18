@@ -12,6 +12,13 @@ final class SoundTests:XCTestCase {
         XCTAssertGreaterThan(sound.pan(listenerX:10,listenerY:30),0)
         XCTAssertThrowsError(try SoundEffect.decode(Data([0x54,1])))
     }
+    func testAbsentSoundIDIsNotAnAssetRequest() throws {
+        let silent = try SoundEffect.decode(Data([0x54,1,0xFF,0xFF,0,0,0,10,0,20,0,0]))
+        XCTAssertFalse(silent.hasSample)
+        let normal = try SoundEffect.decode(Data([0x54,1,0,1,0,0,0,10,0,20,0,0]))
+        XCTAssertTrue(normal.hasSample)
+        XCTAssertEqual(silent.flags,1)
+    }
     func index(_ offset:Int,_ length:Int)->Data {
         var result = Data()
         for n in [offset,length,0] { for shift in stride(from:0,to:32,by:8) { result.append(UInt8(truncatingIfNeeded:n>>shift)) } }

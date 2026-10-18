@@ -9,6 +9,9 @@ public struct SoundEffect: Equatable {
         let x = Int(try r.word()), y = Int(try r.word()), z = Int(Int16(bitPattern:try r.word()))
         return SoundEffect(id:id,flags:flags,volume:volume,x:x,y:y,z:z)
     }
+    // 0xFFFF is outside the classic sound table and is emitted for absent NPC sounds.
+    // It is not a stop-all command: existing voices must continue playing.
+    public var hasSample:Bool { id != 0xFFFF }
     public func gain(listenerX:Int,listenerY:Int,range:Int = 18)->Float {
         let distance = max(abs(x-listenerX),abs(y-listenerY))
         guard range >= 0, distance <= range else { return 0 }

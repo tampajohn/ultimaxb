@@ -60,7 +60,7 @@ final class GameAudio {
         } catch { Telemetry.shared.record("music_load_failed",["id":id]) }
     }
     func play(_ sound:SoundEffect,assets:ClientAssets,listener:WorldMobile?) {
-        guard enabled, NSApplication.shared.isActive, let listener else { return }
+        guard sound.hasSample, enabled, NSApplication.shared.isActive, let listener else { return }
         let gain = sound.gain(listenerX:listener.x,listenerY:listener.y)
         guard gain>0 else { return }
         do {
