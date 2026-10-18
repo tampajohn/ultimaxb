@@ -54,4 +54,23 @@ final class MobileMotionTests: XCTestCase {
         motion.update([cat(12)], at: 2)
         XCTAssertGreaterThan(motion.presentations(at: 2.15)[1]!.frame, 0)
     }
+    func testWalkToRunDropsOldCadenceWithoutPositionOrPhaseJump() throws {
+        var motion = MobileMotion()
+        motion.update([cat(10)], at: 0, playerSerial: 1)
+        motion.update([cat(11)], at: 1, playerSerial: 1)
+        let before = try XCTUnwrap(motion.presentations(at: 1.4)[1])
+        // An unrelated snapshot may set the running flag before the next step.
+        motion.update([cat(11, direction: 0x82)], at: 1.4, playerSerial: 1)
+        motion.update([cat(12, direction: 0x82)], at: 1.4, playerSerial: 1)
+        let start = try XCTUnwrap(motion.presentations(at: 1.4)[1])
+        XCTAssertEqual(start.x, before.x)
+        XCTAssertEqual(start.frame, before.frame)
+        XCTAssertEqual(motion.presentations(at: 1.5)[1]!.x, 11.5, accuracy: 0.00001)
+        XCTAssertEqual(motion.presentations(at: 1.6)[1]!.x, 12, accuracy: 0.00001)
+        // Running back to walking must also use the new pace immediately.
+        motion.update([cat(13)], at: 1.6, playerSerial: 1)
+        XCTAssertEqual(motion.presentations(at: 1.8)[1]!.x, 12.5, accuracy: 0.00001)
+        XCTAssertEqual(motion.presentations(at: 2)[1]!.x, 13, accuracy: 0.00001)
+    }
+
 }

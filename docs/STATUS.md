@@ -211,3 +211,18 @@ toggles it. Local UI checks verify wheel scrolling, preserved reading position,
 tail following, clearing and the artwork-backed history button.
 
 Validation: release build and 172 core tests (2 asset-dependent skips, no failures).
+
+### Running pace transitions
+
+Movement interpolation now starts a fresh cadence estimate when switching between
+walking and running, while keeping position and animation phase continuous. The
+old estimate could render the first running step over 300 ms after walking instead
+of its 200 ms base duration. A regression covers an intervening facing-only update
+and both pace changes. Release suite: 173 tests, 2 skipped, no failures.
+
+The local OUO reference (`CPlayer_HandleMovement`) tracks movement timing across
+five requests and increases stamina drain for rapid requests. This is reference
+behavior, not proof of the deployed UO1998 server configuration. Movement packets
+carry direction and sequence, not a requested multi-tile destination; client
+pipelining remains bounded at five outstanding single-step requests. Batched
+movement speed behavior on the live shard has not been verified.

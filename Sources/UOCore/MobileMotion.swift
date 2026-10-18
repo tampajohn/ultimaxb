@@ -17,6 +17,7 @@ public struct MobileMotion {
         var duration: Double
         var animationStarted: Double
         var grace: Double = 0
+        var running: Bool = false
     }
     private struct ActionTrack {
         let command: MobileAction
@@ -60,13 +61,18 @@ public struct MobileMotion {
             let player = mobile.serial == playerSerial
             let baseDuration = (mobile.direction & 0x80 != 0 ? 0.1 : 0.2) * (player ? 2 : 1)
             let interval = time - old.started
-            let duration = player && old.duration > 0 && interval >= 0.08 && interval <= 0.65
+            // A pace change starts a new cadence estimate. Keep the rendered
+            // position and animation phase, but never average walking delay into
+            // running. Track the moving segment's pace separately from facing-
+            // only snapshots, which can replace old.target before the next step.
+            let running = mobile.direction & 0x80 != 0
+            let duration = player && old.running == running && old.duration > 0 && interval >= 0.08 && interval <= 0.65
                 ? max(baseDuration, min(baseDuration + 0.1, old.duration * 0.65 + interval * 0.35)) : baseDuration
             tracks[mobile.serial] = Track(from: teleport ? Self.stationary(mobile) : current,
                                           target: mobile, started: time,
                                           duration: teleport ? 0 : duration,
                                           animationStarted: current.walking ? old.animationStarted : time,
-                                          grace: player && !teleport ? 0.12 : 0)
+                                          grace: player && !teleport ? 0.12 : 0, running: running)
         }
     }
     public func presentations(at time: Double) -> [UInt32: MobilePresentation] {
