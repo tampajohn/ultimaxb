@@ -41,7 +41,7 @@ Xbox port. The present client is experimental and is not at parity yet.
 
 ## Local verification snapshot
 
-2026-10-18: 157 Swift tests executed, 2 opt-in integration tests skipped, no
+2026-10-18: 158 Swift tests executed, 2 opt-in integration tests skipped, no
 failures. The server-dialog harness additionally verifies page changes without
 replies, selection state and Unicode text across pages, plus formatted text, item art
 and overflowing scroll content. This does not establish
@@ -157,3 +157,10 @@ entries retain the server hue and use the original palette, falling back to whit
 when no usable palette is available. Font IDs are preserved but original bitmap
 font rendering is still pending; journal/chat text styling remains unchanged.
 Packet-to-overhead tests verify hue preservation.
+
+Outgoing speech modes: classic prefix-plus-space input selects whisper (;), yell
+(!), or emote (:), with a visible mode label while typing. Emotes are wrapped in
+asterisks; ordinary punctuation without a following space remains literal speech.
+Packet tests cover mode bytes, text, packet length, empty prefixes and the encoded
+200-byte limit. Metadata logs the mode byte and length only. Live delivery/range
+checks and per-mode configurable colors remain pending.

@@ -340,7 +340,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         do {
             let packet = try SpeechPackets.say(text)
             connection.send(packet)
-            Telemetry.shared.record("speech_sent", ["bytes": packet.count])
+            Telemetry.shared.record("speech_sent", ["bytes": packet.count,"type":packet[3]])
             return nil
         } catch { return String(describing: error) }
     }

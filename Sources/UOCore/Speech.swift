@@ -26,14 +26,33 @@ public struct SpeechMessage: Equatable {
     }
 }
 
+public enum SpeechMode:UInt8 {
+    case normal = 0, emote = 2, whisper = 8, yell = 9
+    public var label:String {
+        switch self { case .normal: return "Say"; case .emote: return "Emote"; case .whisper: return "Whisper"; case .yell: return "Yell" }
+    }
+}
 public enum SpeechPackets {
+    /// Classic prefix + space chooses a mode; punctuation alone remains literal.
+    public static func mode(for input:String)->SpeechMode {
+        if input.hasPrefix(": ") { return .emote }
+        if input.hasPrefix("; ") { return .whisper }
+        if input.hasPrefix("! ") { return .yell }
+        return .normal
+    }
     /// Era 1.25 uses the ASCII speech packet, including banker keywords.
-    public static func say(_ text: String) throws -> Data {
+    public static func say(_ input: String) throws -> Data {
+        let mode = mode(for:input)
+        let content = mode == .normal ? input : String(input.dropFirst(2))
+        guard !content.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else {
+            throw AssetError("Enter a message after the speech prefix.")
+        }
+        let text = mode == .emote ? "*"+content+"*" : content
         guard !text.isEmpty, !text.unicodeScalars.contains(where: { $0.value < 32 }),
               let bytes = text.data(using: .isoLatin1, allowLossyConversion: false), bytes.count <= 200 else {
             throw AssetError("Use 1–200 classic Latin characters for speech.")
         }
         let length = 9 + bytes.count
-        return Data([0x03, UInt8(length >> 8), UInt8(length & 255), 0, 0x03, 0xB2, 0, 3]) + bytes + Data([0])
+        return Data([0x03, UInt8(length >> 8), UInt8(length & 255), mode.rawValue, 0x03, 0xB2, 0, 3]) + bytes + Data([0])
     }
 }
