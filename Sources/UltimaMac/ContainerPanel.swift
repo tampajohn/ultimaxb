@@ -4,6 +4,7 @@ import UOCore
 @MainActor
 final class ContainerPanel: NSView {
     let serial: UInt32
+    private let isCorpse: Bool
     private let canvas: ContainerCanvas
     private lazy var classicCursor = ClassicCursor(assets: canvas.assets)
     override func resetCursorRects() {
@@ -56,6 +57,7 @@ final class ContainerPanel: NSView {
     override var isFlipped: Bool { true }
     init(container: OpenContainer, assets: ClientAssets) {
         serial = container.serial
+        isCorpse = container.graphic == 0x0009
         let background = try? assets.gumps?.sprite(Int(container.graphic))
         canvas = ContainerCanvas(assets: assets, background: background, serial: container.serial)
         let width = CGFloat(background?.width ?? 300) * 2
@@ -88,7 +90,10 @@ final class ContainerPanel: NSView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
     func update(_ items: [ContainerItem]) {
-        let contents = items.filter { $0.container == serial }.sorted { $0.serial < $1.serial }
+        // Corpse contents include zero-quantity appearance records (hair/beard).
+        // Keep those in world state for body rendering, but out of loot hit testing.
+        let contents = items.filter { $0.container == serial && (!isCorpse || $0.amount > 0) }
+            .sorted { $0.serial < $1.serial }
         guard contents != canvas.items else { return }
         canvas.items = contents
         for item in canvas.items {

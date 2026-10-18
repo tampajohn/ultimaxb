@@ -377,3 +377,13 @@ At its final Minoc position (2493,482,15), the installed-asset regression harnes
 verifies preview-to-play restoration, no outdoor cutoff, and 349 rendered objects
 including its player fixture, with no missing art. Release suite: 192 tests,
 two opt-in skips, no failures. Corpse render/hit-test asset harness also passes.
+
+### Corpse loot selection (2026-10-18)
+
+Corpse gump 0x0009 excludes zero-quantity appearance entries from both drawing and
+hit testing. Live metadata showed hair/beard entries overlapping actual loot and
+receiving rejected pickup requests. These records remain in world state for corpse
+body rendering; ordinary containers retain zero-amount non-stackable items.
+The installed-asset corpse-container harness verifies selection through overlapping
+appearance entries and ordinary zero-amount candle pickup. Existing container
+hover/quick-pickup/target-priority interaction checks also pass.
