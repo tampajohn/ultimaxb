@@ -442,3 +442,20 @@ comparison JavaScript syntax checked and page opened locally.
 Local Test Center recovery: the previous server stopped during a save with a
 1 GiB CDataBuffer overflow. Restarted the existing world on loopback port 2593;
 no account/world reset. Root cause and save reliability remain unresolved.
+
+### Character animation study (2026-10-18)
+
+The reference exporter now supports --walk, exporting all ten original human walk
+frames with the same layered clothing and original anchors. Added a local browser
+player comparing that cycle with an eight-frame generated study: play/pause,
+frame stepping, scrubbing, playback speed, gameplay/inspection scale, and alignment
+guides. The viewer uses fixed scale and camera, without interpolation that would
+conceal pose drift. Local generated sheet and prompts are in build/visual-upgrade.
+
+The generation is NOT production-ready: alternating gait/identity consistency is
+uneven, and multiple transparency requests retained a painted background. The
+viewer labels these defects explicitly. The approved standing style remains the
+art-direction reference; client animations and MUL assets are unchanged. Export
+completed and preview JavaScript syntax checked; the animation page was opened.
+A consistent rig or controlled frame-authoring pass is still required before
+animation replacement can preserve movement and independently equipped clothing.

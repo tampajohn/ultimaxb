@@ -1,0 +1,39 @@
+<!doctype html><meta charset="utf-8"><title>UltimaXB walk-cycle study</title>
+<style>
+body{background:#151b20;color:#e7e4da;font:16px system-ui;margin:24px}h1{font-size:26px}h2{font-size:18px}
+p{max-width:900px;line-height:1.5;color:#c4cbd0}.controls{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:20px 0}
+button,select{font:inherit;background:#29333c;color:inherit;border:1px solid #687882;border-radius:6px;padding:9px}
+.row{display:flex;gap:24px;flex-wrap:wrap}canvas{background:#27313a;max-width:100%;height:auto;border:1px solid #3b464e}
+.warning{border-left:3px solid #d7a74b;padding-left:14px}label{display:flex;gap:8px;align-items:center}output{font-variant-numeric:tabular-nums}
+</style>
+<h1>Modern character — walk-cycle study</h1>
+<p class="warning">Generated motion draft: the gait is uneven and the sheet still has a painted background. This preview shows those limitations without hiding them. It is not installed in the game.</p>
+<div class="controls"><button id="play">Pause</button><button id="previous">Previous frame</button><button id="next">Next frame</button>
+<label>Speed <select id="speed"><option value="0.25">¼ speed</option><option value="0.5">½ speed</option><option value="1" selected>Normal</option><option value="1.5">1½ speed</option></select></label>
+<label>Scale <select id="scale"><option value="1">Gameplay size</option><option value="2">2×</option><option value="4" selected>4× inspection</option></select></label>
+<label><input id="guides" type="checkbox" checked>Alignment guides</label></div>
+<label>Cycle position <input id="scrub" type="range" min="0" max="999" value="0" style="width:400px"><output id="frameLabel"></output></label>
+<div class="row"><section><h2>Original MUL walk — 10 frames</h2><canvas id="before" width="384" height="512"></canvas></section>
+<section><h2>Modernized draft — 8 frames</h2><canvas id="after" width="384" height="512"></canvas></section></div>
+<p>Both loops use the same cycle duration, with a fixed camera and scale. No interpolation or per-frame resizing is applied. Use the guides and slow playback to inspect foot contact, arm swing, silhouette changes, and the last-to-first transition.</p>
+<p><a href="compare.html" style="color:#9ccef4">Back to the approved standing-character comparison</a></p>
+<script>
+const before=document.getElementById('before'),after=document.getElementById('after'),play=document.getElementById('play'),previous=document.getElementById('previous'),next=document.getElementById('next'),speed=document.getElementById('speed'),scale=document.getElementById('scale'),guides=document.getElementById('guides'),scrub=document.getElementById('scrub'),frameLabel=document.getElementById('frameLabel');
+const original=new Image(),modern=new Image();original.src='character-original-walk.png';modern.src='character-modern-walk-draft.png';
+let phase=0,playing=true,last=performance.now();
+function draw(){if(!original.naturalWidth||!modern.naturalWidth)return;
+const zoom=Number(scale.value),a=Math.floor(phase*10)%10,b=Math.floor(phase*8)%8;
+[[before,original,a,4,3,0.25,192,432,false],[after,modern,b,4,2,0.13,modern.naturalWidth/8,modern.naturalHeight/2-6,true]].forEach(([canvas,image,index,cols,rows,base,ax,ay,smooth])=>{
+const ctx=canvas.getContext('2d'),w=image.naturalWidth/cols,h=image.naturalHeight/rows,factor=zoom*base;
+ctx.clearRect(0,0,canvas.width,canvas.height);ctx.imageSmoothingEnabled=smooth;
+ctx.drawImage(image,index%cols*w,Math.floor(index/cols)*h,w,h,192-ax*factor,420-ay*factor,w*factor,h*factor);
+if(guides.checked){ctx.strokeStyle='#74e5c688';ctx.lineWidth=1;ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(192,40);ctx.lineTo(192,470);ctx.moveTo(24,420);ctx.lineTo(360,420);ctx.stroke();ctx.setLineDash([])}});
+frameLabel.textContent=`Original ${a+1}/10 · Modern ${b+1}/8`;scrub.value=Math.floor(phase*999)}
+function pause(){playing=false;play.textContent='Play'}
+play.onclick=()=>{playing=!playing;play.textContent=playing?'Pause':'Play';last=performance.now()};
+previous.onclick=()=>{pause();phase=((Math.floor(phase*8)+7)%8)/8;draw()};
+next.onclick=()=>{pause();phase=((Math.floor(phase*8)+1)%8)/8;draw()};
+scrub.oninput=()=>{pause();phase=Number(scrub.value)/1000;draw()};scale.onchange=guides.onchange=draw;
+function tick(now){if(playing)phase=(phase+Math.min(100,now-last)/800*Number(speed.value))%1;last=now;draw();requestAnimationFrame(tick)}
+requestAnimationFrame(tick);
+</script>
