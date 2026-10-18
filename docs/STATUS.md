@@ -115,3 +115,9 @@ right-click removes it. Repeated drags reuse the same book/spell shortcut, with 
 64-icon session limit and cleanup on disconnect. UI fixtures verify the drag
 threshold, absence of casting during drag, screen clamping, casting callback and
 removal. Layout persistence and live casting remain pending.
+
+Targeting: while a server target cursor is active, T selects the player. Clicking
+the paperdoll body, equipment or backpack selects that object before any use or
+drag action. Existing Escape cancellation remains available. Local paperdoll
+fixtures verify target identities and absence of use/drop side effects, alongside
+normal equipment dragging. Live spell/tool outcomes still require validation.

@@ -317,6 +317,15 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             Telemetry.shared.record(selection == nil ? "target_cancelled" : "target_selected", ["cursor": request.cursor, "serial": selection?.serial ?? 0, "x":selection?.x ?? -1,"y":selection?.y ?? -1,"z":selection?.z ?? 0,"graphic":selection?.graphic ?? 0])
         } catch { onInventoryMessage?("Select an object for this target.") }
     }
+    func targetPaperdoll(serial:UInt32)->Bool {
+        guard targeting,let playerSerial,let player = world.mobiles[playerSerial] else { return false }
+        if serial == playerSerial {
+            target(TargetSelection(serial:serial,x:player.x,y:player.y,z:player.z,graphic:player.body))
+        } else if let item = world.equipment[serial],item.owner == playerSerial {
+            target(TargetSelection(serial:serial,x:player.x,y:player.y,z:player.z,graphic:item.graphic))
+        } else { return false }
+        return true
+    }
     func targetInventory(serial: UInt32) {
         guard let item = world.containerItems[serial] else { return }
         target(TargetSelection(serial: serial, x: item.x, y: item.y, z: 0, graphic: item.graphic))

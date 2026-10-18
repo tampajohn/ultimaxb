@@ -7,6 +7,7 @@ final class CharacterPanel: NSView {
     private let statsLabel = NSTextField(wrappingLabelWithString: "Waiting for character status…")
     private let equipmentList = NSStackView()
     var onDropEquipment: ((EquippedItem, NSPoint) -> Void)?
+    var onTarget: ((UInt32)->Bool)?
     var onUseEquipment: ((UInt32) -> Void)?
     var onRemoveEquipment: ((UInt32) -> Void)?
     static func destination(in root:NSView, windowPoint:NSPoint, item:ContainerItem)->(UInt32,NSPoint)? {
@@ -41,6 +42,7 @@ final class CharacterPanel: NSView {
         super.init(frame:NSRect(x:16,y:16,width:262,height:324))
         avatar.frame = bounds; avatar.bounds = NSRect(x:0,y:0,width:262,height:324); addSubview(avatar)
         avatar.onDropEquipment = { [weak self] in self?.onDropEquipment?($0,$1) }
+        avatar.onTarget = { [weak self] in self?.onTarget?($0) ?? false }
         avatar.onUseEquipment = { [weak self] in self?.onUseEquipment?($0) }
         avatar.onBackpack = { [weak self] in self?.onBackpack?() }
         avatar.onClose = { [weak self] in self?.onClose?() }
@@ -150,6 +152,7 @@ private final class AvatarView: NSView {
     init(assets: ClientAssets) { self.assets = assets; super.init(frame: .zero) }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
     var onBackpack: (() -> Void)?
+    var onTarget: ((UInt32)->Bool)?
     var onUseEquipment: ((UInt32) -> Void)?
     private var layers: [Paperdoll.Layer] = []
     private var background: Sprite?
@@ -185,12 +188,22 @@ private final class AvatarView: NSView {
         }
         return nil
     }
+    private var consumedTarget = false
     private var movingBackground = false
     private var closing = false
     private let closeArea = NSRect(x:228,y:260,width:16,height:16)
     override func mouseDown(with event:NSEvent) {
         let point = convert(event.locationInWindow,from:nil)
         itemPreview?.removeFromSuperview(); itemPreview = nil
+        consumedTarget = false; movingBackground = false; closing = false
+        draggedItem = nil; itemOrigin = nil
+        let x = Int(point.x)-8, y = Int(point.y)-19
+        if let layer = layers.reversed().first(where: {
+            let sprite = $0.sprite
+            return x>=0 && y>=0 && x<sprite.width && y<sprite.height && sprite.rgba[(y*sprite.width+x)*4+3] != 0
+        }), let serial = layer.item?.serial ?? player?.serial, onTarget?(serial) == true {
+            consumedTarget = true; return
+        }
         itemOrigin = event.locationInWindow
         draggedItem = layers.reversed().first { layer in
             guard let item = layer.item, EquipmentRules.isWearable(item.layer) else { return false }
@@ -206,6 +219,7 @@ private final class AvatarView: NSView {
         if movingBackground { onBackgroundDown?(event) }
     }
     override func mouseDragged(with event:NSEvent) {
+        if consumedTarget { return }
         if movingBackground { onBackgroundDrag?(event); return }
         guard !closing, let item = draggedItem, let origin = itemOrigin, let root = window?.contentView,
               hypot(event.locationInWindow.x-origin.x,event.locationInWindow.y-origin.y) > 4 else { return }
@@ -220,6 +234,7 @@ private final class AvatarView: NSView {
         }
     }
     override func mouseUp(with event: NSEvent) {
+        if consumedTarget { consumedTarget = false; return }
         onBackgroundUp?(event); movingBackground = false
         if let preview = itemPreview, let item = draggedItem {
             preview.removeFromSuperview(); itemPreview = nil; draggedItem = nil; itemOrigin = nil

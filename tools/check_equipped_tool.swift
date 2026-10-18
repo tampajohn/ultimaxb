@@ -57,6 +57,23 @@ import UOCore
   avatar.mouseDragged(with:mouse(.leftMouseDragged,packPoint))
   avatar.mouseUp(with:mouse(.leftMouseUp,packPoint))
   precondition(packDrops == [23])
+  var targets:[UInt32] = []
+  panel.onTarget = { targets.append($0); return true }
+  avatar.mouseDown(with:mouse(.leftMouseDown,point))
+  avatar.mouseDragged(with:mouse(.leftMouseDragged,packPoint))
+  avatar.mouseUp(with:mouse(.leftMouseUp,packPoint))
+  precondition(targets == [22] && packDrops == [23] && uses == [22,22])
+  avatar.mouseDown(with:mouse(.leftMouseDown,packPoint))
+  avatar.mouseUp(with:mouse(.leftMouseUp,packPoint))
+  precondition(targets == [22,23])
+  panel.update(player:WorldMobile(serial:1,body:400,x:2572,y:308,z:30),equipment:[])
+  let body = try Paperdoll.layers(assets:assets,body:400,hue:0,owner:1,equipment:[]).first!.sprite
+  let bodyPixel = stride(from:3,to:body.rgba.count,by:4).first { body.rgba[$0] != 0 }!/4
+  let bodyPoint = avatar.convert(NSPoint(x:8+bodyPixel%body.width,y:19+bodyPixel/body.width),to:nil)
+  avatar.mouseDown(with:mouse(.leftMouseDown,bodyPoint))
+  avatar.mouseUp(with:mouse(.leftMouseUp,bodyPoint))
+  precondition(targets == [22,23,1])
+  print("Active paperdoll targeting selects equipment, backpack and body without use/drop side effects")
   print("Closed backpack icon accepts tools/ore at automatic coordinates; actual paperdoll drag resolves to bag; controls/self-drop rejected")
   print("Paperdoll drag dispatches equipment serial once, without use or splitting")
   print("Equipped pickaxe Use button and sprite double-click dispatch the correct serial")

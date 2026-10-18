@@ -296,7 +296,7 @@ final class WorldView: NSView {
         drawWalkRoute()
         drawObjectFeedback()
         if targeting {
-            ("Select a target — Escape cancels" as NSString).draw(at: NSPoint(x: imageRect.minX + 16, y: 16),
+            ("Select a target — T targets yourself · Escape cancels" as NSString).draw(at: NSPoint(x: imageRect.minX + 16, y: 16),
                 withAttributes: [.font: NSFont.boldSystemFont(ofSize: 16), .foregroundColor: NSColor.white, .backgroundColor: NSColor.black])
         }
         let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
@@ -315,6 +315,12 @@ final class WorldView: NSView {
         let step = event.modifierFlags.contains(.shift) ? 4 : 1
         let key = event.charactersIgnoringModifiers?.lowercased()
         if let player {
+            if targeting, key == "t" {
+                if !event.isARepeat {
+                    onTarget?(TargetSelection(serial:player.serial,x:player.x,y:player.y,z:player.z,graphic:player.body))
+                }
+                return
+            }
             if key == " " {
                 if !event.isARepeat {
                     do {
@@ -593,6 +599,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.onWarMode = { [weak self] in self?.loginOverlay?.toggleWarMode() }
         panel.onSkills = { [weak self] in self?.showSkills() }
         panel.onClose = { [weak self] in self?.showCharacter() }
+        panel.onTarget = { [weak self] in self?.loginOverlay?.targetPaperdoll(serial:$0) ?? false }
         panel.onUseEquipment = { [weak self] in self?.loginOverlay?.use(serial: $0) }
         panel.onDropEquipment = { [weak self, weak view] item, point in
             guard let self, let view else { return }
