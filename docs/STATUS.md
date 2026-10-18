@@ -470,3 +470,10 @@ Local Test Center reliability remains blocked by a backend save defect: two
 periodic saves exhausted the per-block buffer at 1 GiB and the server exited.
 The original saves are preserved; diagnosis uses an isolated world copy. This is
 not a verified repair, and the local server is currently unavailable.
+
+Save-defect reproduction: an isolated copy saves successfully before login, but
+shutdown saving loops after `OUOIntegrationTests/testRealOUOWorldEntry` passes
+against port 2594. Sampling the stuck process shows repeated player/container
+serialization inside `SaveDynamic0_WriteCommit`. The diagnostic process was
+stopped to prevent further buffer-overflow logging; original world data was not
+modified. The precise linked-list corruption remains under investigation.
