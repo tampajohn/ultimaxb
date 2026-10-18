@@ -55,7 +55,8 @@ public final class NavigationMap {
         public init(landZ:Int,lowZ:Int,landBlocked:Bool,surfaces:[Surface]) {
             self.landZ=landZ; self.lowZ=lowZ; self.landBlocked=landBlocked; self.surfaces=surfaces
         }
-        public func standingZ(from:Int)->Int? {
+        public func standingZ(from:Int, ignoringDoors:Bool = false)->Int? {
+            let surfaces = ignoringDoors ? surfaces.filter { $0.flags & 0x20000000 == 0 } : surfaces
             var candidates:[Int] = []
             if !landBlocked && lowZ <= from+8 && landZ >= from-20 { candidates.append(landZ) }
             for s in surfaces where s.flags & 0x600 != 0 && s.flags & 0x40 == 0 {
@@ -88,14 +89,14 @@ public final class NavigationMap {
             cells[xy] = Cell(landZ:average,lowZ:corners.min()!,landBlocked:land.art<=2 || flags & 0xC0 != 0,surfaces:surfaces)
         }
     }
-    public func step(from:WalkPoint,direction:UInt8)->WalkPoint? {
+    public func step(from:WalkPoint,direction:UInt8, ignoringDoors:Bool = false)->WalkPoint? {
         let delta = WalkPath.directions[Int(direction&7)]
         let x=from.x+delta.0,y=from.y+delta.1
-        guard let z=cells[XY(x:x,y:y)]?.standingZ(from:from.z) else { return nil }
+        guard let z=cells[XY(x:x,y:y)]?.standingZ(from:from.z, ignoringDoors:ignoringDoors) else { return nil }
         // Conservative corner clearance prevents routes through touching walls.
         if delta.0 != 0 && delta.1 != 0 {
-            guard cells[XY(x:x,y:from.y)]?.standingZ(from:from.z) != nil,
-                  cells[XY(x:from.x,y:y)]?.standingZ(from:from.z) != nil else { return nil }
+            guard cells[XY(x:x,y:from.y)]?.standingZ(from:from.z, ignoringDoors:ignoringDoors) != nil,
+                  cells[XY(x:from.x,y:y)]?.standingZ(from:from.z, ignoringDoors:ignoringDoors) != nil else { return nil }
         }
         return WalkPoint(x:x,y:y,z:z)
     }

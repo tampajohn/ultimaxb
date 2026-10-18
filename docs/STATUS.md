@@ -192,3 +192,22 @@ drop before pickup, changed stacks, invalid routes, timeout, stop and late-drop
 recovery tracking. This core is not wired to live inventory or UI; ore and forge
 selection, transfer coordination and visible controls remain required. The running
 client was left untouched for this change.
+
+### Door-aware click travel and chat history
+
+When a nearby clicked destination has no ordinary route, the client can plan
+through door cells to discover an approach to a server-supplied door. It walks
+using normal collision, uses the door once, waits up to four seconds for that
+same door's graphic or position to change, then rebuilds the route to the original
+destination. Walls and blocked terrain stay impassable. Manual movement, route
+cancellation and disconnect cancel the pending continuation. At most four door
+attempts are allowed per click. Missing/locked doors stop with feedback.
+This is local routing within 24 tiles; live locked/unlocked house verification
+is still required, and it does not guarantee access through every multi-door layout.
+
+Recent chat now exposes the original journal artwork as a history control.
+Scrolling over recent messages opens/browses the parchment journal; J still
+toggles it. Local UI checks verify wheel scrolling, preserved reading position,
+tail following, clearing and the artwork-backed history button.
+
+Validation: release build and 172 core tests (2 asset-dependent skips, no failures).

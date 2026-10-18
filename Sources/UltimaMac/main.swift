@@ -942,6 +942,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             worldView?.onSkills = { [weak self] in self?.showSkills() }
             worldView?.onCharacter = { [weak self] in self?.showCharacter() }
             worldView?.onBackpack = { [weak panel] in panel?.openBackpack() }
+            panel.onDoorOpenedRoute = { [weak self] destination,remaining,running in
+                self?.approach(destination,action:nil,running:running,doorsRemaining:remaining)
+            }
             panel.onWalkRoute = { [weak self] route in self?.worldView?.walkRoute = route; self?.worldView?.needsDisplay = true }
             worldView?.onCancelRoute = { [weak panel] in panel?.cancelRoute() }
             worldView?.onWalkTo = { [weak self] location,door,running in
@@ -988,7 +991,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.followRoute(route,action:nil,running:view.running,continuing:true,resolver:planner)
         Telemetry.shared.record("map_travel_requested",["x":x,"y":y,"steps":route.count])
     }
-    private func approach(_ location:TargetSelection, action:LoginOverlay.ArrivalAction?, running:Bool) {
+    /// Door-free planning is only used to find the first gate. Actual walking
+    /// always uses the ordinary collision map, then waits for a server update.
+    private func routeThroughDoor(to destination:TargetSelection,start:WalkPoint,running:Bool,remaining:Int,map:NavigationMap)throws->Bool {
+        guard let panel = loginOverlay,let view = worldView else { return false }
+        let doors = try panel.routeItems.filter { item in
+            guard max(abs(item.x-start.x),abs(item.y-start.y)) <= 24 else { return false }
+            return try assets.isDoor(graphic:item.graphic)
+        }.sorted { $0.serial < $1.serial }
+        guard !doors.isEmpty else { return false }
+        let doorCells = Set(doors.map { WalkPoint(x:$0.x,y:$0.y,z:$0.z) })
+        guard let route = WalkPath.find(from:start,x:destination.x,y:destination.y,step:{ point,direction in
+            // Do not cut diagonally past a door that has been relaxed only for
+            // planning. Force a route through its cell so it can be identified.
+            let delta = WalkPath.directions[Int(direction)]
+            if delta.0 != 0 && delta.1 != 0 && doorCells.contains(where:{
+                abs($0.z-point.z)<=16 && (($0.x == point.x+delta.0 && $0.y == point.y) || ($0.x == point.x && $0.y == point.y+delta.1))
+            }) { return nil }
+            return map.step(from:point,direction:direction,ignoringDoors:true)
+        }) else { return false }
+        for point in route {
+            guard let door = doors.first(where:{ $0.x == point.x && $0.y == point.y && abs($0.z-point.z)<=16 }),
+                  let approach = WalkPath.find(from:start,x:door.x,y:door.y,adjacent:true,goalZ:door.z,
+                                                step:{ map.step(from:$0,direction:$1) }) else { continue }
+            view.followPlayer = true
+            panel.followRoute(approach,action:.openDoor(door.serial,destination,remaining-1),running:running) { [weak self] position,blocked in
+                guard let self,let view = self.worldView,
+                      let current = try? NavigationMap(assets:self.assets,center:position,additional:view.groundItems) else { return nil }
+                return WalkPath.find(from:position,x:door.x,y:door.y,adjacent:true,goalZ:door.z) { point,direction in
+                    guard let next = current.step(from:point,direction:direction),!blocked.contains(next) else { return nil }
+                    return next
+                }
+            }
+            Telemetry.shared.record("door_route_planned",["serial":door.serial,"steps":approach.count,"remaining":remaining-1])
+            return true
+        }
+        return false
+    }
+    private func approach(_ location:TargetSelection, action:LoginOverlay.ArrivalAction?, running:Bool, doorsRemaining:Int = 4) {
         guard let view = worldView, let player = view.player, let panel = loginOverlay else { return }
         panel.cancelRoute()
         let start = WalkPoint(x:player.x,y:player.y,z:player.z)
@@ -1004,6 +1044,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let route = WalkPath.find(from:start,x:location.x,y:location.y,adjacent:action != nil,
                                             goalZ:goalZ,
                                             step:{ map.step(from:$0,direction:$1) }) else {
+                if action == nil, doorsRemaining > 0,
+                   try routeThroughDoor(to:location,start:start,running:running,remaining:doorsRemaining,map:map) { return }
                 chatPanel.append("No clear route to that location.")
                 Telemetry.shared.record("walk_route_unreachable",["x":location.x,"y":location.y]); return
             }

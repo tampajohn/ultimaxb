@@ -74,11 +74,15 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     enum ArrivalAction {
         case use(UInt32), pickup(UInt32, Int), attack(UInt32)
         case toolTarget(TargetRequest,TargetSelection,UInt32)
+        case openDoor(UInt32,TargetSelection,Int)
         var serial: UInt32 {
-            switch self { case .use(let s), .pickup(let s,_), .attack(let s): return s; case .toolTarget(_,let target,_): return target.serial }
+            switch self { case .use(let s), .pickup(let s,_), .attack(let s), .openDoor(let s,_,_): return s; case .toolTarget(_,let target,_): return target.serial }
         }
     }
     private var routeAction: ArrivalAction?
+    var routeItems: [GroundItem] { Array(world.items.values) }
+    var onDoorOpenedRoute: ((TargetSelection,Int,Bool)->Void)?
+    private var waitingDoor: (item:GroundItem,destination:TargetSelection,remaining:Int,running:Bool,wait:DoorOpeningWait)?
     private var routeRunning = false
     private var routeResolver: ((WalkPoint,Set<WalkPoint>)->[WalkPoint]?)?
     private var blockedRouteTiles: Set<WalkPoint> = []
@@ -87,6 +91,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private var routeContinues = false
     private var routeSegments = 0
     func cancelRoute() {
+        waitingDoor = nil
         if walkRoute != nil { Telemetry.shared.record("walk_route_cancelled") }
         walkRoute = nil; routeAction = nil; onWalkRoute?([])
         routeResolver = nil; blockedRouteTiles.removeAll(); needsRouteRetry = false; routeRetries = 0; routeContinues = false; routeSegments = 0
@@ -99,6 +104,18 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     }
     func tickMovement(allowRoute:Bool = true) {
         if !allowRoute { cancelRoute() }
+        if let waiting = waitingDoor {
+            let result = waiting.wait.result(door:world.items[waiting.item.serial],at:ProcessInfo.processInfo.systemUptime)
+            if result == .changed {
+                waitingDoor = nil
+                Telemetry.shared.record("door_route_changed", ["serial":waiting.item.serial])
+                onDoorOpenedRoute?(waiting.destination,waiting.remaining,waiting.running)
+            } else if result == .timedOut {
+                waitingDoor = nil
+                onInventoryMessage?("The door did not open. It may be locked or inaccessible; route stopped.")
+                Telemetry.shared.record("door_route_timeout", ["serial":waiting.item.serial])
+            }
+        }
         if needsRouteRetry, !movement.awaitingPosition, let serial = playerSerial, let player = world.mobiles[serial] {
             needsRouteRetry = false
             let start = WalkPoint(x:player.x,y:player.y,z:player.z)
@@ -161,7 +178,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         case .toolTarget: return
         case .attack(let serial):
             target = world.mobiles[serial].map { WalkPoint(x:$0.x,y:$0.y,z:$0.z) }
-        case .use(let serial), .pickup(let serial,_):
+        case .use(let serial), .pickup(let serial,_), .openDoor(let serial,_,_):
             target = world.items[serial].map { WalkPoint(x:$0.x,y:$0.y,z:$0.z) }
         }
         guard let target, max(abs(target.x-player.x),abs(target.y-player.y)) <= 1,
@@ -171,6 +188,12 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         }
         switch action {
         case .toolTarget: return
+        case .openDoor(let serial,let destination,let remaining):
+            guard let door = world.items[serial] else { return }
+            use(serial:serial)
+            waitingDoor = (door,destination,remaining,routeRunning,DoorOpeningWait(door:door,at:ProcessInfo.processInfo.systemUptime))
+            onInventoryMessage?("Opening door…")
+            Telemetry.shared.record("door_route_open_requested", ["serial":serial])
         case .use(let serial): use(serial:serial)
         case .pickup(let serial,let amount):
             guard let item = world.items[serial] else { return }
@@ -313,6 +336,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     }
     func use(serial: UInt32) {
         guard loginComplete else { return }
+        if waitingDoor != nil { cancelRoute() }
         if case .toolTarget = routeAction { cancelRoute() }
         if let item = world.equipment[serial],item.owner == playerSerial,(item.layer == 1 || item.layer == 2) {
             equippedTargetTool = serial; equippedTargetDeadline = ProcessInfo.processInfo.systemUptime+10
