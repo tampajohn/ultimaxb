@@ -468,10 +468,22 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         equipItem(serial: serial, layer: layer)
     }
     func equipItem(serial: UInt32, layer: UInt8) {
+        guard trade?.isOwnOffer(serial) != false else { return }
         guard loginComplete, let owner = playerSerial, (world.containerItems[serial] != nil || world.items[serial] != nil) else { return }
         do {
             let equip = try InteractionPackets.equip(serial: serial, layer: layer, owner: owner)
-            connection.send(try InteractionPackets.pickup(serial: serial, amount: 1))
+            let pickup = try InteractionPackets.pickup(serial: serial, amount: 1)
+            if var value = trade, value.isOwnOffer(serial) == true {
+                guard !value.cancelling, !value.awaitingOfferUpdate, value.pendingAcceptance == nil else { return }
+                if value.ownAccepted {
+                    let revoke = try value.setAccepted(false,revision:value.revision)
+                    connection.send(revoke)
+                }
+                value.beginOfferChange(); trade = value
+                tradeTransfer = TradeTransfer(item:serial,destination:owner)
+                onTrade?(value)
+            }
+            connection.send(pickup)
             connection.send(equip)
             onInventoryMessage?("Equipping item…")
             Telemetry.shared.record("inventory_equip", ["serial": serial, "layer": layer])

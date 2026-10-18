@@ -11,6 +11,8 @@ import UOCore
     private var hits:[(NSRect,ContainerItem)] = []
     var onAccept:((Bool,UInt64)->Void)?
     var onCancel:(()->Void)?
+    var onOpenContainer:((UInt32)->Void)?
+    var onInspect:((UInt32)->Void)?
     var onReturn:((ContainerItem)->Void)?
     var onDrop:((ContainerItem,NSPoint)->Void)?
     override var isFlipped:Bool { true }
@@ -65,7 +67,7 @@ import UOCore
                 guard let sprite = try? assets.sprite(item.displayGraphic+0x4000),let image = image(sprite,hue:item.hue,art:item.displayGraphic+0x4000) else { continue }
                 let rect = NSRect(x:x+max(0,min(109,item.x)),y:70+max(0,min(79,item.y)),width:sprite.width,height:sprite.height)
                 image.draw(in:rect,from:.zero,operation:.sourceOver,fraction:1,respectFlipped:true,hints:nil)
-                if container == trade.ownContainer { hits.append((rect.intersection(area),item)) }
+                hits.append((rect.intersection(area),item))
                 if item.amount > 1 { (String(item.amount) as NSString).draw(at:NSPoint(x:rect.minX,y:rect.maxY-12),withAttributes:[.font:NSFont.systemFont(ofSize:10),.foregroundColor:NSColor.white,.backgroundColor:NSColor.black]) }
             }
             NSGraphicsContext.restoreGraphicsState()
@@ -78,11 +80,22 @@ import UOCore
     override func rightMouseDown(with event:NSEvent) { if !trade.cancelling { onCancel?() } }
     override func mouseDown(with event:NSEvent) {
         let p = convert(event.locationInWindow,from:nil)
-        candidate = hits.reversed().first { $0.0.contains(p) }?.1
+        let selected = hits.reversed().first { $0.0.contains(p) }?.1
+        candidate = selected.flatMap { $0.container == trade.ownContainer ? $0 : nil }
         start = event.locationInWindow
-        if let candidate,event.clickCount == 2,trade.pendingAcceptance == nil,!trade.awaitingOfferUpdate,!trade.cancelling { onReturn?(candidate); self.candidate = nil }
-        drag = candidate == nil ? event.locationInWindow : nil
+        drag = selected == nil ? event.locationInWindow : nil
+        guard let selected, !trade.closed, !trade.cancelling else { return }
+        if event.clickCount == 1 { onInspect?(selected.serial) }
+        if event.clickCount == 2 {
+            candidate = nil; start = nil
+            if ((try? assets.itemFlags(graphic:selected.graphic)) ?? 0) & 0x00200000 != 0 {
+                onOpenContainer?(selected.serial)
+            } else if selected.container == trade.ownContainer, trade.pendingAcceptance == nil, !trade.awaitingOfferUpdate {
+                onReturn?(selected)
+            }
+        }
     }
+
     override func mouseDragged(with event:NSEvent) {
         guard let drag else { return }
         frame.origin.x += event.locationInWindow.x-drag.x; frame.origin.y -= event.locationInWindow.y-drag.y; self.drag = event.locationInWindow

@@ -26,6 +26,12 @@ public struct TradeTransfer {
             let contents = try ContainerItem.decode(packet)
             if dropRejected && contents.contains(where: { $0.serial == item }) { returnedItemSeen = true }
             if contents.contains(where: { ($0.serial == item && $0.container == destination) || $0.serial == destination }) { destinationSeen = true }
+        case 0x2E:
+            let equipped = try EquippedItem.decode(packet)
+            if equipped.serial == item {
+                if dropRejected { returnedItemSeen = true }
+                if equipped.owner == destination { destinationSeen = true }
+            }
         case 0x1A:
             if try GroundItem.decode(packet).serial == item {
                 if dropRejected { returnedItemSeen = true }

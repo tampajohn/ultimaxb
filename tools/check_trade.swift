@@ -14,8 +14,8 @@ import UOCore
   let own = panel.convert(NSPoint(x:60,y:85),to:nil), other = panel.convert(NSPoint(x:210,y:90),to:nil)
   precondition(panel.dropDestination(windowPoint:own)?.0 == 10)
   precondition(panel.dropDestination(windowPoint:other) == nil)
-  func event(_ type:NSEvent.EventType,_ point:NSPoint)->NSEvent {
-   NSEvent.mouseEvent(with:type,location:point,modifierFlags:[],timestamp:0,windowNumber:window.windowNumber,context:nil,eventNumber:1,clickCount:1,pressure:1)!
+  func event(_ type:NSEvent.EventType,_ point:NSPoint,clicks:Int = 1)->NSEvent {
+   NSEvent.mouseEvent(with:type,location:point,modifierFlags:[],timestamp:0,windowNumber:window.windowNumber,context:nil,eventNumber:1,clickCount:clicks,pressure:1)!
   }
   var moved:[Int] = []
   panel.onDrop = { item,point in precondition(item.serial == 3); moved.append(item.amount) }
@@ -42,6 +42,26 @@ import UOCore
   let cancelledPicker = panel.subviews.compactMap { $0 as? StackQuantityPanel }.first!
   cancelledPicker.onCancel?()
   precondition(cancelledPicker.superview == nil && moved == [25])
+  var bagTrade = trade
+  bagTrade.update(items:trade.items + [
+   ContainerItem(serial:5,graphic:0xE76,amount:1,x:65,y:40,container:10,hue:0),
+   ContainerItem(serial:6,graphic:0xE76,amount:1,x:65,y:40,container:20,hue:0)])
+  panel.update(bagTrade); panel.cacheDisplay(in:panel.bounds,to:bitmap)
+  let ownBag = panel.convert(NSPoint(x:111,y:111),to:nil)
+  let otherBag = panel.convert(NSPoint(x:258,y:111),to:nil)
+  var opened:[UInt32] = [], inspected:[UInt32] = [], returned:[UInt32] = []
+  panel.onOpenContainer = { opened.append($0) }
+  panel.onInspect = { inspected.append($0) }
+  panel.onReturn = { returned.append($0.serial) }
+  panel.mouseDown(with:event(.leftMouseDown,otherBag))
+  panel.mouseUp(with:event(.leftMouseUp,destination))
+  precondition(inspected == [6] && moved == [25])
+  panel.mouseDown(with:event(.leftMouseDown,otherBag,clicks:2))
+  panel.mouseDown(with:event(.leftMouseDown,ownBag,clicks:2))
+  precondition(opened == [6,5] && returned.isEmpty)
+  panel.mouseDown(with:event(.leftMouseDown,own,clicks:2))
+  precondition(returned == [3])
+  panel.update(trade)
   var accepted = false
   panel.onAccept = { value,revision in precondition(value && revision == trade.revision); accepted = true }
   let button = panel.subviews.compactMap { $0 as? NSButton }.first!
@@ -51,6 +71,6 @@ import UOCore
   var cancelled = false; panel.onCancel = { cancelled = true }
   panel.rightMouseDown(with:NSEvent.mouseEvent(with:.rightMouseDown,location:own,modifierFlags:[],timestamp:0,windowNumber:window.windowNumber,context:nil,eventNumber:1,clickCount:1,pressure:1)!)
   precondition(cancelled)
-  print("Trade artwork, own-only drop region, explicit acceptance, pending lockout, partial-stack withdrawal, stale selection rejection and cancellation verified")
+  print("Trade artwork, own-only drop region, explicit acceptance, pending lockout, partial-stack withdrawal, stale selection rejection, offered-bag inspection and cancellation verified")
  }
 }

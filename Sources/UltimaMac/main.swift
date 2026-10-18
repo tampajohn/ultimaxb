@@ -839,6 +839,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 display.update(trade)
                 display.onAccept = { [weak panel] accepted,revision in panel?.acceptTrade(accepted,revision:revision) }
                 display.onCancel = { [weak panel] in panel?.cancelTrade() }
+                display.onOpenContainer = { [weak panel] serial in panel?.use(serial:serial) }
+                display.onInspect = { [weak panel] serial in panel?.inspect(serial:serial) }
                 display.onReturn = { [weak panel] item in panel?.pickupToBackpack(serial:item.serial,amount:item.amount) }
                 display.onDrop = { [weak view, weak panel] item,point in
                     guard let view,let (target,position) = ContainerPanel.destination(in:view,windowPoint:point,item:item) else { return }

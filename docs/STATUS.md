@@ -81,7 +81,9 @@ live two-party validation remains outstanding. No live trades were initiated or 
 
 Secure-trade UI integration: the original 0x0866 window now displays both offers
 and server-confirmed acceptance. Drag inventory into the left offer; drag your
-offered item back into a bag, or double-click it to request return to the backpack.
+offered item back into a bag, or double-click a non-container item to request return
+to the backpack. Double-click bags on either side to request their contents; single
+clicks request item labels. The partner’s items cannot be dragged or equipped.
 Right-click requests cancellation and waits for the server. Pending transfers and
 acceptance replies disable acceptance, and known nested items on the other side
 cannot be moved. Trade status, revision and item metadata are logged, never the
@@ -89,7 +91,11 @@ partner name. Local fixtures cover the window and drop regions; live two-party
 trades have not been tested. Dragging an offered stack opens the original quantity
 picker for partial withdrawal; a changed offer cancels the picker and prevents a
 stale request. Local UI tests cover selection, cancellation and revision changes.
-Trade-item drag previews and opening offered nested bags remain incomplete.
+Nested bag opening uses the regular server container response and still needs
+live two-party verification. Equipping from your offered bag revokes acceptance
+and locks further acceptance until the matching equipment update and acknowledgement
+arrive. Trade-item drag previews remain incomplete.
+Release tests: 187 total, 2 skipped; trade UI interaction harness passes.
 
 Trade transfer ordering: acceptance now waits for both DROPOBJ_OK and an item
 update at the requested destination (or the merged destination stack). Removal
