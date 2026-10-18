@@ -67,6 +67,10 @@ swift run -c release UltimaMac --client uo1998-client \
 | H | Recenter on player |
 | Command-L | Connection screen |
 
+Click the journal artwork beside recent chat, press **J**, or scroll over recent
+messages to browse session history in the original parchment journal. Incoming
+messages preserve your reading position while you are scrolled back.
+
 Travel plans local sections and may stop at large or inaccessible obstacles.
 Server validation remains authoritative for movement and item operations.
 

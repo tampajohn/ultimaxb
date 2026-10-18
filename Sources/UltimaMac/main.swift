@@ -597,15 +597,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         view.window?.makeFirstResponder(view)
     }
     var containerPanels: [UInt32: ContainerPanel] = [:]
-    let chatPanel = ChatPanel()
+    lazy var chatPanel = ChatPanel(assets: assets)
     private var journalPanel:JournalPanel?
-    private func showJournal() {
+    private func showJournal(toggle: Bool = true, scrollEvent: NSEvent? = nil) {
         guard let view = worldView, view.player != nil else { return }
-        if let panel = journalPanel, panel.superview != nil { panel.removeFromSuperview(); view.window?.makeFirstResponder(view); return }
+        if let panel = journalPanel, panel.superview != nil {
+            if toggle { panel.removeFromSuperview(); view.window?.makeFirstResponder(view) }
+            else if let scrollEvent { panel.scrollHistory(with: scrollEvent) }
+            return
+        }
         let panel = journalPanel ?? JournalPanel(assets:assets)
         panel.update(chatPanel.history)
         panel.onClose = { [weak self] in self?.journalPanel?.removeFromSuperview(); self?.worldView?.window?.makeFirstResponder(self?.worldView) }
         journalPanel = panel; view.addSubview(panel)
+        if let scrollEvent { panel.scrollHistory(with: scrollEvent) }
         Telemetry.shared.record("journal_opened",["lines":chatPanel.history.lines.count])
     }
     func showCharacter() {
@@ -1044,6 +1049,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         view.debugCamera = options.debugCamera
         worldView = view
         view.onJournal = { [weak self] in self?.showJournal() }
+        chatPanel.onHistoryRequested = { [weak self] event in self?.showJournal(toggle: false, scrollEvent: event) }
         chatPanel.onHistory = { [weak self] history in self?.journalPanel?.update(history) }
         let sidebar = PlaySidebar(definitions: assets.skills)
         sidebar.isHidden = true; view.sidebar = sidebar; skillsPanel = sidebar.skills

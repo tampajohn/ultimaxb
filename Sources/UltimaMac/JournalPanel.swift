@@ -41,6 +41,14 @@ import UOCore
         scroll.contentView.scroll(to:NSPoint(x:0,y:atEnd ? max(0,height-scroll.contentSize.height) : min(origin.y,max(0,height-scroll.contentSize.height))))
         scroll.reflectScrolledClipView(scroll.contentView)
     }
+    func scrollHistory(with event: NSEvent) {
+        let delta = event.scrollingDeltaY * (event.hasPreciseScrollingDeltas ? 1 : 16)
+        let maximum = max(0, text.bounds.height - scroll.contentSize.height)
+        let y = min(maximum, max(0, scroll.contentView.bounds.minY - delta))
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: y))
+        scroll.reflectScrolledClipView(scroll.contentView)
+    }
+    override func scrollWheel(with event: NSEvent) { scrollHistory(with: event) }
     override func draw(_ dirtyRect:NSRect) {
         NSGraphicsContext.current?.imageInterpolation = .none
         func draw(_ id:Int,_ x:CGFloat,_ y:CGFloat) {
