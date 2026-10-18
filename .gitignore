@@ -1,0 +1,26 @@
+/build/
+/data/
+/third_party/
+/uo1998-client/
+.DS_Store
+*.exe
+*.mul
+*.uop
+*.idx
+*.xbe
+*.iso
+__pycache__/
+/.build/
+/.swiftpm/
+# Local credentials, signing material, captures and runtime output
+.env
+.env.*
+*.pem
+*.p12
+*.key
+*.keychain*
+*.pcap
+*.pcapng
+*.log
+*.jsonl
+/uo1998/
