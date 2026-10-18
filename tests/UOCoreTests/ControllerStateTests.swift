@@ -24,4 +24,20 @@ final class ControllerStateTests: XCTestCase {
         state.suspend()
         XCTAssertNil(state.sample(x:1,y:0,trigger:0,buttons:[],enabled:true).direction)
     }
+    func testCursorDeadzoneVelocityAndNeutralRearm() {
+        var state = ControllerState()
+        let initial = state.sample(x:0,y:0,trigger:0,buttons:[],enabled:true,cursorX:1)
+        XCTAssertEqual(initial.cursorX,0)
+        _ = state.sample(x:0,y:0,trigger:0,buttons:[],enabled:true)
+        let up = state.sample(x:0,y:0,trigger:0,buttons:[],enabled:true,cursorY:1)
+        XCTAssertEqual(up.cursorX,0); XCTAssertEqual(up.cursorY,-1)
+        let diagonal = state.sample(x:0,y:0,trigger:0,buttons:[],enabled:true,cursorX:1,cursorY:1)
+        XCTAssertEqual(hypot(diagonal.cursorX,diagonal.cursorY),1,accuracy:0.0001)
+        let drift = state.sample(x:0,y:0,trigger:0,buttons:[],enabled:true,cursorX:0.1,cursorY:0.1)
+        XCTAssertEqual(drift.cursorX,0); XCTAssertEqual(drift.cursorY,0)
+        _ = state.sample(x:0,y:0,trigger:0,buttons:[],enabled:false)
+        let blocked = state.sample(x:0,y:0,trigger:0,buttons:[.use],enabled:true,cursorX:1)
+        XCTAssertEqual(blocked.cursorX,0); XCTAssertTrue(blocked.actions.isEmpty)
+    }
+
 }

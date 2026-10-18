@@ -275,7 +275,7 @@ identity, and rejection of bare terrain/invalid static IDs. Local rejection now
 records only target metadata. Release suite: 180 tests, 2 skipped, no failures.
 Live resource collection after this correction still needs verification.
 
-### Controller input, first pass
+### Controller input
 
 Native macOS GameController support detects an extended gamepad and routes left
 stick/D-pad movement through the existing prediction and reconciliation path.
@@ -285,7 +285,16 @@ controller hints while connected; keyboard and mouse remain usable. Inputs are
 suppressed outside the focused world, during chat, and before world entry. Controls
 must return to neutral after disconnect/focus changes before movement resumes.
 Metadata records connection changes and button action IDs, not device identifiers.
-Release build and 182 tests passed (2 skips). Hardware behavior remains to verify.
-Right-stick targeting is in progress; inventory/menu navigation and remapping are
-still missing. Radial menus for spells, skills and items are explicitly deferred
+Right stick moves the original-art world cursor with deadzone and time-based
+velocity. A confirms mobile/item/terrain targets using the mouse hit-test path;
+overlays block world selection. Mouse movement restores mouse targeting.
+Release build and 184 tests passed (2 skips). Hardware aiming remains to verify.
+Inventory/menu navigation and remapping are still missing. Radial menus for spells, skills and items are explicitly deferred
 at the user's request.
+
+### Server help
+
+Paperdoll HELP now sends the classic 258-byte 0x9B help request instead of showing
+local control instructions. Existing server menu/gump handlers display the reply.
+The user selects any stuck/recovery option; no staff request is auto-submitted.
+Packet layout is tested; live shard menu/recovery behavior remains to verify.

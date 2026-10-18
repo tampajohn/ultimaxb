@@ -30,6 +30,7 @@ final class ControllerInput {
         let useDpad = dpad.xAxis.value != 0 || dpad.yAxis.value != 0
         return state.sample(x: Double(useDpad ? dpad.xAxis.value : stick.xAxis.value),
                             y: Double(useDpad ? dpad.yAxis.value : stick.yAxis.value),
-                            trigger: Double(pad.rightTrigger.value), buttons: buttons, enabled: enabled)
+                            trigger: Double(pad.rightTrigger.value), buttons: buttons, enabled: enabled,
+                            cursorX: Double(pad.rightThumbstick.xAxis.value), cursorY: Double(pad.rightThumbstick.yAxis.value))
     }
 }

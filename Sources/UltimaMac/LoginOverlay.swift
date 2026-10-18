@@ -46,6 +46,13 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         connection.send(packet)
         Telemetry.shared.record("attack_requested",["serial":serial])
     }
+    func requestHelp() {
+        guard loginComplete else { return }
+        cancelRoute()
+        connection.send(HelpPackets.request)
+        Telemetry.shared.record("help_requested")
+        onInventoryMessage?("Requesting the server help menu…")
+    }
     func requestStatus() {
         guard loginComplete, let playerSerial else { return }
         connection.send(CharacterStatus.request(serial: playerSerial))

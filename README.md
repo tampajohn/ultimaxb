@@ -73,9 +73,13 @@ messages preserve your reading position while you are scrolled back.
 
 An Xbox-compatible controller detected by macOS can use the left stick/D-pad to
 walk, RT to run, A to use the facing object, B to cancel, X for backpack, Y for
-paperdoll, and LB for the equipped tool. Target selection and inventory still
-require the mouse in this first pass. Release controls to neutral after switching
-back from another app or chat.
+paperdoll, and LB for the equipped tool. The right stick moves the world cursor;
+A confirms it when a tool or spell requests a target. Inventory/menu navigation
+still uses the mouse. Release controls to neutral after switching back from
+another app or chat.
+
+Open the paperdoll (**P**) and click **HELP** to request the server help menu,
+including any stuck/recovery options offered by the shard.
 
 Travel plans local sections and may stop at large or inaccessible obstacles.
 Server validation remains authoritative for movement and item operations.

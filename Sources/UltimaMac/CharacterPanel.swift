@@ -31,6 +31,7 @@ final class CharacterPanel: NSView {
     var onOptions: (() -> Void)?
     var onLogout: (() -> Void)?
     var onJournal: (() -> Void)?
+    var onHelp: (() -> Void)?
     private let details = PaperdollDetailsView()
     private var images: [Int:NSImage] = [:]
     private var warButton: NSButton?
@@ -86,7 +87,7 @@ final class CharacterPanel: NSView {
     }
     @objc private func classicAction(_ sender:NSButton) {
         switch sender.tag {
-        case 0: details.isHidden = false; statsLabel.stringValue = "Double-click equipped tools to use them.\nDouble-click the backpack to open it.\nDrag the background to move this panel.\nClick the minus to close it."
+        case 0: onHelp?()
         case 1: onOptions?()
         case 2: onLogout?()
         case 3: onJournal?()

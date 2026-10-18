@@ -78,6 +78,7 @@ final class WorldView: NSView {
     }
     override func mouseExited(with event: NSEvent) { hovered = nil; hoverInspected = nil; needsDisplay = true }
     override func mouseMoved(with event: NSEvent) {
+        controllerPoint = nil
         let point = convert(event.locationInWindow, from: nil), scale = imageRect.width / 960
         let previous = hovered?.serial
         hovered = imageRect.contains(point) ? try? WorldHitTest.groundItem(assets: assets, items: groundObjects, camera: displayedCamera, screenX: (point.x-imageRect.minX)/scale, screenY: (point.y-imageRect.minY)/scale) : nil
@@ -126,6 +127,8 @@ final class WorldView: NSView {
     var onMove: ((UInt8) -> Void)?
     private var movementKeys = MovementKeys()
     private let controllerInput = ControllerInput()
+    private var controllerPoint: NSPoint?
+    private var controllerSampleAt: TimeInterval?
     private(set) var running = false
     private var runMode = RunMode()
     var chatting = false { didSet { updateRunMode(NSEvent.modifierFlags) } }
@@ -138,7 +141,7 @@ final class WorldView: NSView {
     }
     private var rightPoint: NSPoint?
     override func resignFirstResponder() -> Bool {
-        movementKeys.clear(); rightPoint = nil; controllerInput.suspend()
+        movementKeys.clear(); rightPoint = nil; controllerInput.suspend(); controllerPoint = nil
         return super.resignFirstResponder()
     }
     private var motion = MobileMotion()
@@ -195,10 +198,26 @@ final class WorldView: NSView {
         let wasConnected = controllerInput.connected
         let controller = controllerInput.poll(enabled: window?.isKeyWindow == true && window?.firstResponder === self && !chatting && player != nil)
         if wasConnected != controllerInput.connected { needsDisplay = true }
+        let now = ProcessInfo.processInfo.systemUptime
+        let elapsed = min(0.05, max(0, now-(controllerSampleAt ?? now)))
+        controllerSampleAt = now
+        if !controllerInput.connected || window?.isKeyWindow != true || window?.firstResponder !== self || chatting || player == nil {
+            if controllerPoint != nil { controllerPoint = nil; needsDisplay = true }
+        } else if controller.cursorX != 0 || controller.cursorY != 0 {
+            let prior = controllerPoint ?? NSPoint(x:imageRect.midX,y:imageRect.midY)
+            controllerPoint = NSPoint(x:min(imageRect.maxX-1,max(imageRect.minX,prior.x+controller.cursorX*500*elapsed)),
+                                      y:min(imageRect.maxY-1,max(imageRect.minY,prior.y+controller.cursorY*500*elapsed)))
+            needsDisplay = true
+        }
         for action in controller.actions.sorted(by: { $0.rawValue < $1.rawValue }) {
             Telemetry.shared.record("controller_action", ["action": action.rawValue])
             switch action {
-            case .use: useFacingObject()
+            case .use:
+                if targeting {
+                    let point = controllerPoint ?? NSPoint(x:imageRect.midX,y:imageRect.midY)
+                    controllerPoint = point
+                    if hitTest(convert(point,to:superview)) === self { clickWorld(at:point,clickCount:1,shift:false) }
+                } else { useFacingObject() }
             case .cancel: if targeting { onTarget?(nil) }; onCancelRoute?()
             case .backpack: onBackpack?()
             case .character: onCharacter?()
@@ -313,6 +332,13 @@ final class WorldView: NSView {
         }
         drawWalkRoute()
         drawObjectFeedback()
+        if let point = controllerPoint {
+            let cursor = classicCursor.cursor(war:player.map { $0.flags & 0x40 != 0 } ?? false,targeting:targeting)
+            NSGraphicsContext.saveGraphicsState(); imageRect.clip()
+            cursor.image.draw(in:NSRect(origin:NSPoint(x:point.x-cursor.hotSpot.x,y:point.y-cursor.hotSpot.y),size:cursor.image.size),
+                              from:.zero,operation:.sourceOver,fraction:1,respectFlipped:true,hints:nil)
+            NSGraphicsContext.restoreGraphicsState()
+        }
         if targeting {
             ("Select a target — T targets yourself · Escape cancels" as NSString).draw(at: NSPoint(x: imageRect.minX + 16, y: 16),
                 withAttributes: [.font: NSFont.boldSystemFont(ofSize: 16), .foregroundColor: NSColor.white, .backgroundColor: NSColor.black])
@@ -320,7 +346,7 @@ final class WorldView: NSView {
         let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
         let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.lightGray]
         ((status + (controllerInput.connected ? "   Controller connected" : "")) as NSString).draw(at: NSPoint(x: 12, y: bounds.height - 46), withAttributes: attrs)
-        ((controllerInput.connected && player != nil ? "Controller: stick/D-pad walk · RT run · A use · B cancel · X bag · Y character · LB tool · Mouse/keys still active" : player == nil ? "Drag / arrows: pan   T: statics   R: Britain   Command-L: login" : "Arrows: walk / combine for diagonals   Shift/Caps: run   Right-hold: move   Space: use   U: equipped tool   P: character   K: skills   J: journal   S: spells   M: map   B: backpack   H: recenter   Enter: chat   Command-L: connection") as NSString)
+        ((controllerInput.connected && player != nil ? "Controller: stick/D-pad walk · RT run · R-stick aim · A use/target · B cancel · X bag · Y character · LB tool · Mouse/keys still active" : player == nil ? "Drag / arrows: pan   T: statics   R: Britain   Command-L: login" : "Arrows: walk / combine for diagonals   Shift/Caps: run   Right-hold: move   Space: use   U: equipped tool   P: character   K: skills   J: journal   S: spells   M: map   B: backpack   H: recenter   Enter: chat   Command-L: connection") as NSString)
             .draw(at: NSPoint(x: 12, y: bounds.height - 25), withAttributes: attrs)
     }
 
@@ -406,6 +432,7 @@ final class WorldView: NSView {
     override func rightMouseUp(with event: NSEvent) { rightPoint = nil }
 
     override func mouseDown(with event: NSEvent) {
+        controllerPoint = nil
         window?.makeFirstResponder(self)
         dragged = false
         dragOrigin = convert(event.locationInWindow, from: nil)
@@ -533,6 +560,9 @@ final class WorldView: NSView {
         if dragged, let item = groundDrag { onGroundDrop?(item, event.locationInWindow); return }
         guard !dragged, player != nil else { return }
         let point = convert(event.locationInWindow, from: nil)
+        clickWorld(at:point,clickCount:event.clickCount,shift:event.modifierFlags.contains(.shift))
+    }
+    private func clickWorld(at point:NSPoint,clickCount:Int,shift:Bool) {
         guard imageRect.contains(point) else { return }
         let scale = imageRect.width / 960
         do {
@@ -546,21 +576,21 @@ final class WorldView: NSView {
                 if targeting {
                     onTarget?(TargetSelection(serial: item.serial, x: item.x, y: item.y, z: item.z, graphic: item.graphic)); return
                 }
-                if event.clickCount == 1 && event.modifierFlags.contains(.shift) { onPickup?(item); return }
-                if event.clickCount == 1 { onInspect?(item.serial) }
+                if clickCount == 1 && shift { onPickup?(item); return }
+                if clickCount == 1 { onInspect?(item.serial) }
                 let door = try assets.isDoor(graphic: item.graphic)
-                Telemetry.shared.record("world_item_clicked", ["serial": item.serial, "graphic": item.graphic, "door": door, "clicks": event.clickCount])
+                Telemetry.shared.record("world_item_clicked", ["serial": item.serial, "graphic": item.graphic, "door": door, "clicks": clickCount])
                 // Doors use one click; other world objects retain classic double-click use.
-                if door && event.clickCount == 1 {
+                if door && clickCount == 1 {
                     onWalkTo?(TargetSelection(x:item.x,y:item.y,z:item.z,graphic:item.graphic),item.serial,running)
-                } else if !door && event.clickCount == 2 { onUse?(item.serial) }
+                } else if !door && clickCount == 2 { onUse?(item.serial) }
             } else if targeting {
                 let visibility = try player.map { try WorldVisibility.around(player: $0, assets: assets, additionalTiles: groundItems) } ?? WorldVisibility()
                 if let location = try WorldHitTest.location(assets: assets, camera: displayedCamera, screenX: screenX, screenY: screenY, visibility: visibility) { onTarget?(location) }
             } else if let mobile = try WorldHitTest.mobile(assets: assets, mobiles: mobiles, presentations: motion.presentations(at: ProcessInfo.processInfo.systemUptime), camera: displayedCamera, screenX: screenX, screenY: screenY, equipment:equipment) {
-                if event.clickCount == 1 { onInspect?(mobile.serial) }
-                if event.clickCount == 2, (player?.flags ?? 0) & 0x40 != 0 { onAttack?(mobile.serial) }
-            } else if event.clickCount == 1 {
+                if clickCount == 1 { onInspect?(mobile.serial) }
+                if clickCount == 2, (player?.flags ?? 0) & 0x40 != 0 { onAttack?(mobile.serial) }
+            } else if clickCount == 1 {
                 let visibility = try player.map { try WorldVisibility.around(player:$0,assets:assets,additionalTiles:groundItems) } ?? WorldVisibility()
                 if let location = try WorldHitTest.location(assets:assets,camera:displayedCamera,screenX:screenX,screenY:screenY,visibility:visibility,additionalTiles:groundItems) {
                     onWalkTo?(location,nil,running)
@@ -645,6 +675,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.onOptions = { [weak self] in self?.showLogin() }
         panel.onLogout = { [weak self] in self?.loginOverlay?.logout() }
         panel.onJournal = { [weak self] in self?.showJournal() }
+        panel.onHelp = { [weak self] in self?.loginOverlay?.requestHelp() }
         panel.onWarMode = { [weak self] in self?.loginOverlay?.toggleWarMode() }
         panel.onSkills = { [weak self] in self?.showSkills() }
         panel.onClose = { [weak self] in self?.showCharacter() }
