@@ -128,6 +128,7 @@ public final class ClientAssets {
     public let width: Int
     public let height = 4096
     public let reportedVersion: String
+    public let fonts:ClassicFonts?
     public let lights:LightAssets?
     public let sounds:SoundAssets?
     public let animations: AnimationAssets?
@@ -162,6 +163,7 @@ public final class ClientAssets {
         if files["anim.idx"] != nil, files["anim.mul"] != nil {
             animations = try AnimationAssets(index: load("anim.idx").data, data: load("anim.mul").data)
         } else { animations = nil }
+        fonts = files["fonts.mul"].flatMap { try? ClassicFonts(data:Data(contentsOf:$0,options:.alwaysMapped)) }
         lights = try files["lightidx.mul"] != nil && files["light.mul"] != nil
             ? LightAssets(index:load("lightidx.mul").data,data:load("light.mul").data) : nil
         sounds = try files["soundidx.mul"] != nil && files["sound.mul"] != nil

@@ -96,6 +96,8 @@ UI assets; the world uses 1.25.32.
 
 ![Minoc lighting fixture at night](docs/screenshots/minoc-night.png)
 
+![Journal fixture with original parchment and bitmap font](docs/screenshots/journal.png)
+
 ## Development
 
 ```sh

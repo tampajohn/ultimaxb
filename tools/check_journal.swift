@@ -4,6 +4,7 @@ import UOCore
  @MainActor static func main() throws {
   _ = NSApplication.shared
   let assets = try ClientAssets(directory:URL(fileURLWithPath:"uo1998-client"))
+  precondition(assets.fonts?.count == 10, "Installed classic font records")
   let panel = JournalPanel(assets:assets)
   let window = NSWindow(contentRect:panel.frame,styleMask:[.borderless],backing:.buffered,defer:false); window.contentView = panel
   var history = Journal()
@@ -33,8 +34,14 @@ import UOCore
   let bitmap = panel.bitmapImageRepForCachingDisplay(in:panel.bounds)!
   panel.cacheDisplay(in:panel.bounds,to:bitmap)
   try bitmap.representation(using:.png,properties:[:])!.write(to:URL(fileURLWithPath:"build/journal.png"))
+  let unicode = JournalText(fonts:assets.fonts)
+  unicode.setContents("Traveler: café — 界",width:120,minimumHeight:20)
+  precondition(unicode.string == "Traveler: café — 界" && unicode.frame.height > 20)
+  let fallback = JournalText(fonts:nil)
+  fallback.setContents("Fallback text remains readable.",width:120,minimumHeight:20)
+  precondition(fallback.frame.height > 20)
   history.clear(); panel.update(history)
-  precondition((scroll.documentView as! NSTextView).string.isEmpty)
+  precondition((scroll.documentView as! JournalText).string.isEmpty)
   var closed = false; panel.onClose = { closed = true }
   panel.subviews.compactMap { $0 as? NSButton }.first!.performClick(nil)
   precondition(closed)

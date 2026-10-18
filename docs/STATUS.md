@@ -247,3 +247,18 @@ state. If that door changes before arrival, it replans without sending another
 use/toggle (which could close an already-open door). Missing doors stop with
 feedback. Release suite: 177 tests, 2 skipped, no failures. This follow-up was
 built without interrupting the currently running manual-test session.
+
+### Classic journal text
+
+The journal now renders Latin-1 letterforms from the installed FONTS.MUL (font 9),
+with word wrapping and native glyph fallback for unavailable characters or missing
+font assets. The loader retains offsets into a bounded file, exposes only complete
+224-glyph fonts, and tolerates the installed file's partial trailing font data.
+The document uses bitmap drawing rather than native selectable text; session text
+is still exposed to accessibility, held only in memory, and never logged.
+Original glyph offsets follow the ClassicUO font reference (see existing BSD notice
+in LICENSES/ClassicUO.txt). Tests cover pixel decoding, transparency, offsets,
+font bounds and truncation. The installed file supplies ten complete fonts.
+The UI fixture verifies artwork, history scrolling, tail following, preserved
+reading position, fallback layout and clearing. Release suite: 179 tests,
+2 skipped, no failures. Visual fixture: docs/screenshots/journal.png.
