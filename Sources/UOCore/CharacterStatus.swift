@@ -12,6 +12,12 @@ public struct CharacterStatus: Equatable {
     public static func request(serial: UInt32) -> Data {
         Data([0x34,0xED,0xED,0xED,0xED,4] + LoginPackets.seed(serial))
     }
+    /// Resource-only packets omit base stats. Ask the server for details when
+    /// their maxima change; damage, regeneration and full replies need no query.
+    public func needsDetailRefresh(after previous: CharacterStatus, opcode: UInt8) -> Bool {
+        serial == previous.serial && [0xA1, 0xA2, 0xA3].contains(opcode) &&
+            (maxHealth != previous.maxHealth || maxMana != previous.maxMana || maxStamina != previous.maxStamina)
+    }
     /// Apply atomically. Names in status packets are neither retained nor logged.
     @discardableResult public mutating func apply(_ packet: Data) throws -> Bool {
         guard let opcode = packet.first, [0x11,0xA1,0xA2,0xA3].contains(opcode) else { return false }

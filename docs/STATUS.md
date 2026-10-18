@@ -490,3 +490,13 @@ Deployment check: the corrected port-2593 server passed the disposable account
 world-entry, inventory, skills and Test Center integration test. The full Swift
 suite remains at 200 tests, 2 opt-in skips, zero failures. One signed macOS client
 instance remains running; no client relaunch was needed for this server-only fix.
+
+Stat sidebar refresh (2026-10-18): Test Center stat changes update STR/DEX/INT
+on the server but send only resource packets (0xA1/A2/A3). The client now requests
+a full status reply when those packets change the player's resource maxima,
+coalescing bursts over 100 ms and cancelling pending refreshes on reset. It does
+not infer base stats from resource maxima. Damage/regeneration, another mobile's
+updates and full status replies do not trigger refresh loops. Unit coverage and
+a real local-server run verify all three `.set` commands update base stats without
+an unconditional status request in the fixture. Release suite: 201 tests, 2 skips,
+zero failures.

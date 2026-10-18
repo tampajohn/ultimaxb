@@ -47,8 +47,12 @@ final class OUOIntegrationTests: XCTestCase {
                     for packet in try framer.receive(bytes) {
                         let opcode = packet.first!
                         counts[opcode, default: 0] += 1
-                        if var stats = characterStatus {
+                        if let previous = characterStatus {
+                            var stats = previous
                             _ = try stats.apply(packet); characterStatus = stats
+                            if stats.needsDetailRefresh(after: previous, opcode: opcode) {
+                                connection.send(CharacterStatus.request(serial: stats.serial))
+                            }
                         }
                         _ = try world.apply(packet)
                         if moveSent, let entry, let player = world.mobiles[entry.serial] {
@@ -194,15 +198,19 @@ final class OUOIntegrationTests: XCTestCase {
         }
         if ProcessInfo.processInfo.environment["UO_LOCAL_TEST_CENTER"] == "1" {
             connection.send(try SpeechPackets.say(".set str 100"))
+            connection.send(try SpeechPackets.say(".set dex 100"))
+            connection.send(try SpeechPackets.say(".set int 100"))
             connection.send(try SpeechPackets.say(".set all 1000"))
             try await Task.sleep(for:.milliseconds(500))
-            if let entry { connection.send(CharacterStatus.request(serial:entry.serial)); connection.send(SkillState.request(serial:entry.serial)) }
+            if let entry { connection.send(SkillState.request(serial:entry.serial)) }
 
             for _ in 0..<100 {
-                if characterStatus?.strength == 100 && !skills.values.isEmpty && (skills.values[45] ?? 0) >= 1000 { break }
+                if characterStatus?.strength == 100 && characterStatus?.dexterity == 100 && characterStatus?.intelligence == 100 && !skills.values.isEmpty && (skills.values[45] ?? 0) >= 1000 { break }
                 try await Task.sleep(for:.milliseconds(50))
             }
             XCTAssertEqual(characterStatus?.strength,100,"Test Center stat command was not applied")
+            XCTAssertEqual(characterStatus?.dexterity,100,"DEX did not refresh after stamina maximum changed")
+            XCTAssertEqual(characterStatus?.intelligence,100,"INT did not refresh after mana maximum changed")
             XCTAssertTrue((skills.values[45] ?? 0) >= 1000,"Test Center skill command was not applied")
         }
         XCTAssertNotNil(characterStatus?.maxHealth)

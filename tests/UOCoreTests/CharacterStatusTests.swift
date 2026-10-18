@@ -25,6 +25,23 @@ final class CharacterStatusTests: XCTestCase {
         var short = Data(full().prefix(43)); short[2] = 43; short[42] = 0
         XCTAssertTrue(try status.apply(short)); XCTAssertEqual(status.health, 25); XCTAssertEqual(status.gold, 300)
     }
+    func testResourceMaxChangesRequestAuthoritativeDetails() throws {
+        var original = CharacterStatus(serial: 1)
+        try original.apply(full())
+        for opcode: UInt8 in [0xA1, 0xA2, 0xA3] {
+            var changed = original
+            try changed.apply(Data([opcode,0,0,0,1,0,100,0,100]))
+            XCTAssertTrue(changed.needsDetailRefresh(after: original, opcode: opcode))
+            XCTAssertEqual(changed.strength, 30, "Resource maxima must not be substituted for base stats")
+            let prior = changed
+            try changed.apply(Data([opcode,0,0,0,1,0,100,0,90]))
+            XCTAssertFalse(changed.needsDetailRefresh(after: prior, opcode: opcode))
+            XCTAssertFalse(changed.needsDetailRefresh(after: original, opcode: 0x11))
+            var unrelated = original
+            try unrelated.apply(Data([opcode,0,0,0,2,0,100,0,100]))
+            XCTAssertFalse(unrelated.needsDetailRefresh(after: original, opcode: opcode))
+        }
+    }
     func testMalformedStatusDoesNotPartiallyMutate() throws {
         var status = CharacterStatus(serial: 1)
         try status.apply(full()); let before = status

@@ -34,6 +34,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private var playerSerial: UInt32?
     private var loginComplete = false
     private(set) var characterStatus: CharacterStatus?
+    private var statusRefreshTask: Task<Void, Never>?
     private var combatTarget = CombatTarget()
     var onCombatTarget: ((CombatTarget) -> Void)?
     var onCharacterStatus: ((CharacterStatus?) -> Void)?
@@ -61,6 +62,15 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         guard loginComplete, let playerSerial else { return }
         connection.send(CharacterStatus.request(serial: playerSerial))
         Telemetry.shared.record("status_requested")
+    }
+    private func scheduleStatusRefresh() {
+        guard statusRefreshTask == nil else { return }
+        statusRefreshTask = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
+            guard let self, !Task.isCancelled else { return }
+            self.statusRefreshTask = nil
+            self.requestStatus()
+        }
     }
     private(set) var skills = SkillState()
     var onSkills: ((SkillState) -> Void)?
@@ -792,6 +802,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         onDismiss?()
     }
     private func reset(_ message: String) {
+        statusRefreshTask?.cancel(); statusRefreshTask = nil
         world = WorldState()
         lastContainerContents = []; stagedVendorOffers = []; vendorOffers = []; vendorSerial = nil; onVendorClosed?()
         pendingDeletion = nil; characterCreation.isHidden = true; characterSelection.isHidden = true; card.isHidden = false
@@ -852,9 +863,13 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                 for packet in try framer.receive(bytes) {
                     packetContext = GamePacketDiagnostics.summary(packet)
                     Telemetry.shared.record("game_packet", ["opcode": String(format: "0x%02X", packet.first ?? 0), "bytes": packet.count])
-                    if var stats = characterStatus, try stats.apply(packet) {
-                        characterStatus = stats; onCharacterStatus?(stats)
-                        Telemetry.shared.record("player_status_updated", ["opcode": packet[0]])
+                    if let previous = characterStatus {
+                        var stats = previous
+                        if try stats.apply(packet) {
+                            if stats.needsDetailRefresh(after: previous, opcode: packet[0]) { scheduleStatusRefresh() }
+                            characterStatus = stats; onCharacterStatus?(stats)
+                            Telemetry.shared.record("player_status_updated", ["opcode": packet[0]])
+                        }
                     }
                     let previousTarget = combatTarget.serial
                     if try combatTarget.apply(packet) {
