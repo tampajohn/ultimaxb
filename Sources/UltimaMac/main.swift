@@ -687,6 +687,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     guard panel?.targeting == true else { return false }
                     panel?.targetInventory(serial: serial); return true
                 }
+                bag.onQuickPickup = { [weak panel] serial, amount in panel?.pickupToBackpack(serial: serial, amount: amount) }
                 bag.onUse = { [weak panel] in panel?.use(serial: $0) }
                 bag.onClose = { [weak self] in
                     self?.containerPanels.removeValue(forKey: container.serial)?.removeFromSuperview()

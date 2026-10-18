@@ -11,6 +11,8 @@ experimental and is not at parity yet.
 - Terrain/statics, mobiles/equipment/hair, hues, multicomponent houses/boats,
   roof cutaways, interpolated movement and server reconciliation.
 - Inventory, stack splitting, equip/unequip, ground pickup/drop and paperdoll.
+  Container sprites highlight on hover; Shift-click transfers a whole stack or
+  single non-stackable item to the backpack (items already there stay put).
 - Chat, bounded session journal (J/paperdoll), bank requests, vendor buy/sell,
   targeting, skill requests and war mode.
 - Skills/status sidebar, equipped tool use, action animations, sound and music.

@@ -12,6 +12,7 @@ final class ContainerPanel: NSView {
     }
     private let caption = NSTextField(labelWithString: "Double-click an item to use it.")
     var onTarget: ((UInt32) -> Bool)? { didSet { canvas.onTarget = onTarget } }
+    var onQuickPickup: ((UInt32, Int) -> Void)? { didSet { canvas.onQuickPickup = onQuickPickup } }
     var onMove: ((UInt32, Int, Int, Int, UInt32) -> Void)? {
         didSet { canvas.onMove = onMove }
     }
@@ -111,6 +112,13 @@ private final class ContainerCanvas: NSView {
     private var closing = false
     var onGroundDrop: ((UInt32,Int,NSPoint)->Bool)?
     var onTarget: ((UInt32) -> Bool)?
+    var onQuickPickup: ((UInt32, Int) -> Void)?
+    private var hovered: UInt32?
+    private var pointerInside = false
+    private func updateHover() {
+        let next = pointerInside && !dragging ? hit(at: pointer)?.serial : nil
+        if next != hovered { hovered = next; needsDisplay = true }
+    }
     var onMove: ((UInt32, Int, Int, Int, UInt32) -> Void)?
     var onSplit: ((ContainerItem) -> Void)?
     var resolveDrop: ((NSPoint, ContainerItem) -> (UInt32, NSPoint)?)?
@@ -170,9 +178,15 @@ private final class ContainerCanvas: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         for area in trackingAreas { removeTrackingArea(area) }
-        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self))
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self))
     }
-    override func mouseMoved(with event: NSEvent) { pointer = convert(event.locationInWindow, from: nil); if dragging { needsDisplay = true; updateDragPreview() } }
+    override func mouseEntered(with event: NSEvent) { mouseMoved(with: event) }
+    override func mouseExited(with event: NSEvent) { pointerInside = false; updateHover() }
+    override func mouseMoved(with event: NSEvent) {
+        pointer = convert(event.locationInWindow, from: nil); pointerInside = bounds.contains(pointer)
+        updateHover()
+        if dragging { needsDisplay = true; updateDragPreview() }
+    }
     override func rightMouseDown(with event: NSEvent) { if candidate != nil { cancelDrag() } else { onClose?() } }
     override func mouseDragged(with event: NSEvent) {
         if closing { return }
@@ -215,7 +229,7 @@ private final class ContainerCanvas: NSView {
         }
         return nil
     }
-    var items: [ContainerItem] = []
+    var items: [ContainerItem] = [] { didSet { updateHover() } }
     var onUse: ((UInt32) -> Void)?
     var onSelect: ((String) -> Void)?
     override var isFlipped: Bool { true }
@@ -236,6 +250,13 @@ private final class ContainerCanvas: NSView {
                     for i in stride(from: 0, to: pixels.count, by: 4) where pixels[i+3] != 0 {
                         let c = hue.color(red: pixels[i], green: pixels[i+1], blue: pixels[i+2])
                         pixels[i] = c.0; pixels[i+1] = c.1; pixels[i+2] = c.2
+                    }
+                }
+                if hovered == item.serial && !dragging {
+                    for i in stride(from: 0, to: pixels.count, by: 4) where pixels[i+3] != 0 {
+                        pixels[i] = UInt8((Int(pixels[i]) + 255) / 2)
+                        pixels[i+1] = UInt8((Int(pixels[i+1]) + 220) / 2)
+                        pixels[i+2] = UInt8(Int(pixels[i+2]) / 2)
                     }
                 }
                 guard let provider = CGDataProvider(data: Data(pixels) as CFData),
@@ -273,6 +294,11 @@ private final class ContainerCanvas: NSView {
         let stackable = (try? assets.isStackable(graphic: item.graphic)) == true
         onSelect?(stackable && item.amount > 1 ? "\(name) × \(item.amount)" : name)
         Telemetry.shared.record("container_item_clicked", ["serial": item.serial, "graphic": item.graphic, "clicks": event.clickCount])
+        if event.modifierFlags.contains(.shift) {
+            Telemetry.shared.record("container_quick_pickup", ["serial": item.serial, "container": serial])
+            onQuickPickup?(item.serial, stackable ? max(1, item.amount) : 1)
+            cancelDrag(); return
+        }
         if event.clickCount == 2 { onUse?(item.serial); cancelDrag() }
     }
 }

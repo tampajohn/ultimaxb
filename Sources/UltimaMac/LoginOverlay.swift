@@ -389,6 +389,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     var onInventoryMessage: ((String) -> Void)?
     func pickupToBackpack(serial: UInt32, amount: Int) {
         guard let playerSerial, let backpack = world.equipment.values.first(where: { $0.owner == playerSerial && $0.layer == 21 }) else { return }
+        guard world.containerItems[serial]?.container != backpack.serial else { return }
         Telemetry.shared.record("quick_pickup", ["serial": serial, "amount": amount])
         moveItem(serial: serial, amount: amount, x: 0xFFFF, y: 0xFFFF, target: backpack.serial)
     }
