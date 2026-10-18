@@ -1,7 +1,9 @@
 # Status
 
 The goal is full chosen-era playability on macOS, then evaluation of an original
-Xbox port. The present client is experimental and is not at parity yet.
+Xbox port. The scope also includes a built-in UOAssist-style assistant, with
+automated mining and herding as explicit deliverables. The present client is
+experimental and is not at parity yet.
 
 ## Implemented, with live shard testing still ongoing
 
@@ -36,7 +38,8 @@ Xbox port. The present client is experimental and is not at parity yet.
   server packet handlers.
 - Startup music selection when the server sends no music packet; no guessed
   region query or opening-theme fallback is currently used.
-- Automation zones/mining/herding are future work, not advertised as implemented.
+- Built-in assistant, automated mining/herding, zone overlays and workflow controls
+  are required goal work, not implemented yet; see [assistant scope](ASSISTANT.md).
 - Xbox rendering/networking/runtime integration and memory/performance validation.
 
 ## Local verification snapshot

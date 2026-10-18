@@ -11,6 +11,10 @@ characters with equipment, and supports movement, containers, vendors, chat,
 targeting, skills, and basic spell/combat interactions. **Full classic-client
 parity is not finished.** See [status and remaining work](docs/STATUS.md).
 
+The goal also includes a [built-in assistant](docs/ASSISTANT.md), including
+automated mining and herding with selectable zones and visible controls. These
+workflows are planned and are not implemented yet.
+
 ## Run on macOS
 
 Requires macOS 13+ and Swift 6; developed with Swift 6.3.3 on Apple Silicon.
