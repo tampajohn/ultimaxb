@@ -477,3 +477,16 @@ against port 2594. Sampling the stuck process shows repeated player/container
 serialization inside `SaveDynamic0_WriteCommit`. The diagnostic process was
 stopped to prevent further buffer-overflow logging; original world data was not
 modified. The precise linked-list corruption remains under investigation.
+
+Local server save correction: traced the duplicate player insertion to a `void`
+versus `int` virtual-method return mismatch in OUO's player trade cancellation.
+A tracked source patch now makes logout unlink the player correctly. The isolated
+login/inventory → save → reload → same-character test passes, including persisted
+strength. The corrected Local Test Center has been restarted on port 2593 with
+the original saved world. Periodic-save soak testing is still pending; see
+[local server instructions](LOCAL_SERVER.md) for patch and reproduction details.
+
+Deployment check: the corrected port-2593 server passed the disposable account
+world-entry, inventory, skills and Test Center integration test. The full Swift
+suite remains at 200 tests, 2 opt-in skips, zero failures. One signed macOS client
+instance remains running; no client relaunch was needed for this server-only fix.

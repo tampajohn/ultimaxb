@@ -47,3 +47,34 @@ https://github.com/draxinar/ouo and https://github.com/draxinar/rundir.
 
 The client login is encrypted, so this server deliberately does **not** use
 `-nocrypt`. Its selected protocol is `-client 12532`.
+
+## Local save correction (2026-10-18)
+
+The pinned OUO source declared `CPlayer_CancelTrade` as returning `void`, but
+`CEntity_RemoveFromWorld` calls its virtual slot as returning `int`. An undefined
+nonzero result skipped unlinking the player, leaving an archived player also in
+the spatial grid. The next save inserted it again, forming a cycle and exhausting
+the per-block buffer. `tools/server-patches/ouo-player-trade-return.patch` makes
+the player override return zero: cancelling trade containers does not destroy the
+player, so world removal must continue.
+
+The correction was tested on an isolated copy: login, movement, stack split/merge,
+unequip/equip, shutdown save, restart, then the same character's persisted stats
+and inventory interactions. The original failing build reproduced a duplicate
+spatial insertion; the corrected build completed both shutdown saves and the intervening reload.
+Long-running periodic-save validation remains outstanding.
+
+To reproduce the local executable from the pinned source, apply both patches:
+
+```sh
+git -C build/ouo apply ../../tools/server-patches/ouo-loopback.patch
+git -C build/ouo apply ../../tools/server-patches/ouo-player-trade-return.patch
+make -C build/ouo -j4
+```
+
+Apply them only to an unpatched checkout. Copy `build/ouo/ouo` to
+`build/local-shard/run/ouo` while the server is stopped. The loopback patch is
+required to keep this test server local. Existing world/account data stays in
+place. Reusing `UO_LOCAL_TEST_ACCOUNT` with the opt-in integration test now checks
+that the fixture's modified Test Center strength survived the restart. Only use
+a disposable fixture account with that test, never a playing character.

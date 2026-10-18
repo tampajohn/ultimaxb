@@ -22,6 +22,7 @@ final class OUOIntegrationTests: XCTestCase {
         defer { connection.disconnect(notify: false) }
         var framer = GamePacketFramer()
         var world = WorldState()
+        var createdCharacter = false
         var entry: WorldEntry?
         var characterStatus: CharacterStatus?
         var skills = SkillState()
@@ -69,6 +70,7 @@ final class OUOIntegrationTests: XCTestCase {
                             if let character = characters.first {
                                 connection.send(try LoginPackets.play(name: character.name, slot: character.slot))
                             } else {
+                                createdCharacter = true
                                 connection.send(Self.fixtureCharacter(name: String(name)))
                             }
                         case 0x27, 0x28:
@@ -184,7 +186,12 @@ final class OUOIntegrationTests: XCTestCase {
             if speechReceived { break }
             try await Task.sleep(for: .milliseconds(50))
         }
-        XCTAssertEqual(characterStatus?.strength, 30)
+        if createdCharacter {
+            XCTAssertEqual(characterStatus?.strength, 30)
+        } else {
+            let expectedStrength = ProcessInfo.processInfo.environment["UO_LOCAL_TEST_CENTER"] == "1" ? 100 : 30
+            XCTAssertEqual(characterStatus?.strength, expectedStrength, "Fixture stats did not persist across reconnect/restart")
+        }
         if ProcessInfo.processInfo.environment["UO_LOCAL_TEST_CENTER"] == "1" {
             connection.send(try SpeechPackets.say(".set str 100"))
             connection.send(try SpeechPackets.say(".set all 1000"))

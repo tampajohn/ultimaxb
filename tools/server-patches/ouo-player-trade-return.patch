@@ -1,0 +1,37 @@
+diff --git a/player.c b/player.c
+index f22fa87..e37de2b 100644
+--- a/player.c
++++ b/player.c
+@@ -3539,7 +3539,7 @@ CPlayer_HasGMBody(CPlayer *this)
+  *
+  * Closes any trade session involving this player.
+  */
+-void
++int
+ CPlayer_CancelTrade(CPlayer *player)
+ {
+ 	CTradeSession *session;
+@@ -3563,6 +3563,10 @@ CPlayer_CancelTrade(CPlayer *player)
+ 		session = nextSession;
+ 	}
+ 	USED(result);
++	// VT_CANCEL_TRADE returns whether the receiver itself was destroyed.
++	// Closing trade containers never destroys this player. The caller must
++	// continue unlinking the player from the world during logout/save.
++	return 0;
+ }
+ 
+ /*
+diff --git a/player.h b/player.h
+index 160ff64..eb76069 100644
+--- a/player.h
++++ b/player.h
+@@ -224,7 +224,7 @@ void CPlayer_AddToGMCallQueue(CPlayer *this); // 0x00454D31
+ int CPlayer_RemoveFromGMCallQueue(CPlayer *this); // 0x00454DC0
+ int CPlayer_IsGameMaster(CPlayer *this); // 0x00454E03
+ int CPlayer_HasGMBody(CPlayer *this); // 0x00454E22
+-void CPlayer_CancelTrade(CPlayer *player); // 0x00454E46
++int CPlayer_CancelTrade(CPlayer *player); // 0x00454E46
+ int CPlayer_ApplyResurrection(CPlayer *this, int flag); // 0x00454EB4
+ void CPlayer_InstantResurrect(CPlayer *this); // 0x00455210
+ void CMobile_NotifyNearbyPlayers(CItem *mob); // 0x00455264

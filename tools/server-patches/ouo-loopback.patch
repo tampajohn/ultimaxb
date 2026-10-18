@@ -1,0 +1,12 @@
+diff --git a/socket.c b/socket.c
+index 4bc1cc0..ea592c7 100644
+--- a/socket.c
++++ b/socket.c
+@@ -688,6 +688,7 @@ CListenSocket_Listen(CListenSocket *this, uint16_t port, int backlog)
+ 	memset(&sin, 0, sizeof(sin));
+ 	sin.sin_family = AF_INET;
+ 	sin.sin_port = htons(port);
++	sin.sin_addr.s_addr = inet_addr("127.0.0.1"); // local integration only
+ 	if (bind(this->socket.s, (struct sockaddr *)&sin, sizeof(sin)) == -1) {
+ 		perror("CListenSocket::Init: bind");
+ 		close(this->socket.s);
