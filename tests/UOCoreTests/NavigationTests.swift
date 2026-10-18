@@ -18,6 +18,19 @@ final class NavigationTests:XCTestCase {
         XCTAssertEqual(near,[])
         XCTAssertNil(WalkPath.find(from:start,x:1,y:0,adjacent:true,goalZ:50,step:step))
     }
+    func testToolApproachReachesCliffWithoutClimbingTargetZ() throws {
+        let target = TargetSelection(x:5,y:0,z:60,graphic:0)
+        XCTAssertTrue(ToolReach.needsApproach(playerX:0,playerY:0,target:target))
+        let route = try XCTUnwrap(WalkPath.find(from:WalkPoint(x:0,y:0,z:0),x:5,y:0,adjacent:true) { point,direction in
+            let delta = WalkPath.directions[Int(direction)]
+            let next = WalkPoint(x:point.x+delta.0,y:point.y+delta.1,z:0)
+            return (0..<5).contains(next.x) && (-2...2).contains(next.y) ? next : nil
+        })
+        let last = try XCTUnwrap(route.last)
+        XCTAssertFalse(ToolReach.needsApproach(playerX:last.x,playerY:last.y,target:target))
+        XCTAssertEqual(last.z,0)
+        XCTAssertFalse(route.contains { $0.x == target.x && $0.y == target.y })
+    }
     func testApproachStopsBesideBlockedTarget() throws {
         let target = WalkPoint(x:5,y:0,z:0)
         let start = WalkPoint(x:0,y:0,z:0)

@@ -60,6 +60,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     }
     func useSkill(_ id: Int) {
         guard loginComplete, let packet = try? SkillState.use(id: id) else { return }
+        equippedTargetTool = nil
+        if case .toolTarget = routeAction { cancelRoute() }
         connection.send(packet)
         Telemetry.shared.record("skill_used", ["id": id])
     }
@@ -71,8 +73,9 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private var walkRoute:[WalkPoint]?
     enum ArrivalAction {
         case use(UInt32), pickup(UInt32, Int), attack(UInt32)
+        case toolTarget(TargetRequest,TargetSelection,UInt32)
         var serial: UInt32 {
-            switch self { case .use(let s), .pickup(let s,_), .attack(let s): return s }
+            switch self { case .use(let s), .pickup(let s,_), .attack(let s): return s; case .toolTarget(_,let target,_): return target.serial }
         }
     }
     private var routeAction: ArrivalAction?
@@ -134,8 +137,28 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         }
     }
     private func performArrival(_ action:ArrivalAction, player:WorldMobile) {
+        if case .toolTarget(let request,let original,let tool) = action {
+            guard targetRequest == request,equippedTargetTool == tool,
+                  let held = world.equipment[tool],held.owner == player.serial,
+                  held.layer == 1 || held.layer == 2 else {
+                onInventoryMessage?("The tool or target request changed. Use the tool again."); return
+            }
+            let selection:TargetSelection
+            if original.serial == 0 { selection = original }
+            else if let mobile = world.mobiles[original.serial] {
+                selection = TargetSelection(serial:mobile.serial,x:mobile.x,y:mobile.y,z:mobile.z,graphic:mobile.body)
+            } else if let item = world.items[original.serial] {
+                selection = TargetSelection(serial:item.serial,x:item.x,y:item.y,z:item.z,graphic:item.graphic)
+            } else { onInventoryMessage?("That target is no longer nearby."); return }
+            guard !ToolReach.needsApproach(playerX:player.x,playerY:player.y,target:selection) else {
+                onInventoryMessage?("The target moved out of reach. Select it again."); return
+            }
+            target(selection,allowApproach:false)
+            return
+        }
         let target: WalkPoint?
         switch action {
+        case .toolTarget: return
         case .attack(let serial):
             target = world.mobiles[serial].map { WalkPoint(x:$0.x,y:$0.y,z:$0.z) }
         case .use(let serial), .pickup(let serial,_):
@@ -147,6 +170,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             Telemetry.shared.record("arrival_action_out_of_range",["serial":action.serial]); return
         }
         switch action {
+        case .toolTarget: return
         case .use(let serial): use(serial:serial)
         case .pickup(let serial,let amount):
             guard let item = world.items[serial] else { return }
@@ -202,7 +226,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     func castSpell(_ id:Int,book:UInt32) {
         guard loginComplete, ClassicSpells.contents(book:book,items:Array(world.containerItems.values)).contains(id),
               let packet = try? ClassicSpells.cast(id:id,book:book) else { return }
-        cancelRoute()
+        cancelRoute(); equippedTargetTool = nil
         connection.send(packet)
         Telemetry.shared.record("spell_cast_requested",["id":id,"book":book])
     }
@@ -289,6 +313,10 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     }
     func use(serial: UInt32) {
         guard loginComplete else { return }
+        if case .toolTarget = routeAction { cancelRoute() }
+        if let item = world.equipment[serial],item.owner == playerSerial,(item.layer == 1 || item.layer == 2) {
+            equippedTargetTool = serial; equippedTargetDeadline = ProcessInfo.processInfo.systemUptime+10
+        } else { equippedTargetTool = nil }
         Telemetry.shared.record("use_item", ["serial": serial])
         connection.send(InteractionPackets.use(serial: serial))
     }
@@ -306,14 +334,28 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         use(serial:selected.serial)
         Telemetry.shared.record("equipped_tool_shortcut",["serial":selected.serial,"graphic":selected.graphic])
     }
+    private var equippedTargetTool:UInt32?
+    private var equippedTargetDeadline:TimeInterval = 0
+    var onApproachToolTarget:((TargetRequest,TargetSelection,UInt32)->Void)?
     private var targetRequest: TargetRequest?
     var onTargeting: ((Bool) -> Void)?
     var targeting: Bool { targetRequest != nil }
-    func target(_ selection: TargetSelection?) {
+    func target(_ selection: TargetSelection?,allowApproach:Bool = true) {
         guard loginComplete, let request = targetRequest else { return }
         do {
-            connection.send(try request.response(selection))
-            targetRequest = nil; onTargeting?(false)
+            let response = try request.response(selection)
+            if let selection,allowApproach,let tool = equippedTargetTool,
+               let playerSerial,let player = world.mobiles[playerSerial],
+               selection.serial == 0 || world.items[selection.serial] != nil || world.mobiles[selection.serial] != nil,
+               ToolReach.needsApproach(playerX:player.x,playerY:player.y,target:selection) {
+                onApproachToolTarget?(request,selection,tool)
+                Telemetry.shared.record("tool_target_approach",["tool":tool,"x":selection.x,"y":selection.y])
+                return
+            }
+            if case .toolTarget = routeAction { cancelRoute() }
+            if selection == nil { equippedTargetTool = nil }
+            connection.send(response)
+            targetRequest = nil; equippedTargetTool = nil; onTargeting?(false)
             Telemetry.shared.record(selection == nil ? "target_cancelled" : "target_selected", ["cursor": request.cursor, "serial": selection?.serial ?? 0, "x":selection?.x ?? -1,"y":selection?.y ?? -1,"z":selection?.z ?? 0,"graphic":selection?.graphic ?? 0])
         } catch { onInventoryMessage?("Select an object for this target.") }
     }
@@ -662,6 +704,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         onPlayer?(nil)
         onEquipment?([])
         awaitingSpellbook = false
+        equippedTargetTool = nil
         textPrompt = nil; onTextPrompt?(nil)
         trade = nil; tradeTransfer = nil; onTrade?(nil)
         huePicker = nil; onHuePicker?(nil)
@@ -811,6 +854,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         Telemetry.shared.record("mobile_animation",["serial":animation.serial,"action":animation.action,"frames":animation.frameCount,"repeats":animation.repeatCount,"delay":animation.delay])
                     case 0x6C:
                         let request = try TargetRequest.decode(packet)
+                        if case .toolTarget = routeAction { cancelRoute() }
+                        if ProcessInfo.processInfo.systemUptime>equippedTargetDeadline || request.flags == 3 { equippedTargetTool = nil }
                         targetRequest = request.flags == 3 ? nil : request
                         onTargeting?(targetRequest != nil)
                         Telemetry.shared.record("target_requested", ["cursor": request.cursor, "flags": request.flags, "allows_location": request.allowsLocation])

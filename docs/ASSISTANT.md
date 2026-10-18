@@ -30,8 +30,14 @@ mining and herding are additional requested UltimaXB workflows.
   actions without repeatedly issuing failed commands.
 - Herding: select eligible animals and a destination/zone, use the shepherd's
   crook and its target sequence, and handle moving, missing or unreachable animals.
-- Explicit handling for inventory destinations and full containers. Do not silently
-  discard resources or sell belongings as a workaround for weight limits.
+- Ore hauling to a selected forge while overloaded: intentionally drop selected
+  mined ore, walk a short reachable segment while keeping it within pickup range,
+  pick it up, and repeat toward the forge. Confirm each inventory/world change
+  before the next step; stop on refusal, changed ownership/serial, disappearance,
+  blocked movement or disconnect. Show the ore location and recovery action.
+  This requested workflow permits temporary ground placement of selected ore;
+  it does not authorize discarding other belongings or automatic selling.
+- Explicit handling for inventory destinations and full containers.
 - Save workflow and zone configuration with character/server scope. Clear pending
   targets and stop execution on disconnect; reconnect must not silently resume.
 - Bounded retries, server-response waits and timeouts. Use the same authoritative
@@ -72,3 +78,6 @@ duplicate target requests stop the action; same-type cursor reuse across multipl
 phases needs additional protocol evidence. Repetition, pause/resume, zones, tool
 selection and visible controls are still required. Current manual tools are
 foundations, not evidence of automation parity.
+
+Ore hauling is required but not implemented yet. Finish tool-target approach, then
+implement and test confirmed drop/move/pickup transitions before live ore handling.

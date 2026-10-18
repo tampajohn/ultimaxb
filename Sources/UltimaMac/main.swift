@@ -702,6 +702,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             panel.onAnimation = { [weak self] in self?.worldView?.playAnimation($0) }
             worldView?.onUseEquippedTool = { [weak panel] in panel?.useEquippedTool() }
+            panel.onApproachToolTarget = { [weak self] request,selection,tool in
+                self?.approach(selection,action:.toolTarget(request,selection,tool),running:self?.worldView?.running ?? false)
+            }
             worldView?.onTarget = { [weak panel] in panel?.target($0) }
             panel.equipmentLayer = { [weak self] graphic in try? self?.assets.equipmentLayer(graphic: graphic) }
             panel.onVendor = { [weak self, weak panel] serial, offers, selling in
@@ -988,8 +991,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         do {
             let map = try NavigationMap(assets:assets,center:start,additional:view.groundItems)
+            // A mineable cliff face is not a floor to stand on. Reach a neighboring
+            // walkable tile without requiring the clicked cliff's elevation.
+            let goalZ:Int?
+            if case .toolTarget = action { goalZ = nil } else { goalZ = action == nil ? nil : location.z }
             guard let route = WalkPath.find(from:start,x:location.x,y:location.y,adjacent:action != nil,
-                                            goalZ:action == nil ? nil : location.z,
+                                            goalZ:goalZ,
                                             step:{ map.step(from:$0,direction:$1) }) else {
                 chatPanel.append("No clear route to that location.")
                 Telemetry.shared.record("walk_route_unreachable",["x":location.x,"y":location.y]); return
@@ -999,7 +1006,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self, let view = self.worldView,
                       let map = try? NavigationMap(assets:self.assets,center:start,additional:view.groundItems) else { return nil }
                 return WalkPath.find(from:start,x:location.x,y:location.y,adjacent:action != nil,
-                                     goalZ:action == nil ? nil : location.z) { point,direction in
+                                     goalZ:goalZ) { point,direction in
                     guard let next = map.step(from:point,direction:direction), !blocked.contains(next) else { return nil }
                     return next
                 }

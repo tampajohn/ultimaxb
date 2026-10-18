@@ -44,7 +44,7 @@ experimental and is not at parity yet.
 
 ## Local verification snapshot
 
-2026-10-18: 163 Swift tests executed, 2 opt-in integration tests skipped, no
+2026-10-18: 164 Swift tests executed, 2 opt-in integration tests skipped, no
 failures. The server-dialog harness additionally verifies page changes without
 replies, selection state and Unicode text across pages, plus formatted text, item art
 and overflowing scroll content. This does not establish
@@ -173,3 +173,13 @@ requests and an explicitly correlated result. Local tests cover one-target minin
 and two-target herding-shaped sequences, reused cursor IDs across target types,
 incompatible/duplicate targets, cancellation, timeout, refusal and depletion.
 It is not connected to live automation or UI yet; see [assistant scope](ASSISTANT.md).
+
+Equipped-tool targeting: selecting an out-of-reach world target after using a hand
+item now defers the target response while routing to an adjacent walkable tile.
+The clicked cliff elevation is not treated as a standing surface. Arrival waits
+for movement acknowledgements and rechecks held tool, current cursor and object
+position. New cursors, other actions and manual route cancellation prevent stale
+arrival actions. Targets within reach and inventory targets still respond directly.
+Local navigation regression tests pass; live approach remains to be exercised.
+The existing 24-tile local routing limit applies. Ore hauling to a forge is now
+explicitly required in the assistant scope but automatic drops are not implemented.
