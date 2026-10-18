@@ -65,3 +65,11 @@ preview, and the classic 1,000-color palette across five shade settings. Only
 explicit confirmation sends a reply. Local UI/wire tests pass; live dyeing has
 not been exercised. Modern clients differ in handling the unused/type word;
 this implementation targets the chosen OUO-era packet layout.
+
+Secure trade groundwork: legacy OUO 0x6F open/update/close packets and 17-byte
+accept/cancel replies are modeled with server-confirmed acceptance. Offer changes
+(including known nested contents) invalidate the UI revision and withdraw pending
+or confirmed local acceptance. Tests cover exact replies, malformed packets, stale
+acceptance, cancellation and unrelated trade IDs. This is not yet a usable trade
+workflow: dispatch, original-art window, drag/drop, and live two-party validation
+remain outstanding. No live trades were initiated or accepted.
