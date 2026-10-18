@@ -41,7 +41,7 @@ Xbox port. The present client is experimental and is not at parity yet.
 
 ## Local verification snapshot
 
-2026-10-18: 151 Swift tests executed, 2 opt-in integration tests skipped, no
+2026-10-18: 153 Swift tests executed, 2 opt-in integration tests skipped, no
 failures. The server-dialog harness additionally verifies page changes without
 replies, selection state and Unicode text across pages, plus formatted text, item art
 and overflowing scroll content. This does not establish
@@ -121,3 +121,10 @@ the paperdoll body, equipment or backpack selects that object before any use or
 drag action. Existing Escape cancellation remains available. Local paperdoll
 fixtures verify target identities and absence of use/drop side effects, alongside
 normal equipment dragging. Live spell/tool outcomes still require validation.
+
+Ambient lighting: legacy global 0x4F and player-specific 0x4E packets now drive
+world brightness using the ClassicUO level calculation. Menus, chat and interaction
+feedback retain their brightness. Unrelated personal-light updates are ignored,
+levels clamp to 30, and disconnect resets lighting. Wire/state tests cover these
+cases. Local light sprites from lamps, torches and spells remain missing, so this
+is not full lighting parity and dark areas may lack expected local illumination.

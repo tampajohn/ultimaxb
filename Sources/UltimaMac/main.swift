@@ -88,6 +88,7 @@ final class WorldView: NSView {
         }
         needsDisplay = true
     }
+    var lighting = WorldLighting() { didSet { needsDisplay = true } }
     var targeting = false { didSet { window?.invalidateCursorRects(for: self); needsDisplay = true } }
     var onTarget: ((TargetSelection?) -> Void)?
     override func resetCursorRects() {
@@ -292,6 +293,10 @@ final class WorldView: NSView {
             NSGraphicsContext.current?.imageInterpolation = .none
             image.draw(in: imageRect, from: .zero, operation: .copy, fraction: 1,
                        respectFlipped: true, hints: nil)
+        }
+        if frameImage != nil, lighting.brightness<1 {
+            NSColor.black.withAlphaComponent(1-lighting.brightness).setFill()
+            imageRect.fill(using:.sourceOver)
         }
         drawWalkRoute()
         drawObjectFeedback()
@@ -671,6 +676,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 view.addSubview(bag); self.containerPanels[container.serial] = bag
                 Telemetry.shared.record("container_opened", ["serial": container.serial, "graphic": container.graphic])
             }
+            panel.onLighting = { [weak self] in self?.worldView?.lighting = $0 }
             panel.onTargeting = { [weak self] active in
                 self?.worldView?.targeting = active
                 if active, let view = self?.worldView { view.window?.makeFirstResponder(view) }

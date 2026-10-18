@@ -330,6 +330,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         guard let item = world.containerItems[serial] else { return }
         target(TargetSelection(serial: serial, x: item.x, y: item.y, z: 0, graphic: item.graphic))
     }
+    private var lighting = WorldLighting()
+    var onLighting:((WorldLighting)->Void)?
     var onMusic: ((Int)->Void)?
     var onSound: ((SoundEffect)->Void)?
     var onSpeech: ((SpeechMessage) -> Void)?
@@ -651,6 +653,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         pendingDeletion = nil; characterCreation.isHidden = true; characterSelection.isHidden = true; card.isHidden = false
         skills = SkillState(); onSkills?(skills)
         characterStatus = nil; onCharacterStatus?(nil)
+        lighting = WorldLighting(); onLighting?(lighting)
         combatTarget = CombatTarget(); onCombatTarget?(combatTarget)
         targetRequest = nil; onTargeting?(false)
         playerSerial = nil
@@ -790,6 +793,11 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                     case 0x3A:
                         try skills.apply(packet); onSkills?(skills)
                         Telemetry.shared.record("skills_received", ["count": skills.values.count])
+                    case 0x4E,0x4F:
+                        if try lighting.apply(packet,player:playerSerial) {
+                            onLighting?(lighting)
+                            Telemetry.shared.record("light_updated",["overall":lighting.overall,"personal":lighting.personal,"brightness":lighting.brightness])
+                        }
                     case 0x6D:
                         let id = try MusicCatalog.decode(packet)
                         Telemetry.shared.record("music_received",["id":id]); onMusic?(id)
