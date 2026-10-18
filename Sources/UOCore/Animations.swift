@@ -9,11 +9,13 @@ public struct AnimationFrame {
 }
 
 enum AnimationDecoder {
-    static func decode(_ raw: Bytes, frame: Int, mirrored: Bool = false) throws -> AnimationFrame {
+    static func decode(_ raw: Bytes, frame: Int, mirrored: Bool = false) throws -> AnimationFrame? {
         let count = try raw.u32(512)
         guard count > 0, count <= 512, frame >= 0 else { throw AssetError("Invalid animation frame count") }
         try raw.check(516, count * 4)
         let relative = try raw.u32(516 + (frame % count) * 4)
+        // Original MULs contain sparse frame tables: zero means no sprite.
+        guard relative != 0 else { return nil }
         guard relative >= 4 + count * 4 else { throw AssetError("Animation frame overlaps its index") }
         var cursor = 512 + relative
         func signed(_ value: Int) -> Int { Int(Int16(bitPattern: UInt16(value))) }
@@ -89,7 +91,7 @@ public final class AnimationAssets {
         let offset = try index.u32(entry * 12), length = try index.u32(entry * 12 + 4)
         if offset == 0xFFFFFFFF || length == 0 || length == 0xFFFFFFFF { return nil }
         guard length <= 16 * 1024 * 1024 else { throw AssetError("Oversized animation record") }
-        let decoded = try AnimationDecoder.decode(data.slice(offset, length), frame: frame, mirrored: mirror)
+        guard let decoded = try AnimationDecoder.decode(data.slice(offset, length), frame: frame, mirrored: mirror) else { return nil }
         let cost = decoded.sprite.rgba.count
         if cost <= cacheLimit {
             while cacheBytes + cost > cacheLimit, let oldest = cache.min(by: { $0.value.1 < $1.value.1 }) {

@@ -506,3 +506,22 @@ interval (16 seconds, versus the normal 4096 ticks) remained responsive through
 multiple saves and passed same-character reconnect/inventory/stat checks afterward.
 The accelerated interval was never installed in the user server. Normal-interval
 soak testing remains pending on the running port-2593 process.
+
+Black-frame flash correction (2026-10-18): current-session telemetry recorded 33
+`Animation frame overlaps its index` failures around (3647,2653). The renderer
+cleared its complete image on each exception. The installed ANIM.MUL has 365
+zero frame offsets; these sparse/absent sprites now return nil, while nonzero
+offsets overlapping the table remain errors. A failed refresh retains the last
+complete image and matching camera/time coordinates, and telemetry records whether
+a frame was retained. No original assets were changed.
+
+Validation: 202 release tests, 2 opt-in skips, zero failures. The installed-asset
+harness `tools/check_sparse_animations.swift` exercises body 201/action 4/direction
+3 frames 0–2, including two absent frames, and verifies terrain/statics remain
+rendered. The exact reported live scene still needs observation after deployment;
+other sources of flicker have not been ruled out.
+
+Normal-cadence save observation: the original port-2593 server (PID 85184)
+remained listening after its index save advanced to 19:36, approximately 17
+minutes after startup. This verifies one normal periodic save after the fix,
+in addition to the accelerated isolated test; it is not a long-duration soak.

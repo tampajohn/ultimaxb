@@ -16,7 +16,7 @@ final class AnimationTests: XCTestCase {
         return d
     }
     func testSignedRunsPaletteAnchorsAndTransparency() throws {
-        let frame = try AnimationDecoder.decode(Bytes(record()), frame: 0)
+        let frame = try XCTUnwrap(AnimationDecoder.decode(Bytes(record()), frame: 0))
         XCTAssertEqual(frame.centerX, 1)
         XCTAssertEqual(frame.centerY, 0)
         XCTAssertEqual(frame.sprite.width, 2)
@@ -25,6 +25,15 @@ final class AnimationTests: XCTestCase {
         for length in 0..<record().count {
             XCTAssertThrowsError(try AnimationDecoder.decode(Bytes(Data(record().prefix(length))), frame: 0))
         }
+    }
+    func testSparseFrameOffsetsAreAbsentButInvalidOffsetsStillFail() throws {
+        var raw = record()
+        raw.replaceSubrange(516..<520, with: [0,0,0,0])
+        XCTAssertNil(try AnimationDecoder.decode(Bytes(raw), frame: 0))
+        raw.replaceSubrange(516..<520, with: [4,0,0,0])
+        XCTAssertThrowsError(try AnimationDecoder.decode(Bytes(raw), frame: 0))
+        raw.replaceSubrange(516..<520, with: [8,0,0,0])
+        XCTAssertNotNil(try AnimationDecoder.decode(Bytes(raw), frame: 0))
     }
     func testDirectionMappingCacheAndMissingRecords() throws {
         let raw = record()

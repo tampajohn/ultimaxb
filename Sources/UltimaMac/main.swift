@@ -290,9 +290,8 @@ final class WorldView: NSView {
                 Telemetry.shared.record("visibility_ceiling", ["z": visibility.ceiling as Any? ?? NSNull()])
                 lastCeiling = visibility.ceiling
             }
-            displayedCamera = camera ?? WorldCamera(x: Double(cx), y: Double(cy))
-            displayedAnimationTime = ProcessInfo.processInfo.systemUptime
-            let frame = try WorldRenderer.render(assets, x: cx, y: cy, statics: rendersStatics, legacyTerrain: legacyTerrain, visibility: visibility, camera: camera, groundItems: groundItems + effects.tiles(at:displayedAnimationTime,mobiles:mobiles,items:groundObjects,presentations:presentations), mobiles: mobiles, equipment: equipment, mobilePresentations: presentations, lighting:lighting, animationTime:displayedAnimationTime)
+            let renderTime = ProcessInfo.processInfo.systemUptime
+            let frame = try WorldRenderer.render(assets, x: cx, y: cy, statics: rendersStatics, legacyTerrain: legacyTerrain, visibility: visibility, camera: camera, groundItems: groundItems + effects.tiles(at:renderTime,mobiles:mobiles,items:groundObjects,presentations:presentations), mobiles: mobiles, equipment: equipment, mobilePresentations: presentations, lighting:lighting, animationTime:renderTime)
             let now = ProcessInfo.processInfo.systemUptime
             if now - lastRenderDiagnostic >= 5 {
                 Telemetry.shared.record("render_state", ["x":cx, "y":cy, "statics_enabled":rendersStatics,
@@ -304,16 +303,22 @@ final class WorldView: NSView {
                 lastRenderDiagnostic = now
             }
             let provider = CGDataProvider(data: Data(frame.rgba) as CFData)!
-            frameImage = CGImage(width: frame.width, height: frame.height, bitsPerComponent: 8,
+            guard let nextImage = CGImage(width: frame.width, height: frame.height, bitsPerComponent: 8,
                 bitsPerPixel: 32, bytesPerRow: frame.width * 4, space: CGColorSpaceCreateDeviceRGB(),
                 bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue), provider: provider,
-                decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+                decode: nil, shouldInterpolate: false, intent: .defaultIntent) else {
+                throw AssetError("Cannot create world frame image")
+            }
+            // Publish the image and its hit-test coordinates together. A failed
+            // refresh keeps the last complete frame instead of flashing black.
+            frameImage = nextImage
+            displayedCamera = camera ?? WorldCamera(x: Double(cx), y: Double(cy))
+            displayedAnimationTime = renderTime
             let ms = Int((CFAbsoluteTimeGetCurrent() - start) * 1000)
             status = "\(cx), \(cy)  ·  \(frame.landCount) land / \(frame.staticCount) statics  ·  " +
                 "\(frame.missingCount) missing  ·  \(ms) ms  ·  cache \(assets.cacheBytes / 1024) KiB" + (rendersStatics ? "" : "  ·  SCENERY HIDDEN (T)")
         } catch {
-            frameImage = nil
-            Telemetry.shared.record("render_error", ["x": cx, "y": cy, "error": String(describing: error)])
+            Telemetry.shared.record("render_error", ["x": cx, "y": cy, "error": String(describing: error), "retained_frame": frameImage != nil])
             status = "Cannot render \(cx), \(cy): \(error)"
         }
         needsDisplay = true
