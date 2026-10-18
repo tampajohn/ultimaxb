@@ -425,3 +425,20 @@ lightning, moving fireball and impact art without missing sprites; lightning and
 fireball frames were visually inspected. One client rebuilt/restarted for live
 verification. Remaining: live comparison of trajectory/timing, special blend
 modes, screen effects, 0xC0/0xC7 extended effects, and broader spell workflows.
+
+### Modernized character art experiment (2026-10-18)
+
+Added local tools to export a four-facing, clothed human reference from installed
+ANIM.MUL layers and build a side-by-side/gameplay-scale browser comparison.
+A built-in imagegen edit explores the user's requested modernized proportions and
+lighting. Reference, generated sheet, prompt and comparison remain private local
+artifacts under build/visual-upgrade; original MULs are untouched. This is an art
+direction preview, not an installed replacement: the generated poses/anchors drift,
+clothing is baked in, and consistent animation/equipment layers still need work.
+The comparison normalizes character height and lets users inspect each facing at
+1×/2×/4× and against the existing world. Export and HTML generation completed;
+comparison JavaScript syntax checked and page opened locally.
+
+Local Test Center recovery: the previous server stopped during a save with a
+1 GiB CDataBuffer overflow. Restarted the existing world on loopback port 2593;
+no account/world reset. Root cause and save reliability remain unresolved.
