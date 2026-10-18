@@ -13,6 +13,9 @@ final class SpeechTests: XCTestCase {
         packet.append(Data("Banker".utf8)); packet.append(Data(repeating: 0, count: 24))
         packet.append(Data("Hello".utf8)); packet.append(0)
         let message = try SpeechMessage.decode(packet)
+        XCTAssertEqual(message.hue,0x3B2); XCTAssertEqual(message.font,3)
+        var overhead = OverheadSpeech(); overhead.append(message,at:0)
+        XCTAssertEqual(overhead.entries.first?.hue,0x3B2)
         XCTAssertEqual(message.serial, 1); XCTAssertEqual(message.name, "Banker"); XCTAssertEqual(message.text, "Hello")
         for length in 0..<packet.count { XCTAssertThrowsError(try SpeechMessage.decode(Data(packet.prefix(length)))) }
     }

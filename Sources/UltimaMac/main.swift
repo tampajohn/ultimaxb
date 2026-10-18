@@ -479,10 +479,15 @@ final class WorldView: NSView {
             let x = imageRect.minX+(480+(px-py-displayedCamera.x+displayedCamera.y)*22)*scale
             var y = imageRect.minY+(360+(px+py-displayedCamera.x-displayedCamera.y)*22-pz*4+44-Double(height))*scale-4
             let style = NSMutableParagraphStyle(); style.alignment = .center
-            let attrs:[NSAttributedString.Key:Any] = [.font:NSFont.systemFont(ofSize:14),.foregroundColor:NSColor.white,
-                .backgroundColor:NSColor.black.withAlphaComponent(0.8),.paragraphStyle:style]
             let textWidth = min(240,max(1,imageRect.width-8))
             for entry in overheadSpeech.entries.filter({ $0.serial == serial }).reversed() {
+                var color = NSColor.white
+                if let palette = try? assets.huePalette(Int(entry.hue)) {
+                    let rgb = palette.color(red:255,green:255,blue:255)
+                    color = NSColor(calibratedRed:CGFloat(rgb.0)/255,green:CGFloat(rgb.1)/255,blue:CGFloat(rgb.2)/255,alpha:1)
+                }
+                let attrs:[NSAttributedString.Key:Any] = [.font:NSFont.systemFont(ofSize:14),.foregroundColor:color,
+                    .backgroundColor:NSColor.black.withAlphaComponent(0.8),.paragraphStyle:style]
                 let text = entry.text as NSString
                 let size = text.boundingRect(with:NSSize(width:textWidth,height:100),options:[.usesLineFragmentOrigin,.usesFontLeading],attributes:attrs).size
                 let height = min(100,ceil(size.height))

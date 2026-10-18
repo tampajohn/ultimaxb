@@ -3,8 +3,13 @@ import Foundation
 public struct SpeechMessage: Equatable {
     public let serial: UInt32
     public let type: UInt8
+    public let hue:UInt16
+    public let font:UInt16
     public let name: String
     public let text: String
+    public init(serial:UInt32,type:UInt8,name:String,text:String,hue:UInt16 = 0,font:UInt16 = 3) {
+        self.serial = serial; self.type = type; self.name = name; self.text = text; self.hue = hue; self.font = font
+    }
     public static func decode(_ packet: Data) throws -> SpeechMessage {
         guard packet.first == 0x1C, packet.count >= 45 else { throw LoginProtocolError.malformedPacket }
         var reader = PacketReader(packet, offset: 1)
@@ -12,11 +17,12 @@ public struct SpeechMessage: Equatable {
         let serial = try reader.dword()
         _ = try reader.word()
         let type = try reader.byte()
+        let hue = try reader.word(),font = try reader.word()
         guard packet.last == 0 else { throw LoginProtocolError.malformedPacket }
         func string(_ data: Data.SubSequence) -> String {
             String(data: Data(data.prefix { $0 != 0 }), encoding: .isoLatin1) ?? ""
         }
-        return SpeechMessage(serial: serial, type: type, name: string(packet[14..<44]), text: string(packet[44...]))
+        return SpeechMessage(serial: serial, type: type, name: string(packet[14..<44]), text: string(packet[44...]),hue:hue,font:font)
     }
 }
 

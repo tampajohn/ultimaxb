@@ -150,4 +150,10 @@ label. Up to three messages per speaker stack above the object, with wrapping,
 labels use interpolated positions. System messages stay in the journal/chat;
 object-label responses replace prior text for that object. Disconnect clears the
 in-memory buffer. Tests cover independent speakers, expiry and bounds. Original
-bitmap fonts, speech hues and collision avoidance between speakers remain pending.
+bitmap fonts and collision avoidance between speakers remain pending.
+
+Speech color: ASCII speech parsing now preserves hue and font IDs. Overhead
+entries retain the server hue and use the original palette, falling back to white
+when no usable palette is available. Font IDs are preserved but original bitmap
+font rendering is still pending; journal/chat text styling remains unchanged.
+Packet-to-overhead tests verify hue preservation.

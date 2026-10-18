@@ -5,6 +5,7 @@ public struct OverheadSpeech {
     public struct Entry:Equatable {
         public let serial:UInt32
         public let text:String
+        public let hue:UInt16
         public let expires:TimeInterval
     }
     public private(set) var entries:[Entry] = []
@@ -21,7 +22,7 @@ public struct OverheadSpeech {
             entries.remove(at:entries.firstIndex { $0.serial == message.serial }!)
         }
         let text = String(message.text.prefix(512))
-        entries.append(Entry(serial:message.serial,text:text,expires:time+max(4,min(12,Double(text.count)*0.06))))
+        entries.append(Entry(serial:message.serial,text:text,hue:message.hue,expires:time+max(4,min(12,Double(text.count)*0.06))))
         if entries.count>64 { entries.removeFirst(entries.count-64) }
     }
 }
