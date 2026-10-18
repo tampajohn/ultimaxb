@@ -44,6 +44,31 @@ import UOCore
             case "nodispose": break // Disposal is controlled by replies and connection lifecycle.
             case "gumppic":
                 if valid(3) { art(a[2],a[0],a[1]) } else { unsupported += 1 }
+            case "tilepic", "tilepichue":
+                guard valid(command.name == "tilepichue" ? 4 : 3), (0..<0x4000).contains(a[2]),
+                      let sprite = try? assets.sprite(a[2]+0x4000) else { continue }
+                let palette = try? assets.huePalette(a.count > 3 ? a[3] : 0,art:a[2]+0x4000)
+                let view = GumpArtwork(frame:rect(a[0],a[1],sprite.width,sprite.height))
+                view.image = Self.spriteImage(sprite,palette:palette); add(view)
+            case "gumppictiled":
+                guard valid(5) else { continue }
+                let view = GumpArtwork(frame:rect(a[0],a[1],a[2],a[3]))
+                view.image = image(a[4]); view.tiled = true; add(view)
+            case "htmlgump":
+                guard valid(7), definition.texts.indices.contains(a[4]), a[2] > 0, a[3] > 0 else { continue }
+                let scroll = NSScrollView(frame:rect(a[0],a[1],a[2],a[3]))
+                scroll.hasVerticalScroller = a[6] != 0; scroll.drawsBackground = a[5] != 0
+                scroll.backgroundColor = NSColor(calibratedRed:0.92,green:0.89,blue:0.79,alpha:1)
+                let width = max(1,scroll.contentSize.width)
+                let text = NSTextView(frame:NSRect(x:0,y:0,width:width,height:scroll.contentSize.height))
+                text.isEditable = false; text.isSelectable = false; text.drawsBackground = false
+                text.isHorizontallyResizable = false; text.isVerticallyResizable = true
+                text.textContainer?.containerSize = NSSize(width:width,height:CGFloat.greatestFiniteMagnitude)
+                text.textContainer?.widthTracksTextView = true
+                text.textStorage?.setAttributedString(GumpText.attributed(definition.texts[a[4]],color:a[5] != 0 ? .black : .white))
+                text.layoutManager?.ensureLayout(for:text.textContainer!)
+                text.setFrameSize(NSSize(width:width,height:max(scroll.contentSize.height,(text.layoutManager?.usedRect(for:text.textContainer!).height ?? 0)+16)))
+                scroll.documentView = text; add(scroll)
             case "resizepic":
                 guard valid(5), a[3] > 0, a[4] > 0 else { continue }
                 let w = min(2048,a[3]), h = min(2048,a[4])
@@ -62,7 +87,7 @@ import UOCore
                 let index = a[cropped ? 5 : 3]
                 guard definition.texts.indices.contains(index) else { continue }
                 let label = NSTextField(labelWithString:definition.texts[index])
-                label.font = .systemFont(ofSize:14); label.textColor = .white
+                label.font = .systemFont(ofSize:14); label.textColor = textColor(a[cropped ? 4 : 2],increment:true)
                 label.sizeToFit()
                 label.frame = rect(a[0],a[1],cropped ? a[2] : Int(label.frame.width),cropped ? a[3] : 22)
                 add(label)
@@ -85,7 +110,7 @@ import UOCore
                 guard valid(7), (0...65535).contains(a[5]), definition.texts.indices.contains(a[6]) else { continue }
                 let field = NSTextField(string:definition.texts[a[6]])
                 field.frame = rect(a[0],a[1],a[2],a[3]); field.isBordered = false; field.drawsBackground = false
-                field.textColor = .white; entries.append((field,UInt16(a[5]))); add(field)
+                field.textColor = textColor(a[4],increment:false); entries.append((field,UInt16(a[5]))); add(field)
             default: unsupported += 1
             }
         }
@@ -93,9 +118,24 @@ import UOCore
         Telemetry.shared.record("gump_layout",["id":definition.id,"commands":definition.commands.count,"unsupported":unsupported])
     }
     required init?(coder:NSCoder) { fatalError() }
+    private func textColor(_ hue:Int,increment:Bool)->NSColor {
+        guard hue > 0, hue < 0x3FFF, let palette = try? assets.huePalette(hue+(increment ? 1 : 0)) else { return .white }
+        let c = palette.color(red:255,green:255,blue:255)
+        return NSColor(srgbRed:CGFloat(c.0)/255,green:CGFloat(c.1)/255,blue:CGFloat(c.2)/255,alpha:1)
+    }
     private func image(_ id:Int)->NSImage? {
-        guard id >= 0, id <= 65535, let sprite = try? assets.gumps?.sprite(id),
-              let provider = CGDataProvider(data:Data(sprite.rgba) as CFData),
+        guard id >= 0, id <= 65535, let sprite = try? assets.gumps?.sprite(id) else { return nil }
+        return Self.spriteImage(sprite)
+    }
+    private static func spriteImage(_ sprite:Sprite,palette:HuePalette? = nil)->NSImage? {
+        var pixels = sprite.rgba
+        if let palette {
+            for i in stride(from:0,to:pixels.count,by:4) where pixels[i+3] != 0 {
+                let c = palette.color(red:pixels[i],green:pixels[i+1],blue:pixels[i+2])
+                pixels[i] = c.0; pixels[i+1] = c.1; pixels[i+2] = c.2
+            }
+        }
+        guard let provider = CGDataProvider(data:Data(pixels) as CFData),
               let cg = CGImage(width:sprite.width,height:sprite.height,bitsPerComponent:8,bitsPerPixel:32,bytesPerRow:sprite.width*4,space:CGColorSpaceCreateDeviceRGB(),bitmapInfo:CGBitmapInfo(rawValue:CGImageAlphaInfo.last.rawValue),provider:provider,decode:nil,shouldInterpolate:false,intent:.defaultIntent) else { return nil }
         return NSImage(cgImage:cg,size:NSSize(width:sprite.width,height:sprite.height))
     }
@@ -126,10 +166,20 @@ import UOCore
 }
 @MainActor private final class GumpArtwork:NSView {
     var image:NSImage?
+    var tiled = false
     override func hitTest(_ point:NSPoint)->NSView? { nil }
     override func draw(_ dirtyRect:NSRect) {
         NSGraphicsContext.current?.imageInterpolation = .none
-        image?.draw(in:bounds,from:.zero,operation:.sourceOver,fraction:1,respectFlipped:true,hints:nil)
+        guard let image else { return }
+        if tiled, image.size.width > 0, image.size.height > 0 {
+            NSGraphicsContext.saveGraphicsState(); bounds.clip()
+            for y in stride(from:CGFloat(0),to:bounds.height,by:image.size.height) {
+                for x in stride(from:CGFloat(0),to:bounds.width,by:image.size.width) {
+                    image.draw(in:NSRect(origin:NSPoint(x:x,y:y),size:image.size),from:.zero,operation:.sourceOver,fraction:1,respectFlipped:true,hints:nil)
+                }
+            }
+            NSGraphicsContext.restoreGraphicsState()
+        } else { image.draw(in:bounds,from:.zero,operation:.sourceOver,fraction:1,respectFlipped:true,hints:nil) }
     }
     override var isFlipped:Bool { true }
 }

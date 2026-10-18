@@ -15,6 +15,8 @@ Xbox port. The present client is experimental and is not at parity yet.
 - Spellbook, legacy choice menus and death/resurrection prompt.
 - General 0xB0 dialogs: original gump images/resizable backgrounds, labels,
   buttons, pages, checkboxes, radio groups and editable fields; 0xB1 replies.
+  Item pictures with hues, tiled backgrounds, text hues and scrollable classic
+  formatted text (bold/italic/underline, centering, colors and entities) are supported.
 - Persistent settings, optional Keychain password, metadata-only telemetry.
 
 ## Remaining parity work
@@ -22,7 +24,7 @@ Xbox port. The present client is experimental and is not at parity yet.
 - Validate every interaction against live UO1998, particularly long travel,
   spellcasting, death/resurrection and general server dialogs.
 - Full original menu layouts, fonts and hue fidelity; more general gump commands
-  (HTML/localized content, item art, tiled images, transparency and tooltips).
+  (localized content, complete HTML semantics, transparency and tooltips).
 - Character-creation clothing colors require resolving the chosen protocol's
   version-specific packet support; current appearance UI is not an exact clone.
 - More reliable global path planning, dynamic obstacles and elevation/occlusion
@@ -39,5 +41,6 @@ Xbox port. The present client is experimental and is not at parity yet.
 
 2026-10-18: 137 Swift tests executed, 2 opt-in integration tests skipped, no
 failures. The server-dialog harness additionally verifies page changes without
-replies, selection state and Unicode text across pages. This does not establish
+replies, selection state and Unicode text across pages, plus formatted text, item art
+and overflowing scroll content. This does not establish
 live dialog compatibility or completion of the full parity goal.
