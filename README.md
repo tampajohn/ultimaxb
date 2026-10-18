@@ -4,7 +4,10 @@ A native **Swift macOS client for classic Ultima Online**, with the original Xbo
 as a later target. The current integration target is UO1998 and its 1.25.32-era
 protocol. This is an independent work in progress, not an official UO client.
 
-![Minoc rendered by UltimaXB](docs/screenshots/minoc.png)
+![Live UO1998 gameplay near the Minoc mine and forge](docs/screenshots/live-minoc-mining.png)
+
+*Actual player session on UO1998, October 18, 2026: Minoc mine entrance,
+forge, equipped pickaxe, radar, and status/skills sidebar.*
 
 The client connects to a shard, enters the world, renders terrain and animated
 characters with equipment, and supports movement, containers, vendors, chat,
@@ -69,9 +72,15 @@ Server validation remains authoritative for movement and item operations.
 
 ## Screenshots
 
-These are actual offline client renders and UI fixtures, not screenshots of an
-unmodified original client. Artwork is loaded from a separately installed game.
-The appearance preview uses optional 1.26-era UI assets; the world uses 1.25.32.
+The lead image above is a window capture from an actual connected player session
+on UO1998. It shows the current client as played, including unfinished behavior
+and route feedback; it is not a staged render.
+
+The images below are offline client renders and UI fixtures. Artwork is loaded
+from a separately installed game. The appearance preview uses optional 1.26-era
+UI assets; the world uses 1.25.32.
+
+![Offline Minoc world-rendering fixture](docs/screenshots/minoc.png)
 
 | Character appearance | Original radar frame |
 | --- | --- |
