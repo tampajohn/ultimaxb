@@ -44,7 +44,7 @@ experimental and is not at parity yet.
 
 ## Local verification snapshot
 
-2026-10-18: 158 Swift tests executed, 2 opt-in integration tests skipped, no
+2026-10-18: 163 Swift tests executed, 2 opt-in integration tests skipped, no
 failures. The server-dialog harness additionally verifies page changes without
 replies, selection state and Unicode text across pages, plus formatted text, item art
 and overflowing scroll content. This does not establish
@@ -167,3 +167,9 @@ asterisks; ordinary punctuation without a following space remains literal speech
 Packet tests cover mode bytes, text, packet length, empty prefixes and the encoded
 200-byte limit. Metadata logs the mode byte and length only. Live delivery/range
 checks and per-mode configurable colors remain pending.
+
+Assistant groundwork: a deterministic tool-action runner now waits for target
+requests and an explicitly correlated result. Local tests cover one-target mining
+and two-target herding-shaped sequences, reused cursor IDs across target types,
+incompatible/duplicate targets, cancellation, timeout, refusal and depletion.
+It is not connected to live automation or UI yet; see [assistant scope](ASSISTANT.md).

@@ -58,5 +58,17 @@ play for routine tests.
 4. Herding workflow using the same runner.
 5. Macro editing/recording, reusable profiles and additional skills.
 
-No assistant workflow is implemented yet. Current manual tool shortcuts, targeting,
-routing and inventory operations are foundations, not evidence of automation parity.
+The first tool-action state machine is implemented and locally tested. It emits one
+use-item command, waits for one or two target requests, validates target compatibility,
+then waits for an explicitly correlated result. Refusal, depletion, manual stop,
+disconnect, missing tool, overweight and timeout stop the attempt. Late target
+requests for a stopped attempt produce cancellation, never a target selection.
+Tests cover object-then-location targeting even when the server reuses its cursor ID.
+
+No live workflow is connected yet. The adapter must correlate result events and
+route only the owned target stream to this action; it must also handle target
+handoff after cancellation so unrelated manual actions are not consumed. Exact
+duplicate target requests stop the action; same-type cursor reuse across multiple
+phases needs additional protocol evidence. Repetition, pause/resume, zones, tool
+selection and visible controls are still required. Current manual tools are
+foundations, not evidence of automation parity.
