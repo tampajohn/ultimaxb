@@ -914,7 +914,13 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         onSpeech?(speech)
                         Telemetry.shared.record("speech_received", ["serial": speech.serial, "type": speech.type, "bytes": packet.count])
                     case 0x27, 0x28:
-                        Telemetry.shared.record("inventory_rejected", ["opcode": packet[0], "reason": packet[1]])
+                        if packet[0] == 0x27 {
+                            Telemetry.shared.record("inventory_rejected", ["opcode": packet[0], "reason": packet[1]])
+                        } else {
+                            Telemetry.shared.record("inventory_rejected", ["opcode": packet[0],
+                                "x": Int(packet[1]) << 8 | Int(packet[2]),
+                                "y": Int(packet[3]) << 8 | Int(packet[4])])
+                        }
                         onInventoryMessage?("The server refused that move. The item remains where the server placed it.")
                     case 0x9E:
                         let result = try VendorPackets.sellOffers(packet)

@@ -92,8 +92,11 @@ opening offered nested bags remain incomplete.
 Trade transfer ordering: acceptance now waits for both DROPOBJ_OK and an item
 update at the requested destination (or the merged destination stack). Removal
 from the old container alone cannot unlock acceptance. Pickup rejection releases
-the guard, while a failed drop waits for the returned item's authoritative ground
-location. Reordered acknowledgement/update and merge fixtures pass. If a shard
+the guard, while a failed drop waits for a subsequent authoritative return of the
+item to a container or the ground; bounce paths need not send an acknowledgement.
+Unrelated ground updates cannot confirm a container destination. Reordered
+acknowledgement/update, bounce and merge fixtures pass. Drop rejection telemetry
+records its coordinates, rather than mislabelling the X byte as a reason code. If a shard
 omits the expected acknowledgement or destination update, acceptance remains
 disabled and cancellation is still available; that compatibility requires live
 two-party testing. The local OUO process is currently stopped, and an earlier

@@ -22,6 +22,38 @@ final class TradeTransferTests:XCTestCase {
         XCTAssertFalse(merged.complete)
         try merged.receive(Data([0x29])); XCTAssertTrue(merged.complete)
     }
+    func ground(serial:UInt32 = 3)->Data {
+        Data([0x1A,0,14] + LoginPackets.seed(serial) + [0x0E,0xED,0,10,0,10,0])
+    }
+    func testGroundUpdateDoesNotConfirmContainerDestination() throws {
+        var transfer = TradeTransfer(item:3,destination:10)
+        try transfer.receive(ground())
+        try transfer.receive(Data([0x29]))
+        XCTAssertFalse(transfer.complete)
+        try transfer.receive(update())
+        XCTAssertTrue(transfer.complete)
+        var drop = TradeTransfer(item:3,destination:UInt32.max)
+        try drop.receive(ground())
+        try drop.receive(Data([0x29]))
+        XCTAssertTrue(drop.complete)
+    }
+    func testRejectedDropWaitsForReturnedItemWithoutRequiringAcknowledgement() throws {
+        var transfer = TradeTransfer(item:3,destination:10)
+        try transfer.receive(Data([0x28,0,10,0,10]))
+        try transfer.receive(Data([0x29]))
+        try transfer.receive(ground(serial:4))
+        XCTAssertFalse(transfer.complete)
+        try transfer.receive(ground())
+        XCTAssertTrue(transfer.complete)
+        var bounced = TradeTransfer(item:3,destination:10)
+        try bounced.receive(update(container:99))
+        try bounced.receive(Data([0x28,0,10,0,10]))
+        XCTAssertFalse(bounced.complete)
+        try bounced.receive(update(serial:4,container:99))
+        XCTAssertFalse(bounced.complete)
+        try bounced.receive(update(container:99))
+        XCTAssertTrue(bounced.complete)
+    }
     func testRejectionAndMalformedPackets() throws {
         var transfer = TradeTransfer(item:3,destination:10)
         XCTAssertThrowsError(try transfer.receive(Data([0x29,0])))
