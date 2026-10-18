@@ -93,6 +93,7 @@ enum ArtDecoder {
 
 public struct WorldTile {
     public let x: Int, y: Int, z: Int, art: Int, hue: Int
+    public var lightID: Int? = nil
     public var effectRotation: Double? = nil
     public var effectFrameInterval: TimeInterval? = nil
     public var effectGump: Int? = nil
@@ -353,9 +354,10 @@ public final class ClientAssets {
         guard offset + 37 <= tileData.count else { return 0 }
         return try tileData.u32(offset)
     }
-    public func lightIndex(graphic:Int) throws -> Int? {
+    public func lightIndex(graphic:Int, override:Int? = nil) throws -> Int? {
         guard try itemFlags(graphic:graphic) & 0x800000 != 0,let tileData else { return nil }
         if (0x3E02...0x3E0B).contains(graphic) || (0x3914...0x3929).contains(graphic) || graphic == 0xB1D { return 2 }
+        if let override { return (0..<100).contains(override) ? override : nil }
         let offset = 512*836+graphic/32*1188+4+graphic%32*37
         return try tileData.u8(offset+5)
     }

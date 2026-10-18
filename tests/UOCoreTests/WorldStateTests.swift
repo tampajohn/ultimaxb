@@ -19,6 +19,16 @@ final class WorldStateTests: XCTestCase {
         b[2] = UInt8(b.count)
         return b
     }
+    func testGroundLightPatternSurvivesWorldTileConversion() throws {
+        for options in [0, 4] {
+            var world = WorldState()
+            try world.apply(item(options: options, graphic: 0x0B20))
+            let tile = try XCTUnwrap(world.groundTiles.first)
+            XCTAssertEqual(tile.lightID, options == 0 ? 0 : 3)
+        }
+        let mapTile = WorldTile(x: 0, y: 0, z: 0, art: 0x4B20, hue: 0)
+        XCTAssertNil(mapTile.lightID, "Map statics must retain their asset-defined light pattern")
+    }
     func testAllOptionalFieldsAndTruncatedPayloads() throws {
         for options in 0..<32 {
             let packet = item(options: options)

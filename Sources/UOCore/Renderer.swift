@@ -47,8 +47,8 @@ public enum WorldRenderer {
         var illumination = ambient<255 ? [UInt16](repeating:ambient,count:width*height) : []
         var lightCount = 0
         var masks:[Int:LightMask] = [:]
-        func addLight(graphic:Int,atX:Int,atY:Int) throws {
-            guard !illumination.isEmpty,lightCount<100,let id = try assets.lightIndex(graphic:graphic) else { return }
+        func addLight(graphic:Int,atX:Int,atY:Int,lightID:Int? = nil) throws {
+            guard !illumination.isEmpty,lightCount<100,let id = try assets.lightIndex(graphic:graphic,override:lightID) else { return }
             let mask:LightMask
             if let cached = masks[id] { mask = cached }
             else if let loaded = try assets.lights?.mask(id) { mask = loaded; masks[id] = loaded }
@@ -199,7 +199,7 @@ public enum WorldRenderer {
                 sx = anchorX - sprite.width / 2
                 sy = anchorY + 44 - sprite.height
             }
-            if tile.isStatic && tile.effectGump == nil { try addLight(graphic:tile.art-0x4000,atX:anchorX,atY:anchorY+22) }
+            if tile.isStatic && tile.effectGump == nil { try addLight(graphic:tile.art-0x4000,atX:anchorX,atY:anchorY+22,lightID:tile.lightID) }
             let left = max(0, -sx), right = min(sprite.width, width - sx)
             let top = max(0, -sy), bottom = min(sprite.height, height - sy)
             if left >= right || top >= bottom { continue }

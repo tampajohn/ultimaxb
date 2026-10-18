@@ -547,3 +547,18 @@ this is recorded as an unresolved gameplay gap, not a passing spell workflow.
 The user's indoor-lighting report also remains under investigation: telemetry
 shows server ambient level 22 (brightness 0.3125), but that alone does not explain
 reported indoor appearance. No speculative brightness override was installed.
+
+Dynamic light-pattern correction (2026-10-18): ground-item packet 0x1A's
+direction byte also supplies the light ID for light-source items (as in the
+ClassicUO item-update reference). WorldTile previously discarded it, so every
+dynamic lamp used TILEData's map-static default. Ground tiles now retain that
+ID, including zero, and the renderer uses it only for actual light-source art.
+Map statics and multi components retain their asset-defined patterns; existing
+forced graphic patterns remain. Invalid IDs do not select arbitrary masks.
+
+Validation: 204 tests, 3 opt-in skips, zero failures; installed-asset harness
+`tools/check_light_patterns.swift` checks server-selected versus default masks,
+non-light items, invalid IDs and unchanged daylight rendering. This corrects one
+lighting mismatch, but the reported indoor appearance still needs live visual
+confirmation. Ambient levels remain server-driven. Foreground light occlusion,
+colored lights and broader lighting fidelity remain parity work.
