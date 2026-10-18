@@ -213,6 +213,13 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         connection.send(packet); onDeath?(death)
         Telemetry.shared.record("death_response",["resurrect":resurrect])
     }
+    private var huePicker:HuePicker?
+    var onHuePicker:((HuePicker?)->Void)?
+    func chooseHue(_ hue:Int,request:HuePicker) {
+        guard loginComplete, huePicker == request, let packet = try? request.response(hue:hue) else { return }
+        connection.send(packet); huePicker = nil; onHuePicker?(nil)
+        Telemetry.shared.record("hue_chosen",["serial":request.serial,"hue":hue])
+    }
     private var serverGumps: [UInt64:ServerGump] = [:]
     var onServerGump: ((UInt64,ServerGump?)->Void)?
     func replyToGump(key:UInt64, definition:ServerGump, button:UInt32, switches:[UInt32], entries:[(UInt16,String)]) {
@@ -607,6 +614,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         onPlayer?(nil)
         onEquipment?([])
         awaitingSpellbook = false
+        huePicker = nil; onHuePicker?(nil)
         death = DeathState(); onDeath?(death)
         for key in serverGumps.keys { onServerGump?(key,nil) }; serverGumps.removeAll()
         serverMenu = nil; onServerMenu?(nil)
@@ -691,6 +699,10 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         }
                         onDeath?(death)
                         Telemetry.shared.record("death_state",["alive":death.phase == .alive])
+                    case 0x95:
+                        let request = try HuePicker.decode(packet)
+                        huePicker = request; onHuePicker?(request)
+                        Telemetry.shared.record("hue_picker_opened",["serial":request.serial,"type":request.typeID])
                     case 0xB0:
                         let gump = try ServerGump.decode(packet)
                         let key = UInt64(gump.serial) << 32 | UInt64(gump.id)

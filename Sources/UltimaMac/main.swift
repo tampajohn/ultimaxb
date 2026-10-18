@@ -540,6 +540,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var skillsPanel: SkillsPanel?
     private var mapPanel:MapPanel?
     private var deathPanel:DeathPanel?
+    private var huePickerPanel:HuePickerPanel?
     private var serverGumpPanels:[UInt64:ServerGumpPanel] = [:]
     private var serverMenuPanel:ServerMenuPanel?
     private var spellbooks:[UInt32:SpellbookPanel] = [:]
@@ -725,6 +726,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 display.onChoice = { [weak panel] resurrect in panel?.respondToDeath(resurrect:resurrect) }
                 if display.superview == nil { view.addSubview(display) }
                 self.deathPanel = display
+            }
+            panel.onHuePicker = { [weak self, weak panel] request in
+                guard let self else { return }
+                self.huePickerPanel?.removeFromSuperview(); self.huePickerPanel = nil
+                guard let request,let view = self.worldView else { return }
+                panel?.cancelRoute()
+                let display = HuePickerPanel(request:request,assets:self.assets)
+                display.frame.origin = NSPoint(x:max(0,(view.bounds.width-display.frame.width)/2),y:max(0,(view.bounds.height-display.frame.height)/2))
+                display.onChoose = { [weak panel] hue in panel?.chooseHue(hue,request:request) }
+                self.huePickerPanel = display; view.addSubview(display)
             }
             panel.onServerGump = { [weak self, weak panel] key,definition in
                 guard let self else { return }

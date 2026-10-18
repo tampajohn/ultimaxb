@@ -13,7 +13,7 @@ Xbox port. The present client is experimental and is not at parity yet.
   targeting, skill requests and war mode.
 - Skills/status sidebar, equipped tool use, action animations, sound and music.
 - Original radar frame, local/world view, Shift-click travel in local sections.
-- Spellbook, legacy choice menus and death/resurrection prompt.
+- Spellbook, legacy choice menus, original-art hue picker and death/resurrection prompt.
 - General 0xB0 dialogs: original gump images/resizable backgrounds, labels,
   buttons, pages, checkboxes, radio groups and editable fields; 0xB1 replies.
   Item pictures with hues, tiled backgrounds, text hues and scrollable classic
@@ -32,7 +32,7 @@ Xbox port. The present client is experimental and is not at parity yet.
   edge cases. Large barriers can stop segmented routes.
 - Full equipment coverage, mounts, corpse/death animations and spell effects.
 - Complete combat, spell, skill, crafting, healer and housing workflows.
-- Secure trade, additional prompts/pickers and remaining server packet handlers.
+- Secure trade, additional text prompts and remaining server packet handlers.
 - Startup music selection when the server sends no music packet; no guessed
   region query or opening-theme fallback is currently used.
 - Automation zones/mining/herding are future work, not advertised as implemented.
@@ -40,7 +40,7 @@ Xbox port. The present client is experimental and is not at parity yet.
 
 ## Local verification snapshot
 
-2026-10-18: 140 Swift tests executed, 2 opt-in integration tests skipped, no
+2026-10-18: 141 Swift tests executed, 2 opt-in integration tests skipped, no
 failures. The server-dialog harness additionally verifies page changes without
 replies, selection state and Unicode text across pages, plus formatted text, item art
 and overflowing scroll content. This does not establish
@@ -58,3 +58,10 @@ no disk storage, reset on disconnect, and preserved scroll position while readin
 older messages. Original bitmap text and journal filters remain pending. Skill
 locks are not exposed for the 1.25.32 connection: its skill packets have no lock
 fields; OUO's newer extended format and feature flag require separate support.
+
+Hue picker: legacy 0x95 request/reply with the OUO request type ID preserved,
+original 0x0906 frame, 0x0907 confirmation and 0x0845 slider artwork, dye-tub
+preview, and the classic 1,000-color palette across five shade settings. Only
+explicit confirmation sends a reply. Local UI/wire tests pass; live dyeing has
+not been exercised. Modern clients differ in handling the unused/type word;
+this implementation targets the chosen OUO-era packet layout.
