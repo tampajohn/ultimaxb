@@ -84,3 +84,14 @@ cannot be moved. Trade status, revision and item metadata are logged, never the
 partner name. Local fixtures cover the window and drop regions; live two-party
 trades have not been tested. Trade-item drag previews, partial-stack removal and
 opening offered nested bags remain incomplete.
+
+Trade transfer ordering: acceptance now waits for both DROPOBJ_OK and an item
+update at the requested destination (or the merged destination stack). Removal
+from the old container alone cannot unlock acceptance. Pickup rejection releases
+the guard, while a failed drop waits for the returned item's authoritative ground
+location. Reordered acknowledgement/update and merge fixtures pass. If a shard
+omits the expected acknowledgement or destination update, acceptance remains
+disabled and cancellation is still available; that compatibility requires live
+two-party testing. The local OUO process is currently stopped, and an earlier
+runtime log records buffer-overflow failures, so it has not yet provided a reliable
+end-to-end trade test.
