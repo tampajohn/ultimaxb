@@ -44,7 +44,7 @@ experimental and is not at parity yet.
 
 ## Local verification snapshot
 
-2026-10-18: 164 Swift tests executed, 2 opt-in integration tests skipped, no
+2026-10-18: 169 Swift tests executed, 2 opt-in integration tests skipped, no
 failures. The server-dialog harness additionally verifies page changes without
 replies, selection state and Unicode text across pages, plus formatted text, item art
 and overflowing scroll content. This does not establish
@@ -183,3 +183,10 @@ arrival actions. Targets within reach and inventory targets still respond direct
 Local navigation regression tests pass; live approach remains to be exercised.
 The existing 24-tile local routing limit applies. Ore hauling to a forge is now
 explicitly required in the assistant scope but automatic drops are not implemented.
+
+Ore-haul groundwork: local tests now cover confirmed drop/walk/pickup cycles,
+reordered acknowledgements, no movement on acknowledgement alone, no repeated
+drop before pickup, changed stacks, invalid routes, timeout, stop and late-drop
+recovery tracking. This core is not wired to live inventory or UI; ore and forge
+selection, transfer coordination and visible controls remain required. The running
+client was left untouched for this change.

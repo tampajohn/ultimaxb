@@ -79,5 +79,16 @@ phases needs additional protocol evidence. Repetition, pause/resume, zones, tool
 selection and visible controls are still required. Current manual tools are
 foundations, not evidence of automation parity.
 
-Ore hauling is required but not implemented yet. Finish tool-target approach, then
-implement and test confirmed drop/move/pickup transitions before live ore handling.
+Ore hauling now has a locally tested single-stack state machine: confirmed drop at
+the current tile, one acknowledged route step, confirmed pickup, then repeat.
+Both transfer acknowledgement and exact destination state are required. Changed
+amount/art/hue/container, displaced ore, timeout, refusal or manual interruption
+stop the sequence. Recovery location continues to update if a late drop arrives
+after cancellation. Route steps remain within one tile and 16 Z of the prior
+position, preserving pickup reach.
+
+Live integration is still required: ore selection, forge selection and route
+planning, exclusive transfer ownership/acknowledgement routing, visible controls,
+recovery display, handling other heavy stacks, and interaction with smelting.
+The runner does not discover forges or execute packets itself. No live ore was
+dropped by these tests.
