@@ -46,7 +46,7 @@ experimental and is not at parity yet.
 
 ## Local verification snapshot
 
-2026-10-18: 169 Swift tests executed, 2 opt-in integration tests skipped, no
+2026-10-18: 189 Swift tests executed, 2 opt-in integration tests skipped, no
 failures. The server-dialog harness additionally verifies page changes without
 replies, selection state and Unicode text across pages, plus formatted text, item art
 and overflowing scroll content. This does not establish
@@ -61,7 +61,7 @@ does not stop other sounds. General server dialogs remain locally tested only.
 
 Journal: original 0x0820 scroll artwork with 512-line / 256 KiB in-memory limits,
 no disk storage, reset on disconnect, and preserved scroll position while reading
-older messages. Original bitmap text and journal filters remain pending. Skill
+older messages. Original bitmap text is implemented; journal filters remain pending. Skill
 locks are not exposed for the 1.25.32 connection: its skill packets have no lock
 fields; OUO's newer extended format and feature flag require separate support.
 
@@ -309,3 +309,19 @@ Paperdoll HELP now sends the classic 258-byte 0x9B help request instead of showi
 local control instructions. Existing server menu/gump handlers display the reply.
 The user selects any stuck/recovery option; no staff request is auto-submitted.
 Packet layout is tested; live shard menu/recovery behavior remains to verify.
+
+### Animated scenery
+
+ANIMDATA.MUL now drives animated static and server item art, including fires and
+forges. Tile metadata controls eligibility; signed frame offsets and the classic
+80 ms interval unit select the image. Rendering, alpha hit-testing and hover
+outlines share the displayed frame time, while targeting and collision preserve
+the original tile identity. The world refreshes while scenery animates even if
+mobiles are idle. Missing/truncated/invalid records fall back to base art, and
+frames use the existing bounded art cache. Installed-asset checks verify changing
+fire/world pixels and stable hit-test identity. Core timing/bounds tests pass.
+Spell projectiles/impact effects are still missing; this is scenery animation.
+
+Live metadata check: the new Help request received a 0x7C menu and controller
+button actions were recorded. This establishes menu delivery and input activity,
+not successful stuck recovery or complete controller usability.

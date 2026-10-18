@@ -131,6 +131,7 @@ public final class ClientAssets {
     public let fonts:ClassicFonts?
     public let lights:LightAssets?
     public let sounds:SoundAssets?
+    public let staticAnimations: StaticAnimations?
     public let animations: AnimationAssets?
     public let skills: [SkillDefinition]
     public let multis: MultiAssets?
@@ -163,6 +164,7 @@ public final class ClientAssets {
         if files["anim.idx"] != nil, files["anim.mul"] != nil {
             animations = try AnimationAssets(index: load("anim.idx").data, data: load("anim.mul").data)
         } else { animations = nil }
+        staticAnimations = files["animdata.mul"].flatMap { try? StaticAnimations(data:Data(contentsOf:$0,options:.alwaysMapped)) }
         fonts = files["fonts.mul"].flatMap { try? ClassicFonts(data:Data(contentsOf:$0,options:.alwaysMapped)) }
         lights = try files["lightidx.mul"] != nil && files["light.mul"] != nil
             ? LightAssets(index:load("lightidx.mul").data,data:load("light.mul").data) : nil
@@ -347,6 +349,12 @@ public final class ClientAssets {
         if (0x3E02...0x3E0B).contains(graphic) || (0x3914...0x3929).contains(graphic) || graphic == 0xB1D { return 2 }
         let offset = 512*836+graphic/32*1188+4+graphic%32*37
         return try tileData.u8(offset+5)
+    }
+    public func worldSprite(_ art:Int, at time:TimeInterval) throws -> Sprite? {
+        if art >= 0x4000, try itemFlags(graphic:art-0x4000) & 0x01000000 != 0,
+           let animated = staticAnimations?.graphic(art-0x4000,at:time), animated != art-0x4000,
+           let frame = try sprite(animated+0x4000) { return frame }
+        return try sprite(art)
     }
     public func isStackable(graphic: Int) throws -> Bool {
         try itemFlags(graphic: graphic) & 0x00000800 != 0

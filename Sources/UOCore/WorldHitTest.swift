@@ -2,7 +2,7 @@ import Foundation
 
 public enum WorldHitTest {
     /// Front-to-back alpha hit test using the same static-art anchor as the renderer.
-    public static func groundItem(assets: ClientAssets, items: [GroundItem], camera: WorldCamera,
+    public static func groundItem(assets: ClientAssets, animationTime:TimeInterval = 0, items: [GroundItem], camera: WorldCamera,
                                   screenX: Double, screenY: Double, width: Int = 960, height: Int = 720) throws -> GroundItem? {
         let visible = items.filter { $0.graphic < 0x4000 && $0.flags & 0x80 == 0 }
         let entries = try visible.enumerated().map { pair in
@@ -12,7 +12,7 @@ public enum WorldHitTest {
         }.sorted(by: DrawEntry.precedes)
         for entry in entries.reversed() {
             let item = visible[entry.originalIndex]
-            guard try !assets.isNoDraw(graphic:item.graphic), let sprite = try assets.sprite(item.graphic + 0x4000) else { continue }
+            guard try !assets.isNoDraw(graphic:item.graphic), let sprite = try assets.worldSprite(item.graphic + 0x4000,at:animationTime) else { continue }
             let ax = Double(width / 2) + ((Double(item.x) - camera.x) - (Double(item.y) - camera.y)) * 22
             let ay = Double(height / 2) + ((Double(item.x) - camera.x) + (Double(item.y) - camera.y)) * 22 - Double(item.z * 4)
             let x = Int(floor(screenX - (ax.rounded() - Double(sprite.width / 2))))
@@ -41,7 +41,7 @@ public enum WorldHitTest {
         }
         return nil
     }
-    public static func location(assets: ClientAssets, camera: WorldCamera, screenX: Double, screenY: Double, visibility: WorldVisibility, additionalTiles:[WorldTile] = []) throws -> TargetSelection? {
+    public static func location(assets: ClientAssets, animationTime:TimeInterval = 0, camera: WorldCamera, screenX: Double, screenY: Double, visibility: WorldVisibility, additionalTiles:[WorldTile] = []) throws -> TargetSelection? {
         let region = try assets.region(x: Int(camera.x), y: Int(camera.y), radius: 24)
         let tiles = try (region + additionalTiles).enumerated().map {
             DrawEntry(tile:$0.element,priority:try assets.drawPriority($0.element),originalIndex:$0.offset)
@@ -52,7 +52,7 @@ public enum WorldHitTest {
             if tile.isStatic {
                 if try assets.isNoDraw(graphic:tile.art-0x4000) { continue }
                 if visibility.hides(z: tile.z, x: tile.x, y: tile.y) { continue }
-                guard let sprite = try assets.sprite(tile.art) else { continue }
+                guard let sprite = try assets.worldSprite(tile.art,at:animationTime) else { continue }
                 let x = Int(floor(screenX - (ax.rounded() - Double(sprite.width/2))))
                 let y = Int(floor(screenY - (ay.rounded() - Double(tile.z*4) + 44 - Double(sprite.height))))
                 if x >= 0, y >= 0, x < sprite.width, y < sprite.height, sprite.rgba[(y*sprite.width+x)*4+3] != 0 {

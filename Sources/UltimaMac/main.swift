@@ -81,7 +81,7 @@ final class WorldView: NSView {
         controllerPoint = nil
         let point = convert(event.locationInWindow, from: nil), scale = imageRect.width / 960
         let previous = hovered?.serial
-        hovered = imageRect.contains(point) ? try? WorldHitTest.groundItem(assets: assets, items: groundObjects, camera: displayedCamera, screenX: (point.x-imageRect.minX)/scale, screenY: (point.y-imageRect.minY)/scale) : nil
+        hovered = imageRect.contains(point) ? try? WorldHitTest.groundItem(assets: assets, animationTime:displayedAnimationTime, items: groundObjects, camera: displayedCamera, screenX: (point.x-imageRect.minX)/scale, screenY: (point.y-imageRect.minY)/scale) : nil
         if previous != hovered?.serial {
             hoverInspected = nil; hoverRestAt = ProcessInfo.processInfo.systemUptime; hoverRestPoint = point
         } else if hypot(point.x-hoverRestPoint.x, point.y-hoverRestPoint.y) > 3 {
@@ -243,9 +243,10 @@ final class WorldView: NSView {
 
         onMovementTick?()
         let active = motion.isAnimating(at: ProcessInfo.processInfo.systemUptime)
-        if active || wasAnimating { refresh() }
+        if active || wasAnimating || (assets.staticAnimations != nil && ProcessInfo.processInfo.systemUptime-displayedAnimationTime >= 0.08) { refresh() }
         wasAnimating = active
     }
+    private var displayedAnimationTime:TimeInterval = 0
     var frameImage: CGImage?
     var status = ""
     var dragOrigin: NSPoint?
@@ -286,7 +287,8 @@ final class WorldView: NSView {
                 lastCeiling = visibility.ceiling
             }
             displayedCamera = camera ?? WorldCamera(x: Double(cx), y: Double(cy))
-            let frame = try WorldRenderer.render(assets, x: cx, y: cy, statics: showStatics, legacyTerrain: legacyTerrain, visibility: visibility, camera: camera, groundItems: groundItems, mobiles: mobiles, equipment: equipment, mobilePresentations: presentations, lighting:lighting)
+            displayedAnimationTime = ProcessInfo.processInfo.systemUptime
+            let frame = try WorldRenderer.render(assets, x: cx, y: cy, statics: showStatics, legacyTerrain: legacyTerrain, visibility: visibility, camera: camera, groundItems: groundItems, mobiles: mobiles, equipment: equipment, mobilePresentations: presentations, lighting:lighting, animationTime:displayedAnimationTime)
             let provider = CGDataProvider(data: Data(frame.rgba) as CFData)!
             frameImage = CGImage(width: frame.width, height: frame.height, bitsPerComponent: 8,
                 bitsPerPixel: 32, bytesPerRow: frame.width * 4, space: CGColorSpaceCreateDeviceRGB(),
@@ -438,7 +440,7 @@ final class WorldView: NSView {
         dragOrigin = convert(event.locationInWindow, from: nil)
         dragCenter = (cx, cy)
         let point = convert(event.locationInWindow, from: nil), scale = imageRect.width/960
-        groundDrag = !targeting && imageRect.contains(point) ? try? WorldHitTest.groundItem(assets: assets, items: groundObjects, camera: displayedCamera, screenX: (point.x-imageRect.minX)/scale, screenY: (point.y-imageRect.minY)/scale) : nil
+        groundDrag = !targeting && imageRect.contains(point) ? try? WorldHitTest.groundItem(assets: assets, animationTime:displayedAnimationTime, items: groundObjects, camera: displayedCamera, screenX: (point.x-imageRect.minX)/scale, screenY: (point.y-imageRect.minY)/scale) : nil
     }
     override func mouseDragged(with event: NSEvent) {
         guard let origin = dragOrigin else { return }
@@ -499,7 +501,7 @@ final class WorldView: NSView {
             NSGraphicsContext.restoreGraphicsState()
         }
         if let item = hovered, groundObjects.contains(where: { $0.serial == item.serial }),
-           let sprite = try? assets.sprite(item.graphic + 0x4000) {
+           let sprite = try? assets.worldSprite(item.graphic + 0x4000,at:displayedAnimationTime) {
             let x = (480 + (Double(item.x-item.y)-displayedCamera.x+displayedCamera.y)*22).rounded() - Double(sprite.width/2)
             let y = (360 + (Double(item.x+item.y)-displayedCamera.x-displayedCamera.y)*22-Double(item.z*4)).rounded()+44-Double(sprite.height)
             NSColor.yellow.withAlphaComponent(0.85).setFill()
@@ -522,7 +524,7 @@ final class WorldView: NSView {
             guard let wx = item?.x ?? mobile?.x,let wy = item?.y ?? mobile?.y,let wz = item?.z ?? mobile?.z else { continue }
             let pose = mobile == nil ? nil : poses[serial]
             let px = pose?.x ?? Double(wx), py = pose?.y ?? Double(wy), pz = pose?.z ?? Double(wz)
-            let height = item.flatMap { try? assets.sprite($0.graphic+0x4000)?.height } ?? 65
+            let height = item.flatMap { try? assets.worldSprite($0.graphic+0x4000,at:displayedAnimationTime)?.height } ?? 65
             let x = imageRect.minX+(480+(px-py-displayedCamera.x+displayedCamera.y)*22)*scale
             var y = imageRect.minY+(360+(px+py-displayedCamera.x-displayedCamera.y)*22-pz*4+44-Double(height))*scale-4
             let style = NSMutableParagraphStyle(); style.alignment = .center
@@ -551,7 +553,7 @@ final class WorldView: NSView {
         guard let player, imageRect.contains(point), hitTest(superview?.convert(windowPoint,from:nil) ?? point) === self else { return nil }
         let scale = imageRect.width/960
         let visibility = (try? WorldVisibility.around(player:player,assets:assets)) ?? WorldVisibility()
-        guard let location = try? WorldHitTest.location(assets:assets,camera:displayedCamera,screenX:(point.x-imageRect.minX)/scale,screenY:(point.y-imageRect.minY)/scale,visibility:visibility),
+        guard let location = try? WorldHitTest.location(assets:assets,animationTime:displayedAnimationTime,camera:displayedCamera,screenX:(point.x-imageRect.minX)/scale,screenY:(point.y-imageRect.minY)/scale,visibility:visibility),
               max(abs(location.x-player.x),abs(location.y-player.y)) <= 2 else { return nil }
         return location
     }
@@ -571,7 +573,7 @@ final class WorldView: NSView {
                 presentations: motion.presentations(at: ProcessInfo.processInfo.systemUptime), camera: displayedCamera, screenX: screenX, screenY: screenY, equipment:equipment) {
                 onTarget?(TargetSelection(serial: mobile.serial, x: mobile.x, y: mobile.y, z: mobile.z, graphic: mobile.body)); return
             }
-            if let item = try WorldHitTest.groundItem(assets: assets, items: groundObjects, camera: displayedCamera,
+            if let item = try WorldHitTest.groundItem(assets: assets, animationTime:displayedAnimationTime, items: groundObjects, camera: displayedCamera,
                 screenX: (point.x - imageRect.minX) / scale, screenY: (point.y - imageRect.minY) / scale) {
                 if targeting {
                     onTarget?(TargetSelection(serial: item.serial, x: item.x, y: item.y, z: item.z, graphic: item.graphic)); return
@@ -586,13 +588,13 @@ final class WorldView: NSView {
                 } else if !door && clickCount == 2 { onUse?(item.serial) }
             } else if targeting {
                 let visibility = try player.map { try WorldVisibility.around(player: $0, assets: assets, additionalTiles: groundItems) } ?? WorldVisibility()
-                if let location = try WorldHitTest.location(assets: assets, camera: displayedCamera, screenX: screenX, screenY: screenY, visibility: visibility) { onTarget?(location) }
+                if let location = try WorldHitTest.location(assets: assets, animationTime:displayedAnimationTime, camera: displayedCamera, screenX: screenX, screenY: screenY, visibility: visibility) { onTarget?(location) }
             } else if let mobile = try WorldHitTest.mobile(assets: assets, mobiles: mobiles, presentations: motion.presentations(at: ProcessInfo.processInfo.systemUptime), camera: displayedCamera, screenX: screenX, screenY: screenY, equipment:equipment) {
                 if clickCount == 1 { onInspect?(mobile.serial) }
                 if clickCount == 2, (player?.flags ?? 0) & 0x40 != 0 { onAttack?(mobile.serial) }
             } else if clickCount == 1 {
                 let visibility = try player.map { try WorldVisibility.around(player:$0,assets:assets,additionalTiles:groundItems) } ?? WorldVisibility()
-                if let location = try WorldHitTest.location(assets:assets,camera:displayedCamera,screenX:screenX,screenY:screenY,visibility:visibility,additionalTiles:groundItems) {
+                if let location = try WorldHitTest.location(assets:assets,animationTime:displayedAnimationTime,camera:displayedCamera,screenX:screenX,screenY:screenY,visibility:visibility,additionalTiles:groundItems) {
                     onWalkTo?(location,nil,running)
                 }
             }

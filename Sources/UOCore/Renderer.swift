@@ -32,7 +32,7 @@ public struct WorldCamera {
 public enum WorldRenderer {
     public static func render(_ assets: ClientAssets, x: Int, y: Int,
                               statics: Bool = true, width: Int = 960, height: Int = 720,
-                              legacyTerrain: Bool = false, visibility: WorldVisibility = WorldVisibility(), camera: WorldCamera? = nil, groundItems: [WorldTile] = [], mobiles: [WorldMobile] = [], equipment: [EquippedItem] = [], mobilePresentations: [UInt32: MobilePresentation] = [:], lighting:WorldLighting = WorldLighting()) throws -> Frame {
+                              legacyTerrain: Bool = false, visibility: WorldVisibility = WorldVisibility(), camera: WorldCamera? = nil, groundItems: [WorldTile] = [], mobiles: [WorldMobile] = [], equipment: [EquippedItem] = [], mobilePresentations: [UInt32: MobilePresentation] = [:], lighting:WorldLighting = WorldLighting(), animationTime:TimeInterval = 0) throws -> Frame {
         guard (1...2048).contains(width), (1...2048).contains(height) else {
             throw AssetError("Frame dimensions must be 1...2048")
         }
@@ -163,7 +163,7 @@ public enum WorldRenderer {
                 items += 1
                 continue
             } else {
-                guard let art = try assets.sprite(tile.art) else { missing.insert(tile.art); continue }
+                guard let art = try assets.worldSprite(tile.art,at:animationTime) else { missing.insert(tile.art); continue }
                 sprite = art
                 sx = anchorX - sprite.width / 2
                 sy = anchorY + 44 - sprite.height
