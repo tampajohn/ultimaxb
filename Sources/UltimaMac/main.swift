@@ -59,6 +59,7 @@ final class WorldView: NSView {
     var rendersStatics: Bool { player != nil && !debugCamera || showStatics }
     private var lastRenderDiagnostic: TimeInterval = -.infinity
     let legacyTerrain: Bool
+    var effects = StationaryEffects()
     var groundObjects: [GroundItem] = []
     var onUse: ((UInt32) -> Void)?
     var onInspect: ((UInt32) -> Void)?
@@ -245,7 +246,7 @@ final class WorldView: NSView {
         }
 
         onMovementTick?()
-        let active = motion.isAnimating(at: ProcessInfo.processInfo.systemUptime)
+        let active = motion.isAnimating(at: ProcessInfo.processInfo.systemUptime) || effects.count > 0
         if active || wasAnimating || (assets.staticAnimations != nil && ProcessInfo.processInfo.systemUptime-displayedAnimationTime >= 0.08) { refresh() }
         wasAnimating = active
     }
@@ -291,7 +292,7 @@ final class WorldView: NSView {
             }
             displayedCamera = camera ?? WorldCamera(x: Double(cx), y: Double(cy))
             displayedAnimationTime = ProcessInfo.processInfo.systemUptime
-            let frame = try WorldRenderer.render(assets, x: cx, y: cy, statics: rendersStatics, legacyTerrain: legacyTerrain, visibility: visibility, camera: camera, groundItems: groundItems, mobiles: mobiles, equipment: equipment, mobilePresentations: presentations, lighting:lighting, animationTime:displayedAnimationTime)
+            let frame = try WorldRenderer.render(assets, x: cx, y: cy, statics: rendersStatics, legacyTerrain: legacyTerrain, visibility: visibility, camera: camera, groundItems: groundItems + effects.tiles(at:displayedAnimationTime,mobiles:mobiles,items:groundObjects,presentations:presentations), mobiles: mobiles, equipment: equipment, mobilePresentations: presentations, lighting:lighting, animationTime:displayedAnimationTime)
             let now = ProcessInfo.processInfo.systemUptime
             if now - lastRenderDiagnostic >= 5 {
                 Telemetry.shared.record("render_state", ["x":cx, "y":cy, "statics_enabled":rendersStatics,
@@ -779,6 +780,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.worldView?.targeting = active
                 if active, let view = self?.worldView { view.window?.makeFirstResponder(view) }
             }
+            panel.onGraphicEffect = { [weak self] effect in
+                self?.worldView?.effects.append(effect,at:ProcessInfo.processInfo.systemUptime)
+                self?.worldView?.refresh()
+            }
             panel.onAnimation = { [weak self] in self?.worldView?.playAnimation($0) }
             worldView?.onUseEquippedTool = { [weak panel] in panel?.useEquippedTool() }
             panel.onApproachToolTarget = { [weak self] request,selection,tool in
@@ -994,7 +999,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 view.window?.invalidateCursorRects(for:view)
                 view.sidebar?.isHidden = player == nil
                 view.sidebar?.updateEquipment(view.equipment, player:player?.serial, assets:view.assets)
-                if player == nil { self?.audio.stop(); view.sidebar?.updateStatus(nil); self?.skillsPanel?.update(SkillState()) }
+                if player == nil { view.effects = StationaryEffects(); self?.audio.stop(); view.sidebar?.updateStatus(nil); self?.skillsPanel?.update(SkillState()) }
                 view.needsLayout = true
                 if player == nil { self?.worldView?.overheadSpeech = OverheadSpeech(); self?.spellShortcuts.values.forEach { $0.removeFromSuperview() }; self?.spellShortcuts.removeAll(); self?.spellbooks.values.forEach { $0.removeFromSuperview() }; self?.spellbooks.removeAll(); self?.chatPanel.reset(); self?.journalPanel?.removeFromSuperview(); self?.characterPanel?.removeFromSuperview(); self?.characterPanel = nil; self?.containerPanels.values.forEach { $0.removeFromSuperview() }; self?.containerPanels.removeAll() }
                 if let player, view.followPlayer, player.x != view.cx || player.y != view.cy {

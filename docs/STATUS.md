@@ -387,3 +387,22 @@ body rendering; ordinary containers retain zero-amount non-stackable items.
 The installed-asset corpse-container harness verifies selection through overlapping
 appearance entries and ordinary zero-amount candle pickup. Existing container
 hover/quick-pickup/target-priority interaction checks also pass.
+
+### Classic stationary graphic effects (2026-10-18)
+
+0x70 now decodes its classic 28-byte envelope and records metadata-only kind,
+graphic, duration, and supported-kind telemetry. Ground and attached effects use
+original static art/ANIMDATA signed offsets at the effect animation cadence;
+attached effects follow interpolated mobile positions and sort above their owning
+mobile within the world draw order. Effects expire at the server duration, are
+capped at 128 concurrent entries, clear on disconnect, and never enter world
+collision, hit testing, inventory, or server-entity caches. Missing attached
+entities fall back to the packet coordinates.
+
+Validation: 195 tests, two opt-in skips, no failures. New tests cover packet bounds,
+signed elevations, lifetime, moving attachments, ground anchoring, and bounded
+state. The installed-asset harness checks that 0x376A changes rendered pixels,
+advances animation frames, and leaves the exact original frame after expiry.
+Live spell appearance remains to be checked. Moving projectiles, lightning,
+screen fades, explosion chaining, 0xC0/0xC7 effects, and special blend modes remain
+parity gaps; those are not represented as supported by this change.

@@ -93,6 +93,8 @@ enum ArtDecoder {
 
 public struct WorldTile {
     public let x: Int, y: Int, z: Int, art: Int, hue: Int
+    public var effectAge: TimeInterval? = nil
+    public var effectPose: MobilePresentation? = nil
     public var corpseBody:Int? = nil
     public var corpseDirection:UInt8 = 0
     public var corpseEquipment:[EquippedItem] = []
@@ -391,6 +393,7 @@ public final class ClientAssets {
     }
 
     func drawPriority(_ tile: WorldTile) throws -> Int {
+        if tile.effectAge != nil { return tile.z + 2 } // Above the owning mobile, below higher surfaces.
         if tile.isStatic {
             guard let tileData else { return tile.z }
             let id = tile.art - 0x4000

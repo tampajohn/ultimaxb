@@ -91,7 +91,7 @@ public enum WorldRenderer {
             if mobile == nil && (tile.isStatic ? visibility.hides(z: tile.z, x: tile.x, y: tile.y) : visibility.hidesTerrain(z: tile.z, x: tile.x, y: tile.y)) { continue }
             if mobile == nil && tile.isStatic {
                 if !statics { continue }
-                if tile.corpseBody == nil, try assets.isNoDraw(graphic:tile.art-0x4000) { continue }
+                if tile.corpseBody == nil && tile.effectAge == nil, try assets.isNoDraw(graphic:tile.art-0x4000) { continue }
             }
             if !tile.isStatic && !legacyTerrain {
                 if tile.art <= 2 { continue } // Invisible land markers, including NODRAW.
@@ -114,8 +114,12 @@ public enum WorldRenderer {
             let sprite: Sprite
             let sx: Int, sy: Int
             var mirrored = false
-            let anchorX = width / 2 + offsetX + ((tile.x - x) - (tile.y - y)) * 22
-            let anchorY = height / 2 + offsetY + ((tile.x - x) + (tile.y - y)) * 22 - tile.z * 4
+            var anchorX = width / 2 + offsetX + ((tile.x - x) - (tile.y - y)) * 22
+            var anchorY = height / 2 + offsetY + ((tile.x - x) + (tile.y - y)) * 22 - tile.z * 4
+            if let pose = tile.effectPose {
+                anchorX = Int((Double(width/2) + ((pose.x-cameraX)-(pose.y-cameraY))*22).rounded())
+                anchorY = Int((Double(height/2) + ((pose.x-cameraX)+(pose.y-cameraY))*22-pose.z*4).rounded())
+            }
             if let mobile {
                 let presentation = mobilePresentations[mobile.serial]
                 let px = presentation?.x ?? Double(mobile.x)
@@ -163,6 +167,13 @@ public enum WorldRenderer {
                 }
                 items += 1
                 continue
+            } else if let age = tile.effectAge {
+                // Graphic effects use the same signed frame offsets as scenery, at 45 ms units.
+                let graphic = assets.staticAnimations?.graphic(tile.art-0x4000, at:age * (0.08/0.045)) ?? tile.art-0x4000
+                guard let art = try assets.sprite(graphic+0x4000) else { missing.insert(graphic+0x4000); continue }
+                sprite = art
+                sx = anchorX - sprite.width/2
+                sy = anchorY + 44 - sprite.height
             } else if let body = tile.corpseBody, let corpse = try CorpseArt.frame(body:body,direction:tile.corpseDirection,assets:assets,hue:tile.hue,equipment:tile.corpseEquipment) {
                 sprite = corpse.sprite; mirrored = corpse.mirrored
                 sx = anchorX - (mirrored ? sprite.width-corpse.centerX : corpse.centerX)

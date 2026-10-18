@@ -370,6 +370,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         Telemetry.shared.record("use_item", ["serial": serial])
         connection.send(InteractionPackets.use(serial: serial))
     }
+    var onGraphicEffect: ((GraphicEffect)->Void)?
     var onAnimation: ((MobileAction)->Void)?
     func useEquippedTool() {
         guard loginComplete, let owner = playerSerial else { return }
@@ -949,6 +950,11 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         let sound = try SoundEffect.decode(packet)
                         onSound?(sound)
                         Telemetry.shared.record("sound_received",["id":sound.id,"flags":sound.flags,"x":sound.x,"y":sound.y,"z":sound.z])
+                    case 0x70:
+                        let effect = try GraphicEffect.decode(packet)
+                        onGraphicEffect?(effect)
+                        Telemetry.shared.record("graphic_effect", ["kind":effect.kind.rawValue,"graphic":effect.graphic,
+                            "duration_ms":Int(effect.duration*1000),"rendered_kind":effect.kind == .ground || effect.kind == .attached])
                     case 0x6E:
                         let animation = try MobileAction.decode(packet)
                         onAnimation?(animation)
