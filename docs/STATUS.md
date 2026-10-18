@@ -32,7 +32,8 @@ Xbox port. The present client is experimental and is not at parity yet.
   edge cases. Large barriers can stop segmented routes.
 - Full equipment coverage, mounts, corpse/death animations and spell effects.
 - Complete combat, spell, skill, crafting, healer and housing workflows.
-- Secure trade, additional text prompts and remaining server packet handlers.
+- Live two-party secure-trade validation, additional text prompts and remaining
+  server packet handlers.
 - Startup music selection when the server sends no music packet; no guessed
   region query or opening-theme fallback is currently used.
 - Automation zones/mining/herding are future work, not advertised as implemented.
@@ -40,7 +41,7 @@ Xbox port. The present client is experimental and is not at parity yet.
 
 ## Local verification snapshot
 
-2026-10-18: 141 Swift tests executed, 2 opt-in integration tests skipped, no
+2026-10-18: 146 Swift tests executed, 2 opt-in integration tests skipped, no
 failures. The server-dialog harness additionally verifies page changes without
 replies, selection state and Unicode text across pages, plus formatted text, item art
 and overflowing scroll content. This does not establish
@@ -73,3 +74,13 @@ or confirmed local acceptance. Tests cover exact replies, malformed packets, sta
 acceptance, cancellation and unrelated trade IDs. This is not yet a usable trade
 workflow: dispatch, original-art window, drag/drop, and live two-party validation
 remain outstanding. No live trades were initiated or accepted.
+
+Secure-trade UI integration: the original 0x0866 window now displays both offers
+and server-confirmed acceptance. Drag inventory into the left offer; drag your
+offered item back into a bag, or double-click it to request return to the backpack.
+Right-click requests cancellation and waits for the server. Pending transfers and
+acceptance replies disable acceptance, and known nested items on the other side
+cannot be moved. Trade status, revision and item metadata are logged, never the
+partner name. Local fixtures cover the window and drop regions; live two-party
+trades have not been tested. Trade-item drag previews, partial-stack removal and
+opening offered nested bags remain incomplete.

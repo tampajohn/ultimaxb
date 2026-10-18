@@ -19,6 +19,7 @@ final class ContainerPanel: NSView {
     static func destination(in root: NSView, windowPoint: NSPoint, item: ContainerItem) -> (UInt32, NSPoint)? {
         var hit = root.hitTest(root.superview?.convert(windowPoint, from: nil) ?? windowPoint)
         while let current = hit {
+            if let trade = current as? TradePanel { return trade.dropDestination(windowPoint:windowPoint) }
             if let container = current as? ContainerPanel {
                 return container.dropDestination(windowPoint: windowPoint, item: item)
             }

@@ -40,6 +40,19 @@ public struct SecureTrade:Equatable {
     public private(set) var revision:UInt64 = 0
     public private(set) var items:[ContainerItem] = []
     private var withdrawing = false
+    public private(set) var awaitingOfferUpdate = false
+    public mutating func beginOfferChange() { awaitingOfferUpdate = true; revision &+= 1 }
+    public mutating func finishOfferChange() { awaitingOfferUpdate = false }
+    public func isOwnOffer(_ serial:UInt32)->Bool? {
+        var current = serial, visited:Set<UInt32> = []
+        while visited.insert(current).inserted {
+            if current == ownContainer { return true }
+            if current == otherContainer { return false }
+            guard let item = items.first(where: { $0.serial == current }) else { return nil }
+            current = item.container
+        }
+        return nil
+    }
 
     public init?(event:TradeEvent) {
         guard case let .opened(partner,own,other,name) = event else { return nil }
@@ -80,7 +93,7 @@ public struct SecureTrade:Equatable {
     }
     /// Server acknowledgement determines displayed acceptance; never auto-accept.
     public mutating func setAccepted(_ accepted:Bool, revision expected:UInt64) throws -> Data {
-        guard !closed, !cancelling, pendingAcceptance == nil, expected == revision else { throw LoginProtocolError.malformedPacket }
+        guard !closed, !cancelling, !awaitingOfferUpdate, pendingAcceptance == nil, expected == revision else { throw LoginProtocolError.malformedPacket }
         pendingAcceptance = accepted
         withdrawing = !accepted
         return response(action:2,accepted:accepted)

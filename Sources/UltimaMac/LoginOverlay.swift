@@ -213,6 +213,24 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         connection.send(packet); onDeath?(death)
         Telemetry.shared.record("death_response",["resurrect":resurrect])
     }
+    private var trade:SecureTrade?
+    private var tradeMovingItem:UInt32?
+    var onTrade:((SecureTrade?)->Void)?
+    func acceptTrade(_ accepted:Bool,revision:UInt64) {
+        guard loginComplete,var value = trade,let packet = try? value.setAccepted(accepted,revision:revision) else { return }
+        trade = value; connection.send(packet); onTrade?(value)
+        Telemetry.shared.record("trade_acceptance_requested",["accepted":accepted,"revision":revision])
+    }
+    func cancelTrade() {
+        guard loginComplete,var value = trade,let packet = try? value.cancel() else { return }
+        trade = value; connection.send(packet); onTrade?(value)
+        Telemetry.shared.record("trade_cancel_requested")
+    }
+    private func updateTradeItems() {
+        guard var value = trade else { return }
+        if let revoke = value.update(items:Array(world.containerItems.values)) { connection.send(revoke); Telemetry.shared.record("trade_acceptance_revoked") }
+        trade = value; onTrade?(value)
+    }
     private var huePicker:HuePicker?
     var onHuePicker:((HuePicker?)->Void)?
     func chooseHue(_ hue:Int,request:HuePicker) {
@@ -316,8 +334,19 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     }
     func moveItem(serial: UInt32, amount: Int, x: Int, y: Int, target: UInt32, z: Int = 0) {
         guard loginComplete, let playerSerial else { return }
+        if var value = trade {
+            let involved = target == value.ownContainer || value.items.contains { $0.serial == serial }
+            if value.isOwnOffer(target) == false || value.isOwnOffer(serial) == false { return }
+            if involved {
+                guard !value.cancelling,!value.awaitingOfferUpdate,value.pendingAcceptance == nil else { return }
+                if value.ownAccepted,let revoke = try? value.setAccepted(false,revision:value.revision) { trade = value; connection.send(revoke); onTrade?(value) }
+            }
+        }
         do {
             let packets = try world.movePackets(serial:serial,amount:amount,player:playerSerial,x:x,y:y,target:target,z:z)
+            if var value = trade, value.isOwnOffer(target) == true || value.isOwnOffer(serial) == true {
+                value.beginOfferChange(); trade = value; tradeMovingItem = serial; onTrade?(value)
+            }
             for packet in packets { connection.send(packet) }
             Telemetry.shared.record("inventory_move", ["serial": serial, "amount": amount, "x": x, "y": y, "z":z, "target": target])
             onInventoryMessage?("Moving item…")
@@ -614,6 +643,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         onPlayer?(nil)
         onEquipment?([])
         awaitingSpellbook = false
+        trade = nil; tradeMovingItem = nil; onTrade?(nil)
         huePicker = nil; onHuePicker?(nil)
         death = DeathState(); onDeath?(death)
         for key in serverGumps.keys { onServerGump?(key,nil) }; serverGumps.removeAll()
@@ -669,7 +699,15 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                             connection.send(CharacterStatus.request(serial:target))
                         }
                     }
-                    if try world.apply(packet) { changed = true }
+                    if let moving = tradeMovingItem {
+                        let updated = (packet.first == 0x25 || packet.first == 0x3C) ? ((try? ContainerItem.decode(packet))?.contains { $0.serial == moving } ?? false) : false
+                        var deleted = false
+                        if packet.first == 0x1D, packet.count == 5 { deleted = packet.dropFirst().reduce(UInt32(0)) { ($0 << 8) | UInt32($1) } == moving }
+                        if updated || deleted || packet.first == 0x27 || packet.first == 0x28 || packet.first == 0x29 {
+                            tradeMovingItem = nil; trade?.finishOfferChange(); onTrade?(trade)
+                        }
+                    }
+                    if try world.apply(packet) { changed = true; updateTradeItems() }
                     let positionSerial = packet.first == 0x20 ? try WorldMobile.decode(packet).serial : nil
                     if let serial = playerSerial, let player = world.mobiles[serial],
                        packet.first == 0x21 || packet.first == 0x22 || positionSerial == serial {
@@ -699,6 +737,15 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         }
                         onDeath?(death)
                         Telemetry.shared.record("death_state",["alive":death.phase == .alive])
+                    case 0x6F:
+                        let event = try TradeEvent.decode(packet)
+                        if let opened = SecureTrade(event:event) {
+                            trade = opened; updateTradeItems(); cancelRoute()
+                            Telemetry.shared.record("trade_opened")
+                        } else if var value = trade {
+                            value.apply(event); trade = value.closed ? nil : value; onTrade?(trade)
+                            Telemetry.shared.record("trade_updated",["closed":value.closed,"own_accepted":value.ownAccepted,"other_accepted":value.otherAccepted])
+                        }
                     case 0x95:
                         let request = try HuePicker.decode(packet)
                         huePicker = request; onHuePicker?(request)

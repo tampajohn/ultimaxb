@@ -47,6 +47,16 @@ final class SecureTradeTests:XCTestCase {
         trade.update(items:[item(),item(4,amount:2,container:3)])
         XCTAssertEqual(trade.revision,revision+1)
     }
+    func testPendingTransferPreventsAcceptAndTracksNestedOwnership() throws {
+        var trade = SecureTrade(event:.opened(partner:1,ownContainer:10,otherContainer:20,name:""))!
+        trade.update(items:[item(),item(4,container:20),item(5,container:4)])
+        XCTAssertEqual(trade.isOwnOffer(3),true); XCTAssertEqual(trade.isOwnOffer(5),false)
+        XCTAssertNil(trade.isOwnOffer(99))
+        trade.beginOfferChange()
+        XCTAssertThrowsError(try trade.setAccepted(true,revision:trade.revision))
+        trade.finishOfferChange()
+        XCTAssertNoThrow(try trade.setAccepted(true,revision:trade.revision))
+    }
     func testMalformedPackets() throws {
         let valid = packet(0,1,10,20,name:"Trader")
         for length in 0..<valid.count { XCTAssertThrowsError(try TradeEvent.decode(valid.prefix(length))) }

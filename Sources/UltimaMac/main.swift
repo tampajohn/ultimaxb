@@ -540,6 +540,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var skillsPanel: SkillsPanel?
     private var mapPanel:MapPanel?
     private var deathPanel:DeathPanel?
+    private var tradePanel:TradePanel?
     private var huePickerPanel:HuePickerPanel?
     private var serverGumpPanels:[UInt64:ServerGumpPanel] = [:]
     private var serverMenuPanel:ServerMenuPanel?
@@ -726,6 +727,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 display.onChoice = { [weak panel] resurrect in panel?.respondToDeath(resurrect:resurrect) }
                 if display.superview == nil { view.addSubview(display) }
                 self.deathPanel = display
+            }
+            panel.onTrade = { [weak self, weak panel] trade in
+                guard let self,let view = self.worldView else { return }
+                guard let trade else { self.tradePanel?.removeFromSuperview(); self.tradePanel = nil; return }
+                if self.tradePanel?.trade.ownContainer != trade.ownContainer { self.tradePanel?.removeFromSuperview(); self.tradePanel = nil }
+                let display = self.tradePanel ?? TradePanel(trade:trade,assets:self.assets)
+                display.update(trade)
+                display.onAccept = { [weak panel] accepted,revision in panel?.acceptTrade(accepted,revision:revision) }
+                display.onCancel = { [weak panel] in panel?.cancelTrade() }
+                display.onReturn = { [weak panel] item in panel?.pickupToBackpack(serial:item.serial,amount:item.amount) }
+                display.onDrop = { [weak view, weak panel] item,point in
+                    guard let view,let (target,position) = ContainerPanel.destination(in:view,windowPoint:point,item:item) else { return }
+                    panel?.moveItem(serial:item.serial,amount:item.amount,x:Int(position.x),y:Int(position.y),target:target)
+                }
+                self.tradePanel = display
+                if display.superview == nil { view.addSubview(display) }
             }
             panel.onHuePicker = { [weak self, weak panel] request in
                 guard let self else { return }
