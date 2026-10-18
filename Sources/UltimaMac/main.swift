@@ -500,19 +500,22 @@ final class WorldView: NSView {
             marker.lineWidth = max(1,2*scale); marker.stroke()
             NSGraphicsContext.restoreGraphicsState()
         }
-        if let item = hovered, groundObjects.contains(where: { $0.serial == item.serial }),
-           let sprite = try? assets.worldSprite(item.graphic + 0x4000,at:displayedAnimationTime) {
-            let x = (480 + (Double(item.x-item.y)-displayedCamera.x+displayedCamera.y)*22).rounded() - Double(sprite.width/2)
-            let y = (360 + (Double(item.x+item.y)-displayedCamera.x-displayedCamera.y)*22-Double(item.z*4)).rounded()+44-Double(sprite.height)
+        if let selected = hovered, let item = groundObjects.first(where: { $0.serial == selected.serial }),
+           let appearance = try? WorldItemAppearance.load(item,assets:assets,at:displayedAnimationTime) {
+            let sprite = appearance.sprite
+            let x = (480 + (Double(item.x-item.y)-displayedCamera.x+displayedCamera.y)*22).rounded() + Double(appearance.offsetX)
+            let y = (360 + (Double(item.x+item.y)-displayedCamera.x-displayedCamera.y)*22-Double(item.z*4)).rounded()+Double(appearance.offsetY)
+            NSGraphicsContext.saveGraphicsState(); imageRect.clip()
             NSColor.yellow.withAlphaComponent(0.85).setFill()
             func opaque(_ x: Int, _ y: Int) -> Bool {
-                x >= 0 && y >= 0 && x < sprite.width && y < sprite.height && sprite.rgba[(y*sprite.width+x)*4+3] != 0
+                appearance.opaque(x:x,y:y)
             }
             for sy in 0..<sprite.height {
                 for sx in 0..<sprite.width where opaque(sx,sy) && (!opaque(sx-1,sy) || !opaque(sx+1,sy) || !opaque(sx,sy-1) || !opaque(sx,sy+1)) {
                     NSRect(x: imageRect.minX+(x+Double(sx))*scale, y: imageRect.minY+(y+Double(sy))*scale, width: scale, height: scale).fill()
                 }
             }
+            NSGraphicsContext.restoreGraphicsState()
         }
         let now = ProcessInfo.processInfo.systemUptime
         overheadSpeech.expire(at:now)
@@ -524,9 +527,9 @@ final class WorldView: NSView {
             guard let wx = item?.x ?? mobile?.x,let wy = item?.y ?? mobile?.y,let wz = item?.z ?? mobile?.z else { continue }
             let pose = mobile == nil ? nil : poses[serial]
             let px = pose?.x ?? Double(wx), py = pose?.y ?? Double(wy), pz = pose?.z ?? Double(wz)
-            let height = item.flatMap { try? assets.worldSprite($0.graphic+0x4000,at:displayedAnimationTime)?.height } ?? 65
+            let top = item.flatMap { try? WorldItemAppearance.load($0,assets:assets,at:displayedAnimationTime)?.offsetY } ?? (44-65)
             let x = imageRect.minX+(480+(px-py-displayedCamera.x+displayedCamera.y)*22)*scale
-            var y = imageRect.minY+(360+(px+py-displayedCamera.x-displayedCamera.y)*22-pz*4+44-Double(height))*scale-4
+            var y = imageRect.minY+(360+(px+py-displayedCamera.x-displayedCamera.y)*22-pz*4+Double(top))*scale-4
             let style = NSMutableParagraphStyle(); style.alignment = .center
             let textWidth = min(240,max(1,imageRect.width-8))
             for entry in overheadSpeech.entries.filter({ $0.serial == serial }).reversed() {

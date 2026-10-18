@@ -13,17 +13,12 @@ public enum WorldHitTest {
         for entry in entries.reversed() {
             let item = visible[entry.originalIndex]
             guard try item.graphic == 0x2006 || !assets.isNoDraw(graphic:item.graphic) else { continue }
-            let corpse = try item.graphic == 0x2006 ? CorpseArt.frame(body:item.amount,direction:item.direction,assets:assets,hue:item.hue,equipment:item.corpseEquipment) : nil
-            guard let sprite = try corpse?.sprite ?? assets.worldSprite(item.graphic+0x4000,at:animationTime) else { continue }
+            guard let appearance = try WorldItemAppearance.load(item,assets:assets,at:animationTime) else { continue }
             let ax = Double(width / 2) + ((Double(item.x) - camera.x) - (Double(item.y) - camera.y)) * 22
             let ay = Double(height / 2) + ((Double(item.x) - camera.x) + (Double(item.y) - camera.y)) * 22 - Double(item.z * 4)
-            let centerX = corpse.map { $0.mirrored ? sprite.width-$0.centerX : $0.centerX } ?? sprite.width/2
-            let top = corpse.map { 22-sprite.height-$0.centerY } ?? (44-sprite.height)
-            let x = Int(floor(screenX - (ax.rounded() - Double(centerX))))
-            let y = Int(floor(screenY - (ay.rounded() + Double(top))))
-            let sourceX = corpse?.mirrored == true ? sprite.width-1-x : x
-            if x >= 0, y >= 0, x < sprite.width, y < sprite.height,
-               sprite.rgba[(y * sprite.width + sourceX) * 4 + 3] != 0 { return item }
+            let x = Int(floor(screenX - (ax.rounded() + Double(appearance.offsetX))))
+            let y = Int(floor(screenY - (ay.rounded() + Double(appearance.offsetY))))
+            if appearance.opaque(x:x,y:y) { return item }
         }
         return nil
     }
