@@ -115,6 +115,7 @@ final class WorldView: NSView {
     var onAttack: ((UInt32) -> Void)?
     var onSpellbook: (() -> Void)?
     var onMap: (() -> Void)?
+    var onJournal: (() -> Void)?
     var onSkills: (() -> Void)?
     var onCharacter: (() -> Void)?
     var onBackpack: (() -> Void)?
@@ -301,7 +302,7 @@ final class WorldView: NSView {
         let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
         let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.lightGray]
         (status as NSString).draw(at: NSPoint(x: 12, y: bounds.height - 46), withAttributes: attrs)
-        ((player == nil ? "Drag / arrows: pan   T: statics   R: Britain   Command-L: login" : "Arrows: walk / combine for diagonals   Shift/Caps: run   Right-hold: move   Space: use   U: equipped tool   P: character   K: skills   S: spells   M: map   B: backpack   H: recenter   Enter: chat   Command-L: connection") as NSString)
+        ((player == nil ? "Drag / arrows: pan   T: statics   R: Britain   Command-L: login" : "Arrows: walk / combine for diagonals   Shift/Caps: run   Right-hold: move   Space: use   U: equipped tool   P: character   K: skills   J: journal   S: spells   M: map   B: backpack   H: recenter   Enter: chat   Command-L: connection") as NSString)
             .draw(at: NSPoint(x: 12, y: bounds.height - 25), withAttributes: attrs)
     }
 
@@ -344,6 +345,7 @@ final class WorldView: NSView {
             if key == "u" { if !event.isARepeat && !chatting { onUseEquippedTool?() }; return }
             if key == "s" { if !event.isARepeat { onSpellbook?() }; return }
             if key == "m" { if !event.isARepeat { onMap?() }; return }
+            if key == "j" { if !event.isARepeat { onJournal?() }; return }
             if key == "k" { if !event.isARepeat { onSkills?() }; return }
             if key == "p" { if !event.isARepeat { onCharacter?() }; return }
             if key == "b" { if !event.isARepeat { onBackpack?() }; return }
@@ -562,6 +564,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     var containerPanels: [UInt32: ContainerPanel] = [:]
     let chatPanel = ChatPanel()
+    private var journalPanel:JournalPanel?
+    private func showJournal() {
+        guard let view = worldView, view.player != nil else { return }
+        if let panel = journalPanel, panel.superview != nil { panel.removeFromSuperview(); view.window?.makeFirstResponder(view); return }
+        let panel = journalPanel ?? JournalPanel(assets:assets)
+        panel.update(chatPanel.history)
+        panel.onClose = { [weak self] in self?.journalPanel?.removeFromSuperview(); self?.worldView?.window?.makeFirstResponder(self?.worldView) }
+        journalPanel = panel; view.addSubview(panel)
+        Telemetry.shared.record("journal_opened",["lines":chatPanel.history.lines.count])
+    }
     func showCharacter() {
         guard let view = worldView, view.player != nil else { return }
         if let panel = characterPanel { panel.removeFromSuperview(); characterPanel = nil; view.window?.makeFirstResponder(view); return }
@@ -573,7 +585,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         loginOverlay?.requestStatus()
         panel.onOptions = { [weak self] in self?.showLogin() }
         panel.onLogout = { [weak self] in self?.loginOverlay?.logout() }
-        panel.onJournal = { [weak self] in self?.chatPanel.begin() }
+        panel.onJournal = { [weak self] in self?.showJournal() }
         panel.onWarMode = { [weak self] in self?.loginOverlay?.toggleWarMode() }
         panel.onSkills = { [weak self] in self?.showSkills() }
         panel.onClose = { [weak self] in self?.showCharacter() }
@@ -810,7 +822,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 view.sidebar?.updateEquipment(view.equipment, player:player?.serial, assets:view.assets)
                 if player == nil { self?.audio.stop(); view.sidebar?.updateStatus(nil); self?.skillsPanel?.update(SkillState()) }
                 view.needsLayout = true
-                if player == nil { self?.spellbooks.values.forEach { $0.removeFromSuperview() }; self?.spellbooks.removeAll(); self?.chatPanel.reset(); self?.characterPanel?.removeFromSuperview(); self?.characterPanel = nil; self?.containerPanels.values.forEach { $0.removeFromSuperview() }; self?.containerPanels.removeAll() }
+                if player == nil { self?.spellbooks.values.forEach { $0.removeFromSuperview() }; self?.spellbooks.removeAll(); self?.chatPanel.reset(); self?.journalPanel?.removeFromSuperview(); self?.characterPanel?.removeFromSuperview(); self?.characterPanel = nil; self?.containerPanels.values.forEach { $0.removeFromSuperview() }; self?.containerPanels.removeAll() }
                 if let player, view.followPlayer, player.x != view.cx || player.y != view.cy {
                     view.cx = player.x; view.cy = player.y; view.refresh()
                 }
@@ -933,6 +945,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let view = WorldView(assets: assets, options: options)
         view.debugCamera = options.debugCamera
         worldView = view
+        view.onJournal = { [weak self] in self?.showJournal() }
+        chatPanel.onHistory = { [weak self] history in self?.journalPanel?.update(history) }
         let sidebar = PlaySidebar(definitions: assets.skills)
         sidebar.isHidden = true; view.sidebar = sidebar; skillsPanel = sidebar.skills
         sidebar.skills.onUse = { [weak self] in self?.loginOverlay?.useSkill($0) }

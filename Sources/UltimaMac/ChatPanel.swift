@@ -1,10 +1,12 @@
 import AppKit
+import UOCore
 
 @MainActor
 final class ChatPanel: NSView, NSTextFieldDelegate {
     private let entry = NSTextField(string: "")
     private let journal = NSTextField(wrappingLabelWithString: "")
-    private var lines: [String] = []
+    private(set) var history = Journal()
+    var onHistory: ((Journal)->Void)?
     var onSend: ((String) -> String?)?
     var onDismiss: (() -> Void)?
     override var isFlipped: Bool { true }
@@ -33,9 +35,9 @@ final class ChatPanel: NSView, NSTextFieldDelegate {
         isHidden = false; entry.isHidden = false; window?.makeFirstResponder(entry)
     }
     func append(_ text: String) {
-        lines.append(text); lines = Array(lines.suffix(4)); journal.stringValue = lines.joined(separator: "\n"); isHidden = false
+        history.append(text); journal.stringValue = history.lines.suffix(4).joined(separator: "\n"); isHidden = false; onHistory?(history)
     }
-    func reset() { lines = []; journal.stringValue = ""; entry.stringValue = ""; entry.isHidden = true; isHidden = true }
+    func reset() { history.clear(); onHistory?(history); journal.stringValue = ""; entry.stringValue = ""; entry.isHidden = true; isHidden = true }
     @objc private func send() {
         guard !entry.stringValue.isEmpty else { dismiss(); return }
         if let error = onSend?(entry.stringValue) { append(error); return }

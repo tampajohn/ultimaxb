@@ -52,6 +52,7 @@ swift run -c release UltimaMac --client uo1998-client \
 | Space / U | Use nearby object / equipped tool |
 | Enter | Chat, including shard commands such as `bank` or `vendor buy` |
 | P / B / K / S | Paperdoll / backpack / skills / spellbook |
+| J | Scrollable session journal; also available from the paperdoll |
 | A | War/peace mode |
 | M | Map; double-click switches local/world view |
 | Shift-click map | Route toward a distant destination |

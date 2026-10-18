@@ -9,7 +9,8 @@ Xbox port. The present client is experimental and is not at parity yet.
 - Terrain/statics, mobiles/equipment/hair, hues, multicomponent houses/boats,
   roof cutaways, interpolated movement and server reconciliation.
 - Inventory, stack splitting, equip/unequip, ground pickup/drop and paperdoll.
-- Chat, bank requests, vendor buy/sell, targeting, skill requests and war mode.
+- Chat, bounded session journal (J/paperdoll), bank requests, vendor buy/sell,
+  targeting, skill requests and war mode.
 - Skills/status sidebar, equipped tool use, action animations, sound and music.
 - Original radar frame, local/world view, Shift-click travel in local sections.
 - Spellbook, legacy choice menus and death/resurrection prompt.
@@ -39,7 +40,7 @@ Xbox port. The present client is experimental and is not at parity yet.
 
 ## Local verification snapshot
 
-2026-10-18: 137 Swift tests executed, 2 opt-in integration tests skipped, no
+2026-10-18: 140 Swift tests executed, 2 opt-in integration tests skipped, no
 failures. The server-dialog harness additionally verifies page changes without
 replies, selection state and Unicode text across pages, plus formatted text, item art
 and overflowing scroll content. This does not establish
@@ -51,3 +52,9 @@ backpack open/contents completed without packet errors, inventory rejection or
 disconnect during the check. No items or character position were changed. Ambient
 0xFFFF sound requests are ignored rather than reported as missing samples; this
 does not stop other sounds. General server dialogs remain locally tested only.
+
+Journal: original 0x0820 scroll artwork with 512-line / 256 KiB in-memory limits,
+no disk storage, reset on disconnect, and preserved scroll position while reading
+older messages. Original bitmap text and journal filters remain pending. Skill
+locks are not exposed for the 1.25.32 connection: its skill packets have no lock
+fields; OUO's newer extended format and feature flag require separate support.
