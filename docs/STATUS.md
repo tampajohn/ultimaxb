@@ -101,3 +101,10 @@ Dialog text-length and numeric limits are validated before sending; ASCII prompt
 use a client-side 239-byte cap. Local wire tests and an AppKit fixture verify invalid
 input, confirmation and cancellation. Live server prompts remain untested; ASCII
 entry currently uses a popup rather than the original console interaction.
+
+Spellbook details: single-click a known spell to inspect its facing detail pages;
+double-click a known name or detail icon to request casting. Original book icons,
+page-turn artwork and circle tabs are used, with incantations and reagent lists
+from ClassicUO metadata. Local UI checks cover navigation, casting callbacks,
+unknown-spell rejection and inventory refresh during selection. Live casting,
+spell shortcut dragging and original bitmap/rune fonts remain unverified or pending.

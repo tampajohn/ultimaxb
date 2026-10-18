@@ -75,6 +75,8 @@ The appearance preview uses optional 1.26-era UI assets; the world uses 1.25.32.
 
 ![Server dialog fixture with original artwork](docs/screenshots/server-dialog.png)
 
+![Spellbook detail pages with original icons](docs/screenshots/spellbook.png)
+
 ## Development
 
 ```sh
