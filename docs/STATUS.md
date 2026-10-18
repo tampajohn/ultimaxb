@@ -364,3 +364,16 @@ and corpse equipment metadata is pruned with distant scenery. This does not put
 corpse contents into the player's equipped-item model. Tests cover reordered
 updates, wrong owners, loot removal and malformed packets; installed human assets
 verify hued clothing and selection in eight directions. 192 tests passed, 2 skipped.
+
+### Scenery visibility regression guard (2026-10-18)
+
+Normal connected play now renders statics even if the offline preview's T toggle
+or --land-only option disabled them. Explicit debug-camera mode retains the toggle;
+land-only previews show a SCENERY HIDDEN status. Bounded render_state telemetry
+records scenery counts, missing art, and visibility cutoffs every five seconds.
+The reported live session had no current ceiling or render errors, but the old
+telemetry did not capture the toggle, so the original cause remains unconfirmed.
+At its final Minoc position (2493,482,15), the installed-asset regression harness
+verifies preview-to-play restoration, no outdoor cutoff, and 349 rendered objects
+including its player fixture, with no missing art. Release suite: 192 tests,
+two opt-in skips, no failures. Corpse render/hit-test asset harness also passes.

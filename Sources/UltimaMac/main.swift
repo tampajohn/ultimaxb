@@ -55,6 +55,9 @@ final class WorldView: NSView {
     private lazy var classicCursor = ClassicCursor(assets: assets)
     var cx: Int, cy: Int
     var showStatics: Bool
+    // Preview/debug visibility must never hide scenery during normal play.
+    var rendersStatics: Bool { player != nil && !debugCamera || showStatics }
+    private var lastRenderDiagnostic: TimeInterval = -.infinity
     let legacyTerrain: Bool
     var groundObjects: [GroundItem] = []
     var onUse: ((UInt32) -> Void)?
@@ -288,7 +291,17 @@ final class WorldView: NSView {
             }
             displayedCamera = camera ?? WorldCamera(x: Double(cx), y: Double(cy))
             displayedAnimationTime = ProcessInfo.processInfo.systemUptime
-            let frame = try WorldRenderer.render(assets, x: cx, y: cy, statics: showStatics, legacyTerrain: legacyTerrain, visibility: visibility, camera: camera, groundItems: groundItems, mobiles: mobiles, equipment: equipment, mobilePresentations: presentations, lighting:lighting, animationTime:displayedAnimationTime)
+            let frame = try WorldRenderer.render(assets, x: cx, y: cy, statics: rendersStatics, legacyTerrain: legacyTerrain, visibility: visibility, camera: camera, groundItems: groundItems, mobiles: mobiles, equipment: equipment, mobilePresentations: presentations, lighting:lighting, animationTime:displayedAnimationTime)
+            let now = ProcessInfo.processInfo.systemUptime
+            if now - lastRenderDiagnostic >= 5 {
+                Telemetry.shared.record("render_state", ["x":cx, "y":cy, "statics_enabled":rendersStatics,
+                    "preview_statics_enabled":showStatics, "debug_camera":debugCamera,
+                    "land_count":frame.landCount, "static_count":frame.staticCount, "missing_count":frame.missingCount,
+                    "ceiling":visibility.ceiling as Any? ?? NSNull(),
+                    "ceiling_cells":visibility.ceilingCells?.count ?? 0,
+                    "terrain_ceiling":visibility.terrainCeiling as Any? ?? NSNull()])
+                lastRenderDiagnostic = now
+            }
             let provider = CGDataProvider(data: Data(frame.rgba) as CFData)!
             frameImage = CGImage(width: frame.width, height: frame.height, bitsPerComponent: 8,
                 bitsPerPixel: 32, bytesPerRow: frame.width * 4, space: CGColorSpaceCreateDeviceRGB(),
@@ -296,7 +309,7 @@ final class WorldView: NSView {
                 decode: nil, shouldInterpolate: false, intent: .defaultIntent)
             let ms = Int((CFAbsoluteTimeGetCurrent() - start) * 1000)
             status = "\(cx), \(cy)  ·  \(frame.landCount) land / \(frame.staticCount) statics  ·  " +
-                "\(frame.missingCount) missing  ·  \(ms) ms  ·  cache \(assets.cacheBytes / 1024) KiB"
+                "\(frame.missingCount) missing  ·  \(ms) ms  ·  cache \(assets.cacheBytes / 1024) KiB" + (rendersStatics ? "" : "  ·  SCENERY HIDDEN (T)")
         } catch {
             frameImage = nil
             Telemetry.shared.record("render_error", ["x": cx, "y": cy, "error": String(describing: error)])
@@ -404,7 +417,11 @@ final class WorldView: NSView {
         case (124, _): cx += step; cy -= step
         case (125, _): cx += step; cy += step
         case (126, _): cx -= step; cy -= step
-        case (_, "t"): showStatics.toggle()
+        case (_, "t"):
+            guard !event.isARepeat else { return }
+            showStatics.toggle()
+            lastRenderDiagnostic = -.infinity
+            Telemetry.shared.record("preview_statics_toggled", ["enabled":showStatics])
         case (_, "r"): cx = 1435; cy = 1695
         default: super.keyDown(with: event); return
         }
