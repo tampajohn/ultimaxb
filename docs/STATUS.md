@@ -459,3 +459,14 @@ art-direction reference; client animations and MUL assets are unchanged. Export
 completed and preview JavaScript syntax checked; the animation page was opened.
 A consistent rig or controlled frame-authoring pass is still required before
 animation replacement can preserve movement and independently equipped clothing.
+
+Connection failure handling (2026-10-18): absent loopback servers now fail promptly
+instead of waiting for the 15-second handshake deadline; connection refusal on
+remote endpoints is also surfaced immediately. Cancelled deadlines cannot fail a
+new connection generation. Closed-port retry coverage passes twice on the same
+client; the release suite passes 200 tests with 2 opt-in skips.
+
+Local Test Center reliability remains blocked by a backend save defect: two
+periodic saves exhausted the per-block buffer at 1 GiB and the server exited.
+The original saves are preserved; diagnosis uses an isolated world copy. This is
+not a verified repair, and the local server is currently unavailable.

@@ -76,10 +76,26 @@ public final class GameConnection {
 
     private func startDeadline() {
         deadline?.cancel()
+        let token = generation
         deadline = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(15)) } catch { return }
+            guard !Task.isCancelled, self?.generation == token else { return }
             self?.fail("The server did not finish the connection step within 15 seconds.")
         }
+    }
+
+    private static func isLocalEndpoint(_ host:String) -> Bool {
+        ["127.0.0.1", "::1", "localhost"].contains(host.lowercased())
+    }
+
+    private static func connectionError(_ error:NWError, host:String) -> String {
+        if isLocalEndpoint(host) {
+            return "Cannot connect to the local server. Make sure the Local Test Center is running and try again."
+        }
+        if case .posix(.ECONNREFUSED) = error {
+            return "The server refused the connection. Check the server address and port, or try again later."
+        }
+        return error.localizedDescription
     }
 
     private func open(host: String, port: UInt16, seed: UInt32, initial: Data) {
@@ -104,7 +120,15 @@ public final class GameConnection {
                     socket.send(content: Data(LoginPackets.seed(seed)), completion: .idempotent)
                     self.send(initial)
                     self.receive(socket, token: token)
-                case .failed(let error): self.fail(error.localizedDescription)
+                case .waiting(let error):
+                    // Network.framework retries refused TCP connections in .waiting;
+                    // an absent local shard should not look like a stalled login.
+                    if Self.isLocalEndpoint(host) {
+                        self.fail(Self.connectionError(error, host:host))
+                    } else if case .posix(.ECONNREFUSED) = error {
+                        self.fail(Self.connectionError(error, host:host))
+                    }
+                case .failed(let error): self.fail(Self.connectionError(error, host:host))
                 default: break
                 }
             }

@@ -5,6 +5,42 @@ import XCTest
 
 final class ConnectionTests: XCTestCase {
     @MainActor
+    func testStoppedLocalServerFailsPromptlyAndAllowsRetry() async throws {
+        // Allocate a real loopback port, then close its listener before connecting.
+        let listener = try NWListener(using:.tcp,on:.any)
+        let state = ListenerCancellationState()
+        listener.stateUpdateHandler = { update in
+            if case .cancelled = update { Task { @MainActor in state.cancelled = true } }
+        }
+        listener.start(queue:DispatchQueue(label:"UltimaMac.test.closed-port"))
+        defer { listener.cancel() }
+        for _ in 0..<200 {
+            if listener.port != nil { break }
+            try await Task.sleep(for:.milliseconds(10))
+        }
+        let port = try XCTUnwrap(listener.port).rawValue
+        listener.cancel()
+        for _ in 0..<200 {
+            if state.cancelled { break }
+            try await Task.sleep(for:.milliseconds(10))
+        }
+        XCTAssertTrue(state.cancelled)
+        let client = GameConnection()
+        defer { client.disconnect(notify:false) }
+        var failures:[String] = []
+        client.onEvent = { if case .failed(let message) = $0 { failures.append(message) } }
+        for attempt in 1...2 {
+            try client.login(host:"127.0.0.1",port:port,name:"fixture",password:"local-only")
+            for _ in 0..<200 {
+                if failures.count == attempt { break }
+                try await Task.sleep(for:.milliseconds(10))
+            }
+            XCTAssertEqual(failures.count,attempt,"Connection refusal should not wait for the 15-second login deadline")
+        }
+        XCTAssertTrue(failures.allSatisfy { $0.contains("Cannot connect to the local server") })
+    }
+
+    @MainActor
     func testRedirectReseedsCipherAndDecodesGameStream() async throws {
         let listener = try NWListener(using: .tcp, on: .any)
         let peer = RelayTestPeer()
@@ -152,3 +188,6 @@ private final class RelayTestPeer {
         }
     }
 }
+
+@MainActor
+private final class ListenerCancellationState { var cancelled = false }
