@@ -274,3 +274,18 @@ TargetManager behavior. A regression checks the exact tree reply, preserved curs
 identity, and rejection of bare terrain/invalid static IDs. Local rejection now
 records only target metadata. Release suite: 180 tests, 2 skipped, no failures.
 Live resource collection after this correction still needs verification.
+
+### Controller input, first pass
+
+Native macOS GameController support detects an extended gamepad and routes left
+stick/D-pad movement through the existing prediction and reconciliation path.
+RT runs, A uses the facing object, B cancels the current target/route, X opens the
+backpack, Y opens the paperdoll, and LB uses the equipped tool. The footer shows
+controller hints while connected; keyboard and mouse remain usable. Inputs are
+suppressed outside the focused world, during chat, and before world entry. Controls
+must return to neutral after disconnect/focus changes before movement resumes.
+Metadata records connection changes and button action IDs, not device identifiers.
+Release build and 182 tests passed (2 skips). Hardware behavior remains to verify.
+Right-stick targeting is in progress; inventory/menu navigation and remapping are
+still missing. Radial menus for spells, skills and items are explicitly deferred
+at the user's request.

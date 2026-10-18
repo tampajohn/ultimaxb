@@ -125,6 +125,7 @@ final class WorldView: NSView {
     var onCancelRoute: (() -> Void)?
     var onMove: ((UInt8) -> Void)?
     private var movementKeys = MovementKeys()
+    private let controllerInput = ControllerInput()
     private(set) var running = false
     private var runMode = RunMode()
     var chatting = false { didSet { updateRunMode(NSEvent.modifierFlags) } }
@@ -137,7 +138,7 @@ final class WorldView: NSView {
     }
     private var rightPoint: NSPoint?
     override func resignFirstResponder() -> Bool {
-        movementKeys.clear(); rightPoint = nil
+        movementKeys.clear(); rightPoint = nil; controllerInput.suspend()
         return super.resignFirstResponder()
     }
     private var motion = MobileMotion()
@@ -191,8 +192,22 @@ final class WorldView: NSView {
         }
         if NSEvent.pressedMouseButtons & 2 == 0 { rightPoint = nil }
         updateRunMode(NSEvent.modifierFlags)
+        let wasConnected = controllerInput.connected
+        let controller = controllerInput.poll(enabled: window?.isKeyWindow == true && window?.firstResponder === self && !chatting && player != nil)
+        if wasConnected != controllerInput.connected { needsDisplay = true }
+        for action in controller.actions.sorted(by: { $0.rawValue < $1.rawValue }) {
+            Telemetry.shared.record("controller_action", ["action": action.rawValue])
+            switch action {
+            case .use: useFacingObject()
+            case .cancel: if targeting { onTarget?(nil) }; onCancelRoute?()
+            case .backpack: onBackpack?()
+            case .character: onCharacter?()
+            case .tool: onUseEquippedTool?()
+            }
+        }
         if window?.isKeyWindow == true, window?.firstResponder === self, player != nil {
             if let heldDirection { onMove?(heldDirection) }
+            else if let direction = controller.direction { onMove?(direction) }
             else if let point = rightPoint {
                 let pose = player.flatMap { motion.presentations(at: ProcessInfo.processInfo.systemUptime)[$0.serial] }
                 let px = pose?.x ?? Double(player?.x ?? cx), py = pose?.y ?? Double(player?.y ?? cy)
@@ -304,8 +319,8 @@ final class WorldView: NSView {
         }
         let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
         let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.lightGray]
-        (status as NSString).draw(at: NSPoint(x: 12, y: bounds.height - 46), withAttributes: attrs)
-        ((player == nil ? "Drag / arrows: pan   T: statics   R: Britain   Command-L: login" : "Arrows: walk / combine for diagonals   Shift/Caps: run   Right-hold: move   Space: use   U: equipped tool   P: character   K: skills   J: journal   S: spells   M: map   B: backpack   H: recenter   Enter: chat   Command-L: connection") as NSString)
+        ((status + (controllerInput.connected ? "   Controller connected" : "")) as NSString).draw(at: NSPoint(x: 12, y: bounds.height - 46), withAttributes: attrs)
+        ((controllerInput.connected && player != nil ? "Controller: stick/D-pad walk · RT run · A use · B cancel · X bag · Y character · LB tool · Mouse/keys still active" : player == nil ? "Drag / arrows: pan   T: statics   R: Britain   Command-L: login" : "Arrows: walk / combine for diagonals   Shift/Caps: run   Right-hold: move   Space: use   U: equipped tool   P: character   K: skills   J: journal   S: spells   M: map   B: backpack   H: recenter   Enter: chat   Command-L: connection") as NSString)
             .draw(at: NSPoint(x: 12, y: bounds.height - 25), withAttributes: attrs)
     }
 
@@ -326,12 +341,7 @@ final class WorldView: NSView {
             }
             if key == " " {
                 if !event.isARepeat {
-                    do {
-                        if let item = try WorldInteraction.facingItem(player: player, items: groundObjects, assets: assets) {
-                            Telemetry.shared.record("space_use", ["serial": item.serial, "graphic": item.graphic])
-                            onUse?(item.serial)
-                        } else { Telemetry.shared.record("space_no_object") }
-                    } catch { Telemetry.shared.record("space_hit_error") }
+                    useFacingObject()
                 }
                 return
             }
@@ -371,6 +381,16 @@ final class WorldView: NSView {
         default: super.keyDown(with: event); return
         }
         refresh()
+    }
+
+    private func useFacingObject() {
+        guard let player else { return }
+        do {
+            if let item = try WorldInteraction.facingItem(player: player, items: groundObjects, assets: assets) {
+                Telemetry.shared.record("space_use", ["serial": item.serial, "graphic": item.graphic])
+                onUse?(item.serial)
+            } else { Telemetry.shared.record("space_no_object") }
+        } catch { Telemetry.shared.record("space_hit_error") }
     }
 
     override func keyUp(with event: NSEvent) {

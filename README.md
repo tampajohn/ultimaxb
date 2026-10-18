@@ -71,6 +71,12 @@ Click the journal artwork beside recent chat, press **J**, or scroll over recent
 messages to browse session history in the original parchment journal. Incoming
 messages preserve your reading position while you are scrolled back.
 
+An Xbox-compatible controller detected by macOS can use the left stick/D-pad to
+walk, RT to run, A to use the facing object, B to cancel, X for backpack, Y for
+paperdoll, and LB for the equipped tool. Target selection and inventory still
+require the mouse in this first pass. Release controls to neutral after switching
+back from another app or chat.
+
 Travel plans local sections and may stop at large or inaccessible obstacles.
 Server validation remains authoritative for movement and item operations.
 
