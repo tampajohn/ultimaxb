@@ -3,6 +3,7 @@ import UOCore
 
 @MainActor
 final class MapPanel:NSView {
+    private lazy var classicText=ClassicText(assets.fonts)
     private let assets:ClientAssets
     private let artwork:Sprite?
     private var player:WorldMobile?
@@ -27,6 +28,65 @@ final class MapPanel:NSView {
         return artwork.rgba[i] == 8 && artwork.rgba[i+1] == 8 && artwork.rgba[i+2] == 8
     }
     var combatTarget:UInt32? { didSet { needsDisplay = true } }
+    var onInspect:((UInt32)->Void)?
+    private var names:[UInt32:String] = [:]
+    private var hoveredSerial:UInt32?
+    private var hoverTask:DispatchWorkItem?
+    private var hoverTracking:NSTrackingArea?
+    func receiveName(_ message:SpeechMessage) {
+        guard mobiles.contains(where: { $0.serial == message.serial }) else { return }
+        let name = message.type == 6 ? message.text : message.name
+        guard !name.isEmpty, name != "System" else { return }
+        names[message.serial] = String(name.prefix(128))
+        if hoveredSerial == message.serial { toolTip = names[message.serial] }
+    }
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTracking { removeTrackingArea(hoverTracking) }
+        let area=NSTrackingArea(rect:bounds,options:[.mouseMoved,.mouseEnteredAndExited,.activeInKeyWindow,.inVisibleRect],owner:self)
+        addTrackingArea(area); hoverTracking=area
+    }
+    override func mouseExited(with event:NSEvent) {
+        hoverTask?.cancel(); hoverTask=nil; hoveredSerial=nil; toolTip=nil
+    }
+    override func mouseMoved(with event:NSEvent) {
+        guard let player else { return }
+        let p=convert(event.locationInWindow,from:nil)
+        let serial=mobiles.filter { max(abs($0.x-player.x),abs($0.y-player.y)) <= 24 }.min {
+            distance($0,to:p) < distance($1,to:p)
+        }.flatMap { distance($0,to:p) <= 6 ? $0.serial : nil }
+        guard serial != hoveredSerial else { return }
+        hoverTask?.cancel(); hoveredSerial=serial
+        toolTip=serial.flatMap { names[$0] }
+        guard let serial, names[serial] == nil else { return }
+        let task=DispatchWorkItem { [weak self] in
+            guard let self,self.hoveredSerial == serial,self.superview != nil,self.mobiles.contains(where: { $0.serial == serial }) else { return }
+            self.onInspect?(serial)
+        }
+        hoverTask=task; DispatchQueue.main.asyncAfter(deadline:.now()+0.5,execute:task)
+    }
+    private func distance(_ mobile:WorldMobile,to p:NSPoint)->CGFloat {
+        guard let player else { return .infinity }
+        let x:CGFloat,y:CGFloat
+        if world {
+            x=overviewRect.minX+CGFloat(mobile.x)/CGFloat(assets.width)*overviewRect.width
+            y=overviewRect.minY+CGFloat(mobile.y)/CGFloat(assets.height)*overviewRect.height
+        } else {
+            x=CGFloat(140+(mobile.x-player.x)-(mobile.y-player.y))
+            y=CGFloat(140+(mobile.x-player.x)+(mobile.y-player.y))
+        }
+        return hypot(x-p.x,y-p.y)
+    }
+    var onPickCancelled:(()->Void)?
+    override func viewWillMove(toSuperview newSuperview:NSView?) {
+        super.viewWillMove(toSuperview:newSuperview)
+        if newSuperview == nil {
+            hoverTask?.cancel()
+            if onPickLocation != nil { onPickLocation=nil; onPickCancelled?() }
+        }
+    }
+    var onPickLocation:((Int,Int)->Void)?
+    func showWorld() { world=true; renderedKey=nil; update(player:player,mobiles:mobiles) }
     var onTravel: ((Int,Int)->Void)?
     override var isFlipped:Bool { true }
     init(assets:ClientAssets) {
@@ -47,6 +107,9 @@ final class MapPanel:NSView {
     }
     func update(player:WorldMobile?,mobiles:[WorldMobile]) {
         self.player = player; self.mobiles = mobiles
+        let serials = Set(mobiles.map(\.serial))
+        names = names.filter { player != nil && serials.contains($0.key) }
+        if let hoveredSerial, !serials.contains(hoveredSerial) { hoverTask?.cancel(); self.hoveredSerial=nil; toolTip=nil }
         guard let player else { removeFromSuperview(); return }
         let x = world ? 0 : (player.x/8)*8-96
         let y = world ? 0 : (player.y/8)*8-96
@@ -103,16 +166,13 @@ final class MapPanel:NSView {
                 let key="\(x):\(y):\(name)"
                 guard seen.insert(key).inserted else { continue }
                 let p=NSPoint(x:140+(x-player.x)-(y-player.y),y:140+(x-player.x)+(y-player.y))
-                let text=name as NSString
-                let attributes:[NSAttributedString.Key:Any] = [.font:NSFont.boldSystemFont(ofSize:10),.foregroundColor:NSColor.white]
-                let size=text.size(withAttributes:attributes)
+                let size=classicText.size(name)
                 let rect=NSRect(x:p.x-size.width/2,y:p.y+4,width:size.width,height:size.height).insetBy(dx:-2,dy:-1)
                 guard [p,NSPoint(x:rect.minX,y:rect.minY),NSPoint(x:rect.maxX,y:rect.minY),NSPoint(x:rect.minX,y:rect.maxY),NSPoint(x:rect.maxX,y:rect.maxY)].allSatisfy(mapContains),
                       !occupied.contains(where: { $0.intersects(rect) }) else { continue }
                 occupied.append(rect)
                 NSColor.orange.setFill(); NSRect(x:p.x-2,y:p.y-2,width:4,height:4).fill()
-                NSColor.black.withAlphaComponent(0.8).setFill(); rect.fill()
-                text.draw(at:NSPoint(x:rect.minX+2,y:rect.minY+1),withAttributes:attributes)
+                classicText.draw(name,at:NSPoint(x:rect.minX+2,y:rect.minY+1))
             }
         }
         for mobile in mobiles where mobile.serial != player.serial && max(abs(mobile.x-player.x),abs(mobile.y-player.y))<=24 {
@@ -138,7 +198,7 @@ final class MapPanel:NSView {
         return hit
     }
     override func mouseDown(with event:NSEvent) {
-        if event.modifierFlags.contains(.shift), let player {
+        if event.modifierFlags.contains(.shift) || onPickLocation != nil, let player {
             let point = convert(event.locationInWindow,from:nil)
             let x:Int, y:Int
             if world {
@@ -154,7 +214,8 @@ final class MapPanel:NSView {
                 y = player.y+Int(floor((point.y-140-point.x+140)/2))
             }
             guard (0..<assets.width).contains(x),(0..<assets.height).contains(y) else { return }
-            drag = nil; onTravel?(x,y)
+            drag = nil
+            if let pick=onPickLocation { onPickLocation=nil; pick(x,y) } else { onTravel?(x,y) }
         } else if event.clickCount == 2 { drag = nil; toggleMode() }
         else { drag = event.locationInWindow }
     }

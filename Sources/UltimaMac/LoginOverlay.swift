@@ -10,7 +10,10 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private let primaryLoginButton = NSButton(title:"Saved Server",target:nil,action:nil)
     private let characterSelection: CharacterSelectionPanel
     private let characterCreation: CharacterCreationPanel
-    private let card = NSVisualEffectView()
+    private let card:NSView = FlippedLoginControls()
+    private let artwork:LoginArtwork
+    private let settings = NSView()
+    private let introControls:NSView = FlippedLoginControls()
     private(set) var characterDisplayName = ""
     private var creationSlot: UInt32 = 0
     private var pendingDeletion: UInt32?
@@ -104,6 +107,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     var routeItems: [GroundItem] { Array(world.items.values) }
     var onDoorOpenedRoute: ((TargetSelection,Int,Bool)->Void)?
     private var waitingDoor: (item:GroundItem,destination:TargetSelection,remaining:Int,running:Bool,wait:DoorOpeningWait)?
+    var travelStepAllowed:((WalkPoint)->Bool)?
+    var assistantScope:String { "\(host.stringValue):\(port.stringValue):\(playerSerial ?? 0)" }
     private var routeRunning = false
     private var routeResolver: ((WalkPoint,Set<WalkPoint>)->[WalkPoint]?)?
     private var blockedRouteTiles: Set<WalkPoint> = []
@@ -123,7 +128,47 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         walkRoute = route; routeAction = action; routeRunning = running; onWalkRoute?(route)
         Telemetry.shared.record("walk_route_started",["steps":route.count,"target":action?.serial as Any? ?? NSNull(),"running":running])
     }
+    var itemWeight:((Int)->Int)?
+    private var autoPickup = AutoPickup()
+    private var manualInventoryAt:TimeInterval = -.infinity
+    var onAutoPickupMode:((Int)->Void)?
+    func setAutoPickup(_ value:Int) {
+        autoPickup.mode=AutoPickup.Mode(rawValue:value) ?? .off
+        onAutoPickupMode?(autoPickup.mode.rawValue)
+        Telemetry.shared.record("auto_pickup_mode",["mode":autoPickup.mode.rawValue])
+    }
+    private func tickAutoPickup(allowed:Bool) {
+        let now=ProcessInfo.processInfo.systemUptime
+        let wasPending=autoPickup.pending != nil
+        autoPickup.update(contents:Array(world.containerItems.values),at:now)
+        if wasPending && autoPickup.pending == nil && autoPickup.mode == .off {
+            onInventoryMessage?(autoPickup.stoppedReason ?? "Auto-pickup stopped."); onAutoPickupMode?(0)
+        }
+        if autoPickup.mode != .off,let weight=characterStatus?.weight,let strength=characterStatus?.strength,
+           weight >= 40+strength*7/2-10,autoPickup.pending == nil {
+            autoPickup.stop("Auto-pickup stopped: approaching carrying capacity.")
+            onAutoPickupMode?(0); onInventoryMessage?(autoPickup.stoppedReason!)
+        }
+        guard allowed,loginComplete,trade == nil,combatTarget.serial == nil,targetRequest == nil,now-manualInventoryAt>2,
+              let serial=playerSerial,let player=world.mobiles[serial],
+              let weight=characterStatus?.weight,let strength=characterStatus?.strength,
+              weight < 40+strength*7/2-10,
+              let bag=world.equipment.values.first(where:{$0.owner==serial && $0.layer==21}),
+              let item=autoPickup.select(items:Array(world.items.values),player:player,at:now) else { return }
+        guard let unitWeight=itemWeight?(item.graphic),unitWeight<255,
+              weight+unitWeight*max(1,item.amount)<40+strength*7/2-10 else {
+            autoPickup.stop("Auto-pickup stopped: this stack may exceed carrying capacity.")
+            onAutoPickupMode?(0); onInventoryMessage?(autoPickup.stoppedReason!); return
+        }
+        do {
+            let packets=try world.movePackets(serial:item.serial,amount:max(1,item.amount),player:serial,x:0xFFFF,y:0xFFFF,target:bag.serial,z:0)
+            autoPickup.begin(item,bag:bag.serial,contents:Array(world.containerItems.values),at:now)
+            packets.forEach { connection.send($0) }
+            Telemetry.shared.record("auto_pickup_started",["serial":item.serial,"graphic":item.graphic,"amount":item.amount])
+        } catch { autoPickup.stop("Auto-pickup stopped: item cannot be moved."); onAutoPickupMode?(0) }
+    }
     func tickMovement(allowRoute:Bool = true) {
+        tickAutoPickup(allowed:allowRoute)
         if !allowRoute { cancelRoute() }
         if let waiting = waitingDoor {
             let result = waiting.wait.result(door:world.items[waiting.item.serial],at:ProcessInfo.processInfo.systemUptime)
@@ -151,6 +196,12 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             if walkRoute != route { onWalkRoute?(route) }
             walkRoute = route
             if let next = route.first {
+                if routeContinues, movement.pendingCount == 0, travelStepAllowed?(next) == false {
+                    guard let revised=routeResolver?(current,blockedRouteTiles),!revised.isEmpty,revised.first != next else {
+                        cancelRoute(); onInventoryMessage?("Travel stopped: no clear route around nearby enemies."); return
+                    }
+                    walkRoute=revised; onWalkRoute?(revised); return
+                }
                 if let direction = WalkPath.direction(from:current,to:next) {
                     move(direction:direction | (routeRunning ? 0x80 : 0),routeStep:next)
                 } else { cancelRoute() }
@@ -376,9 +427,11 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     var onContainerOpened: ((OpenContainer) -> Void)?
     var onContainerItems: (([ContainerItem]) -> Void)?
     var onGroundObjects: (([GroundItem]) -> Void)?
-    func inspect(serial: UInt32) {
+    private var hoverInspection = HoverInspection()
+    func inspect(serial: UInt32, automatic:Bool = false) {
         guard loginComplete else { return }
-        Telemetry.shared.record("inspect_object", ["serial": serial])
+        if automatic && !hoverInspection.shouldRequest(serial,at:ProcessInfo.processInfo.systemUptime) { return }
+        Telemetry.shared.record("inspect_object", ["serial": serial,"automatic":automatic])
         connection.send(InteractionPackets.inspect(serial: serial))
     }
     func use(serial: UInt32) {
@@ -470,6 +523,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         moveItem(serial: serial, amount: amount, x: 0xFFFF, y: 0xFFFF, target: backpack.serial)
     }
     func moveItem(serial: UInt32, amount: Int, x: Int, y: Int, target: UInt32, z: Int = 0) {
+        guard autoPickup.pending == nil else { onInventoryMessage?("Waiting for auto-pickup to finish."); return }
+        manualInventoryAt=ProcessInfo.processInfo.systemUptime
         guard loginComplete, let playerSerial else { return }
         if var value = trade {
             let involved = target == value.ownContainer || value.items.contains { $0.serial == serial }
@@ -495,6 +550,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         equipItem(serial: serial, layer: layer)
     }
     func equipItem(serial: UInt32, layer: UInt8) {
+        guard autoPickup.pending == nil else { return }
+        manualInventoryAt=ProcessInfo.processInfo.systemUptime
         guard trade?.isOwnOffer(serial) != false else { return }
         guard loginComplete, let owner = playerSerial, (world.containerItems[serial] != nil || world.items[serial] != nil) else { return }
         do {
@@ -517,6 +574,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         } catch { onInventoryMessage?("That item cannot be equipped.") }
     }
     func removeEquipment(serial: UInt32) {
+        guard autoPickup.pending == nil else { return }
+        manualInventoryAt=ProcessInfo.processInfo.systemUptime
         guard loginComplete, let owner = playerSerial, let item = world.equipment[serial], item.owner == owner,
               EquipmentRules.isWearable(item.layer),
               let bag = world.equipment.values.first(where: { $0.owner == owner && $0.layer == 21 }) else { return }
@@ -532,6 +591,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private enum Phase { case login, connecting, server, character, create, world }
     private var phase = Phase.login {
         didSet {
+            artwork.shardSelection = phase == .server || (phase == .connecting && !choices.isHidden)
+            account.isHidden = artwork.shardSelection; password.isHidden = artwork.shardSelection
             localLoginButton.isEnabled = phase == .login
             primaryLoginButton.isEnabled = phase == .login
         }
@@ -541,6 +602,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     var onDismiss: (() -> Void)?
 
     init(assets: ClientAssets, loginDefaults:UserDefaults = UserDefaults(suiteName:"com.ultimaxb.UltimaMac")!) {
+        artwork = LoginArtwork(assets:assets)
         self.loginDefaults = loginDefaults
         self.savedLogin = SavedLogin(defaults:loginDefaults)
         characterSelection = CharacterSelectionPanel(assets: assets)
@@ -553,68 +615,75 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         rememberPassword.state = savedLogin.remembersPassword ? .on : .off
         password.stringValue = savedLogin.password() ?? ""
         view = LoginBackdrop()
-        view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
-        card.material = .hudWindow
-        card.blendingMode = .withinWindow
-        card.state = .active
-        card.wantsLayer = true
-        card.layer?.cornerRadius = 14
-        card.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(card)
-        let stack = NSStackView()
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 9
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        let title = NSTextField(labelWithString: "Ultima Online")
-        title.font = .systemFont(ofSize: 24, weight: .semibold)
-        stack.addArrangedSubview(title)
-        stack.addArrangedSubview(NSTextField(labelWithString: "Connect to your shard"))
-        localLoginButton.target = self; localLoginButton.action = #selector(quickLocalLogin)
-        primaryLoginButton.target = self; primaryLoginButton.action = #selector(selectPrimaryLogin)
-        stack.addArrangedSubview(NSStackView(views:[primaryLoginButton,localLoginButton]))
-        for (label, field) in [("Server", host), ("Port", port), ("Account", account), ("Password", password)] {
-            let row = NSStackView(views: [NSTextField(labelWithString: label), field])
-            row.orientation = .horizontal
-            row.views[0].widthAnchor.constraint(equalToConstant: 80).isActive = true
-            stack.addArrangedSubview(row)
-            row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-        }
-        stack.addArrangedSubview(rememberPassword)
-        let forget = NSButton(title: "Forget Saved Password", target: self, action: #selector(forgetPassword))
-        stack.addArrangedSubview(forget)
-        choices.isHidden = true
-        stack.addArrangedSubview(choices)
-        characterName.isHidden = true
-        female.isHidden = true
-        characterName.placeholderString = "Character name"
-        stack.addArrangedSubview(characterName)
-        characterName.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-        stack.addArrangedSubview(female)
-        cityChoice.isHidden = true
-        cityChoice.setAccessibilityLabel("Starting city")
-        stack.addArrangedSubview(cityChoice)
-        cityChoice.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-        choices.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-        stack.addArrangedSubview(status)
-        status.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-        action.target = self
-        action.action = #selector(performAction)
-        let disconnect = NSButton(title: "Disconnect", target: self, action: #selector(disconnect))
-        let close = NSButton(title: "Back to World", target: self, action: #selector(dismissOverlay))
-        secondaryButtons = [disconnect, close]
-        stack.addArrangedSubview(NSStackView(views: [action, disconnect, close]))
-        card.addSubview(stack)
+        view.wantsLayer = true; view.layer?.backgroundColor = NSColor.black.cgColor
+        artwork.translatesAutoresizingMaskIntoConstraints=false; view.addSubview(artwork)
+        card.translatesAutoresizingMaskIntoConstraints=false; artwork.addSubview(card)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 20),
-            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -20),
-            stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 24),
-            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -24),
-            card.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            card.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            card.widthAnchor.constraint(equalToConstant: 460)
+            artwork.widthAnchor.constraint(equalToConstant:640),artwork.heightAnchor.constraint(equalToConstant:480),
+            artwork.centerXAnchor.constraint(equalTo:view.centerXAnchor),artwork.centerYAnchor.constraint(equalTo:view.centerYAnchor),
+            card.leadingAnchor.constraint(equalTo:artwork.leadingAnchor),card.trailingAnchor.constraint(equalTo:artwork.trailingAnchor),
+            card.topAnchor.constraint(equalTo:artwork.topAnchor),card.bottomAnchor.constraint(equalTo:artwork.bottomAnchor)
         ])
+        for (field,y) in [(account,140),(password,175)] {
+            field.frame=NSRect(x:229,y:y,width:184,height:21)
+            field.isBordered=false; field.isBezeled=false; field.drawsBackground=false
+            field.font=NSFont(name:"Georgia",size:15); field.textColor=NSColor(calibratedRed:0.28,green:0.08,blue:0.06,alpha:1)
+            card.addSubview(field)
+        }
+        account.setAccessibilityLabel("Account name"); password.setAccessibilityLabel("Password")
+        account.placeholderAttributedString=NSAttributedString(string:"Account name",attributes:[.foregroundColor:NSColor.darkGray])
+        password.placeholderAttributedString=NSAttributedString(string:"Password",attributes:[.foregroundColor:NSColor.darkGray])
+        rememberPassword.title=""; rememberPassword.frame=NSRect(x:269,y:214,width:102,height:79)
+        rememberPassword.setButtonType(.toggle); rememberPassword.image=artwork.image(0x41B); rememberPassword.alternateImage=artwork.image(0x41D)
+        rememberPassword.imagePosition = .imageOnly; rememberPassword.isBordered=false
+        rememberPassword.setAccessibilityLabel("Remember password in Keychain")
+        rememberPassword.font=NSFont(name:"Georgia",size:11); card.addSubview(rememberPassword)
+        let settingsButton=ClassicButton("Server & saved login",fonts:assets.fonts,target:self,action:#selector(toggleSettings))
+        settingsButton.frame=NSRect(x:225,y:385,width:190,height:26); card.addSubview(settingsButton)
+        settings.frame=NSRect(x:105,y:60,width:430,height:205); settings.wantsLayer=true
+        settings.layer?.backgroundColor=NSColor(calibratedWhite:0.13,alpha:0.97).cgColor
+        settings.isHidden=true; card.addSubview(settings)
+        localLoginButton.target=self; localLoginButton.action=#selector(quickLocalLogin)
+        primaryLoginButton.target=self; primaryLoginButton.action=#selector(selectPrimaryLogin)
+        primaryLoginButton.frame=NSRect(x:12,y:165,width:180,height:25)
+        localLoginButton.frame=NSRect(x:210,y:165,width:205,height:25)
+        settings.addSubview(primaryLoginButton); settings.addSubview(localLoginButton)
+        for (label,field,y) in [("Server",host,115),("Port",port,75)] {
+            let title=NSTextField(labelWithString:label); title.frame=NSRect(x:12,y:y,width:65,height:24); settings.addSubview(title)
+            field.frame=NSRect(x:80,y:y,width:335,height:24); settings.addSubview(field)
+        }
+        let forget=NSButton(title:"Forget saved password",target:self,action:#selector(forgetPassword))
+        forget.frame=NSRect(x:12,y:25,width:210,height:26); settings.addSubview(forget)
+        let done=NSButton(title:"Done",target:self,action:#selector(toggleSettings))
+        done.frame=NSRect(x:310,y:25,width:105,height:26); settings.addSubview(done)
+        choices.isHidden=true; choices.frame=NSRect(x:155,y:170,width:330,height:30); card.addSubview(choices)
+        for control in [characterName,female,cityChoice] as [NSView] { control.isHidden=true; card.addSubview(control) }
+        status.frame=NSRect(x:115,y:418,width:420,height:45); status.font=NSFont(name:"Georgia",size:11)
+        status.textColor=NSColor(calibratedRed:0.9,green:0.85,blue:0.7,alpha:1); card.addSubview(status)
+        action.target=self; action.action=#selector(performAction)
+        action.frame=NSRect(x:378,y:224,width:94,height:85)
+        action.image=artwork.image(0x418); action.alternateImage=artwork.image(0x419)
+        action.isBordered=false; action.imagePosition = .imageOnly; action.setAccessibilityLabel("Connect or continue")
+        card.addSubview(action)
+        let disconnect=ClassicButton("Disconnect",fonts:assets.fonts,target:self,action:#selector(disconnect))
+        disconnect.frame=NSRect(x:8,y:448,width:105,height:24); card.addSubview(disconnect)
+        let close=NSButton(title:"Back",target:self,action:#selector(dismissOverlay))
+        close.frame=NSRect(x:168,y:224,width:93,height:84)
+        close.image=artwork.image(0x415); close.alternateImage=artwork.image(0x416); close.imagePosition = .imageOnly; close.isBordered=false
+        card.addSubview(close)
+        secondaryButtons=[disconnect,close,settingsButton]
+        introControls.frame=NSRect(x:0,y:0,width:640,height:480); artwork.addSubview(introControls); introControls.isHidden=true
+        for (id,selector,point) in [(0x3F3,#selector(enterLogin),NSPoint(x:256,y:190)),
+                                   (0x3F9,#selector(introSettings),NSPoint(x:418,y:202)),
+                                   (0x3FF,#selector(enterLogin),NSPoint(x:268,y:158)),
+                                   (0x3FC,#selector(introInformation),NSPoint(x:260,y:133)),
+                                   (0x3F6,#selector(enterLogin),NSPoint(x:148,y:202)),
+                                   (0x402,#selector(quitClient),NSPoint(x:284,y:287))] {
+            let button=NSButton(title:"",target:self,action:selector)
+            button.image=artwork.image(id); button.alternateImage=artwork.image(id+1); button.imagePosition = .imageOnly; button.isBordered=false
+            button.frame=NSRect(origin:point,size:button.image?.size ?? NSSize(width:60,height:24)); introControls.addSubview(button)
+        }
+
         characterSelection.translatesAutoresizingMaskIntoConstraints = false
         characterSelection.isHidden = true; view.addSubview(characterSelection)
         NSLayoutConstraint.activate([
@@ -705,6 +774,14 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             password.stringValue = savedLogin.password() ?? ""
         }
     }
+    @objc private func enterLogin() {
+        introControls.isHidden=true; artwork.mainMenu=false; card.isHidden=false; artwork.showsForm=true
+        updateTabOrder(); view.window?.makeFirstResponder(account)
+    }
+    @objc private func introSettings() { enterLogin(); settings.isHidden=false; updateTabOrder() }
+    @objc private func introInformation() { enterLogin(); status.stringValue="UltimaXB · Classic client assets · Swift macOS client" }
+    @objc private func quitClient() { NSApplication.shared.terminate(nil) }
+    @objc private func toggleSettings() { settings.isHidden.toggle(); updateTabOrder() }
     @objc private func performAction() {
         Telemetry.shared.record("login_action", ["phase": String(describing: phase)])
         do {
@@ -759,13 +836,13 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private func showCharacterSelection() {
         phase = .character
         characterCreation.isHidden = true
-        card.isHidden = true; characterSelection.isHidden = false
+        card.isHidden = true; artwork.showsForm=false; characterSelection.isHidden = false
         characterSelection.update(characters,message:characters.isEmpty ? "Choose New to create a character." : "")
     }
     private func beginCreation() {
         guard phase == .character, let slot = CharacterList.firstEmptySlot(characters) else { return }
         creationSlot = slot; phase = .create
-        characterSelection.isHidden = true; card.isHidden = true
+        characterSelection.isHidden = true; card.isHidden = true; artwork.showsForm=false
         characterCreation.isHidden = false; characterCreation.configure(cities:cities)
         Telemetry.shared.record("character_creation_opened",["slot":slot])
     }
@@ -782,9 +859,12 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         // A manually inserted overlay does not automatically join the window's
         // original key-view loop. Keep its traversal separate from the world view.
         view.window?.autorecalculatesKeyViewLoop = false
-        var controls: [NSView] = [primaryLoginButton, localLoginButton]
-        if savedLogin.profile == .primary { controls += [host,port] }
-        controls += [account,password,rememberPassword]
+        var controls: [NSView] = []
+        if !settings.isHidden {
+            controls += [primaryLoginButton,localLoginButton]
+            if savedLogin.profile == .primary { controls += [host,port] }
+        }
+        if !account.isHidden { controls += [account,password,rememberPassword] }
         if !choices.isHidden { controls.append(choices) }
         if !characterName.isHidden { controls += [characterName, female, cityChoice] }
         if action.isEnabled { controls.append(action) }
@@ -808,16 +888,24 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         parent.window?.makeFirstResponder(account)
     }
     @objc private func dismissOverlay() {
+        if !loginComplete {
+            card.isHidden=true; characterSelection.isHidden=true; characterCreation.isHidden=true
+            introControls.isHidden=false; artwork.mainMenu=true; artwork.showsForm=false
+            return
+        }
         Telemetry.shared.record("login_dismissed", ["connected": loginComplete])
         view.window?.makeFirstResponder(nil)
         view.isHidden = true
         onDismiss?()
     }
     private func reset(_ message: String) {
+        introControls.isHidden=true; artwork.mainMenu=false; settings.isHidden=true
         statusRefreshTask?.cancel(); statusRefreshTask = nil
         world = WorldState()
+        autoPickup = AutoPickup(); onAutoPickupMode?(0)
+        hoverInspection = HoverInspection()
         lastContainerContents = []; stagedVendorOffers = []; vendorOffers = []; vendorSerial = nil; onVendorClosed?()
-        pendingDeletion = nil; characterCreation.isHidden = true; characterSelection.isHidden = true; card.isHidden = false
+        pendingDeletion = nil; characterCreation.isHidden = true; characterSelection.isHidden = true; card.isHidden = false; artwork.showsForm=true
         skills = SkillState(); onSkills?(skills)
         characterStatus = nil; onCharacterStatus?(nil)
         lighting = WorldLighting(); onLighting?(lighting)
@@ -874,6 +962,11 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                 var enteredWorld = false
                 for packet in try framer.receive(bytes) {
                     packetContext = GamePacketDiagnostics.summary(packet)
+                    let pickupPending=autoPickup.pending != nil
+                    autoPickup.receive(packet)
+                    if pickupPending && autoPickup.pending == nil && autoPickup.mode == .off {
+                        onAutoPickupMode?(0); onInventoryMessage?(autoPickup.stoppedReason ?? "Auto-pickup stopped.")
+                    }
                     Telemetry.shared.record("game_packet", ["opcode": String(format: "0x%02X", packet.first ?? 0), "bytes": packet.count])
                     if let previous = characterStatus {
                         var stats = previous
@@ -1091,7 +1184,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         playerSerial = entry.serial
                         if let player = world.mobiles[entry.serial], death.apply(player: player) { onDeath?(death) }
                         characterStatus = CharacterStatus(serial: entry.serial)
-                        characterCreation.isHidden = true; characterSelection.isHidden = true; card.isHidden = false
+                        characterCreation.isHidden = true; characterSelection.isHidden = true; card.isHidden = false; artwork.showsForm=true
                         phase = .world
                         choices.isHidden = true
                         characterName.isHidden = true
@@ -1174,3 +1267,5 @@ private final class LoginBackdrop: NSView {
     override func scrollWheel(with event: NSEvent) {}
     override func keyDown(with event: NSEvent) {}
 }
+
+@MainActor private final class FlippedLoginControls:NSView { override var isFlipped:Bool { true } }

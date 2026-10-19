@@ -8,7 +8,7 @@ public enum WalkPath {
     public static let directions = [(0,-1),(1,-1),(1,0),(1,1),(0,1),(-1,1),(-1,0),(-1,-1)]
     /// Bounded A*. Each step costs one movement request, including diagonals.
     public static func find(from start:WalkPoint, x:Int, y:Int, adjacent:Bool = false, goalZ:Int? = nil,
-                            limit:Int = 4096, segmentLength:Int? = nil, step:(WalkPoint,UInt8)throws->WalkPoint?) rethrows -> [WalkPoint]? {
+                            limit:Int = 4096, segmentLength:Int? = nil, travelCost:(WalkPoint)->Int = { _ in 1 }, step:(WalkPoint,UInt8)throws->WalkPoint?) rethrows -> [WalkPoint]? {
         func distance(_ p:WalkPoint)->Int { max(0,max(abs(p.x-x),abs(p.y-y))-(adjacent ? 1 : 0)) }
         // Equal-length eight-way routes can otherwise zigzag across open ground.
         // Prefer proximity to the requested line only as a tie-breaker; this
@@ -30,7 +30,7 @@ public enum WalkPath {
             closed.insert(current)
             for direction in UInt8(0)...7 {
                 guard let next = try step(current,direction), !closed.contains(next) else { continue }
-                let cost = costs[current]!+1
+                let cost = costs[current]!+max(1,travelCost(next))
                 if cost < costs[next,default:Int.max] {
                     if costs[next] == nil { open.append(next) }
                     costs[next] = cost; parents[next] = current
@@ -84,17 +84,27 @@ public final class NavigationMap {
     }
     private struct XY:Hashable { let x:Int,y:Int }
     private var cells:[XY:Cell] = [:]
+    private var roads:Set<XY> = []
     private let ghost:Bool
     public init(assets:ClientAssets,center:WalkPoint,additional:[WorldTile],radius:Int = 24,ghost:Bool = false) throws {
         self.ghost = ghost
         let tiles = try assets.region(x:center.x,y:center.y,radius:radius)
         let grouped = Dictionary(grouping:tiles + additional,by:{ XY(x:$0.x,y:$0.y) })
+        var roadGraphics:[Int:Bool] = [:]
         for (xy,items) in grouped {
             guard abs(xy.x-center.x)<=radius, abs(xy.y-center.y)<=radius,
                   let land = items.first(where:{ !$0.isStatic }),xy.x+1<assets.width,xy.y+1<assets.height else { continue }
             let corners = try [land.z,assets.elevation(x:xy.x+1,y:xy.y),assets.elevation(x:xy.x+1,y:xy.y+1),assets.elevation(x:xy.x,y:xy.y+1)]
             let average = abs(corners[0]-corners[2]) <= abs(corners[1]-corners[3]) ? (corners[0]+corners[2])>>1 : (corners[1]+corners[3])>>1
             let flags = try assets.landFlags(graphic:land.art)
+            let road:Bool
+            if let cached=roadGraphics[land.art] { road=cached }
+            else {
+                let name=try assets.landName(graphic:land.art).lowercased()
+                road=["road","cobblestone","pavers","flagstone"].contains(where:name.contains)
+                roadGraphics[land.art]=road
+            }
+            if road { roads.insert(xy) }
             let surfaces = try items.filter(\.isStatic).map { tile in
                 let graphic = tile.art-0x4000
                 let flags = try assets.itemFlags(graphic:graphic)
@@ -105,6 +115,7 @@ public final class NavigationMap {
             cells[xy] = Cell(landZ:average,lowZ:corners.min()!,landBlocked:land.art<=2 || flags & 0xC0 != 0,surfaces:surfaces)
         }
     }
+    public func travelCost(_ point:WalkPoint)->Int { roads.contains(XY(x:point.x,y:point.y)) ? 1 : 3 }
     public func standingPoint(x:Int,y:Int,fromZ:Int)->WalkPoint? {
         guard let z = cells[XY(x:x,y:y)]?.standingZ(from:fromZ,ghost:ghost) else { return nil }
         return WalkPoint(x:x,y:y,z:z)

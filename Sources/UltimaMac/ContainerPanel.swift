@@ -124,6 +124,7 @@ private final class ContainerCanvas: NSView {
     var onGroundDrop: ((UInt32,Int,NSPoint)->Bool)?
     var onTarget: ((UInt32) -> Bool)?
     var onQuickPickup: ((UInt32, Int) -> Void)?
+    private lazy var classicText=ClassicText(assets.fonts)
     private var hovered: UInt32?
     private var pointerInside = false
     private func updateHover() {
@@ -288,14 +289,11 @@ private final class ContainerCanvas: NSView {
         // Draw counts after sprites so neighboring items cannot cover the label.
         for item in items where item.amount > 1 && (try? assets.isStackable(graphic:item.graphic)) == true {
             let sprite = try? assets.sprite(item.displayGraphic + 0x4000)
-            let label = String(item.amount) as NSString
-            let attributes:[NSAttributedString.Key:Any] = [.font:NSFont.boldSystemFont(ofSize:11), .foregroundColor:NSColor.white]
-            let size = label.size(withAttributes:attributes)
+            let label = String(item.amount)
+            let size = classicText.size(label)
             let point = NSPoint(x:max(0,min(bounds.width-size.width,CGFloat(item.x+(sprite?.width ?? 12))-size.width)),
                                 y:max(0,min(bounds.height-size.height,CGFloat(item.y+(sprite?.height ?? 12))-size.height)))
-            NSColor.black.withAlphaComponent(0.85).setFill()
-            NSRect(origin:point,size:size).insetBy(dx:-1,dy:0).fill()
-            label.draw(at:point,withAttributes:attributes)
+            classicText.draw(label,at:point)
         }
     }
     private func drawSprite(_ sprite: Sprite, at point: NSPoint) {

@@ -340,6 +340,12 @@ public final class ClientAssets {
         // nearest Z incorrectly selected the buried ground under the first stair.
         return heights.max() ?? fromZ
     }
+    public func landName(graphic:Int) throws -> String {
+        guard (0..<0x4000).contains(graphic),let tileData else { return "" }
+        let offset=graphic/32*836+4+graphic%32*26
+        let bytes=try (6..<26).map { UInt8(try tileData.u8(offset+$0)) }.prefix { $0 != 0 }
+        return String(bytes:bytes,encoding:.ascii) ?? ""
+    }
     public func landFlags(graphic:Int) throws -> Int {
         guard (0..<0x4000).contains(graphic), let tileData else { return 0 }
         return try tileData.u32(graphic/32*836+4+graphic%32*26)

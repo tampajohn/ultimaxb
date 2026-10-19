@@ -66,6 +66,8 @@ final class WorldView: NSView {
     var onPickup: ((GroundItem) -> Void)?
     private var hoverArea: NSTrackingArea?
     private var hovered: GroundItem?
+    private var hoveredMobile:UInt32?
+    var onHoverInspect:((UInt32)->Void)?
     private var hoverRestPoint = NSPoint.zero
     private var hoverRestAt: TimeInterval = 0
     private var hoverInspected: UInt32?
@@ -80,13 +82,19 @@ final class WorldView: NSView {
         let area = NSTrackingArea(rect: bounds, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
         addTrackingArea(area); hoverArea = area
     }
-    override func mouseExited(with event: NSEvent) { hovered = nil; hoverInspected = nil; needsDisplay = true }
+    override func mouseExited(with event: NSEvent) { hovered = nil; hoveredMobile = nil; hoverInspected = nil; needsDisplay = true }
     override func mouseMoved(with event: NSEvent) {
         controllerPoint = nil
         let point = convert(event.locationInWindow, from: nil), scale = imageRect.width / 960
-        let previous = hovered?.serial
+        let previous = hovered?.serial ?? hoveredMobile
         hovered = imageRect.contains(point) ? try? WorldHitTest.groundItem(assets: assets, animationTime:displayedAnimationTime, items: groundObjects, camera: displayedCamera, screenX: (point.x-imageRect.minX)/scale, screenY: (point.y-imageRect.minY)/scale) : nil
-        if previous != hovered?.serial {
+        hoveredMobile = nil
+        if hovered == nil, imageRect.contains(point) {
+            hoveredMobile = (try? WorldHitTest.mobile(assets:assets,mobiles:mobiles,
+                presentations:motion.presentations(at:ProcessInfo.processInfo.systemUptime),camera:displayedCamera,
+                screenX:(point.x-imageRect.minX)/scale,screenY:(point.y-imageRect.minY)/scale,equipment:equipment))?.serial
+        }
+        if previous != (hovered?.serial ?? hoveredMobile) {
             hoverInspected = nil; hoverRestAt = ProcessInfo.processInfo.systemUptime; hoverRestPoint = point
         } else if hypot(point.x-hoverRestPoint.x, point.y-hoverRestPoint.y) > 3 {
             hoverRestAt = ProcessInfo.processInfo.systemUptime; hoverRestPoint = point
@@ -198,12 +206,12 @@ final class WorldView: NSView {
             }
         }
         if !targeting, groundDrag == nil, window?.isKeyWindow == true,
-           let hovered, hoverInspected != hovered.serial,
+           let serial = hovered?.serial ?? hoveredMobile, hoverInspected != serial,
            ProcessInfo.processInfo.systemUptime-hoverRestAt >= 0.5,
            let window, let hit = hitTest(superview?.convert(window.mouseLocationOutsideOfEventStream, from: nil) ?? window.mouseLocationOutsideOfEventStream), hit === self {
-            hoverInspected = hovered.serial
-            onInspect?(hovered.serial)
-            Telemetry.shared.record("hover_inspect", ["serial": hovered.serial, "graphic": hovered.graphic])
+            hoverInspected = serial
+            onHoverInspect?(serial)
+            Telemetry.shared.record("hover_inspect", ["serial": serial])
         }
         let priorSpeechCount = overheadSpeech.entries.count
         overheadSpeech.expire(at:ProcessInfo.processInfo.systemUptime)
@@ -660,6 +668,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var vendorPanel: VendorPanel?
     var skillsPanel: SkillsPanel?
     private var mapPanel:MapPanel?
+    private var travelPanel:TravelPanel?
     private var deathPanel:DeathPanel?
     private var textPromptPanel:TextPromptPanel?
     private var tradePanel:TradePanel?
@@ -673,6 +682,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let mapPanel, mapPanel.superview != nil { mapPanel.removeFromSuperview() }
         else {
             let panel = mapPanel ?? MapPanel(assets:assets); mapPanel = panel
+            panel.onInspect = { [weak self] in self?.loginOverlay?.inspect(serial:$0,automatic:true) }
             panel.onTravel = { [weak self] x,y in
                 self?.travelOnMap(x:x,y:y)
                 self?.window?.makeFirstResponder(self?.worldView)
@@ -822,6 +832,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 view.addSubview(vendor); self.vendorPanel = vendor
             }
             panel.onVendorClosed = { [weak self] in self?.vendorPanel?.removeFromSuperview(); self?.vendorPanel = nil }
+            panel.itemWeight = { [weak self] graphic in (try? self?.assets.itemWeight(graphic:graphic)) ?? 255 }
+            panel.onAutoPickupMode = { [weak self] in self?.worldView?.sidebar?.updatePickupMode($0) }
             panel.onSkills = { [weak self] in self?.skillsPanel?.update($0) }
             panel.onCombatTarget = { [weak self] target in
                 self?.worldView?.combatTarget = target.serial
@@ -840,6 +852,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             panel.onSpeech = { [weak self] message in
                 self?.worldView?.showLabel(message)
+                self?.mapPanel?.receiveName(message)
                 self?.chatPanel.append(message.name.isEmpty ? message.text : "\(message.name): \(message.text)")
             }
             chatPanel.onSend = { [weak panel] text in panel?.say(text) ?? nil }
@@ -1006,6 +1019,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                               running:self.worldView?.running ?? false)
             }
             worldView?.onInspect = { [weak panel] in panel?.inspect(serial: $0) }
+            worldView?.onHoverInspect = { [weak panel] in panel?.inspect(serial:$0,automatic:true) }
             worldView?.onUse = { [weak panel] in panel?.use(serial: $0) }
             panel.onGroundItems = { [weak self] tiles in
                 guard let view = self?.worldView else { return }
@@ -1020,13 +1034,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let view = self?.worldView else { return }
                 let modeChanged = view.player?.flags != player?.flags
                 view.player = player
-                if self?.mapPanel?.superview != nil { self?.mapPanel?.update(player:player,mobiles:view.mobiles) }
+                if player == nil || self?.mapPanel?.superview != nil { self?.mapPanel?.update(player:player,mobiles:view.mobiles) }
                 if modeChanged { self?.characterPanel?.update(player:player,equipment:view.equipment) }
                 view.sidebar?.updateMode(war:(player?.flags ?? 0) & 0x40 != 0, hidden:(player?.flags ?? 0) & 0x80 != 0)
                 view.window?.invalidateCursorRects(for:view)
                 view.sidebar?.isHidden = player == nil
                 view.sidebar?.updateEquipment(view.equipment, player:player?.serial, assets:view.assets)
-                if player == nil { view.resetDeathAnimations(); view.effects = WorldEffects(); self?.audio.stop(); view.sidebar?.updateStatus(nil); self?.skillsPanel?.update(SkillState()) }
+                if player == nil { self?.travelPanel?.removeFromSuperview(); self?.travelPanel=nil; self?.mapPanel?.onPickLocation=nil; view.resetDeathAnimations(); view.effects = WorldEffects(); self?.audio.stop(); view.sidebar?.updateStatus(nil); self?.skillsPanel?.update(SkillState()) }
                 view.needsLayout = true
                 if player == nil { self?.worldView?.overheadSpeech = OverheadSpeech(); self?.spellShortcuts.values.forEach { $0.removeFromSuperview() }; self?.spellShortcuts.removeAll(); self?.spellbooks.values.forEach { $0.removeFromSuperview() }; self?.spellbooks.removeAll(); self?.chatPanel.reset(); self?.journalPanel?.removeFromSuperview(); self?.characterPanel?.removeFromSuperview(); self?.characterPanel = nil; self?.containerPanels.values.forEach { $0.removeFromSuperview() }; self?.containerPanels.removeAll() }
                 if let player, view.followPlayer, player.x != view.cx || player.y != view.cy {
@@ -1081,20 +1095,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let worldView { loginOverlay?.show(in: worldView) }
     }
+    private func showTravel() {
+        guard let view=worldView,let login=loginOverlay,view.player != nil else { return }
+        travelPanel?.removeFromSuperview()
+        let panel=TravelPanel(assets:assets,scope:login.assistantScope); travelPanel=panel
+        panel.onGo = { [weak self] x,y in
+            self?.travelOnMap(x:x,y:y); self?.window?.makeFirstResponder(self?.worldView)
+        }
+        panel.onStop = { [weak self] in self?.loginOverlay?.cancelRoute() }
+        panel.onPick = { [weak self,weak panel] in
+            guard let self else { return }
+            if self.mapPanel?.superview == nil { self.toggleMap() }
+            self.mapPanel?.showWorld(); panel?.isHidden=true
+            self.mapPanel?.onPickCancelled = { [weak panel] in panel?.isHidden=false }
+            self.mapPanel?.onPickLocation = { [weak panel] x,y in panel?.picked(x:x,y:y); panel?.isHidden=false }
+            self.chatPanel.append("Click the world map to choose a travel destination.")
+        }
+        view.addSubview(panel)
+    }
     private func travelOnMap(x:Int,y:Int) {
         guard let view = worldView, let player = view.player, let panel = loginOverlay else { return }
         panel.cancelRoute()
         let planner: (WalkPoint,Set<WalkPoint>)->[WalkPoint]? = { [weak self] start,blocked in
             guard let self, let view = self.worldView,
                   let map = try? NavigationMap(assets:self.assets,center:start,additional:view.groundItems,radius:48,ghost:view.player?.isGhost == true) else { return nil }
-            return WalkPath.find(from:start,x:x,y:y,segmentLength:32) { point,direction in
-                guard let next = map.step(from:point,direction:direction), !blocked.contains(next) else { return nil }
+            let enemies=view.mobiles.filter { $0.serial != view.player?.serial && ($0.isEnemy || $0.serial == view.combatTarget) }
+            return WalkPath.find(from:start,x:x,y:y,segmentLength:32,travelCost:{ point in
+                map.travelCost(point)+TravelSafety.penalty(point,enemies:enemies)
+            }) { point,direction in
+                guard let next = map.step(from:point,direction:direction), !blocked.contains(next),
+                      TravelSafety.allows(from:point,to:next,enemies:enemies) else { return nil }
                 return next
             }
         }
         let start = WalkPoint(x:player.x,y:player.y,z:player.z)
         guard let route = planner(start,[]) else { chatPanel.append("No clear route toward that map destination."); return }
         view.followPlayer = true
+        panel.travelStepAllowed = { [weak self] next in
+            guard let view=self?.worldView,let player=view.player else { return false }
+            return TravelSafety.allows(from:WalkPoint(x:player.x,y:player.y,z:player.z),to:next,enemies:view.mobiles.filter { $0.serial != player.serial && ($0.isEnemy || $0.serial == view.combatTarget) })
+        }
         panel.followRoute(route,action:nil,running:view.running,continuing:true,resolver:planner)
         Telemetry.shared.record("map_travel_requested",["x":x,"y":y,"steps":route.count])
     }
@@ -1215,14 +1255,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         view.onJournal = { [weak self] in self?.showJournal() }
         chatPanel.onHistoryRequested = { [weak self] event in self?.showJournal(toggle: false, scrollEvent: event) }
         chatPanel.onHistory = { [weak self] history in self?.journalPanel?.update(history) }
-        let sidebar = PlaySidebar(definitions: assets.skills)
+        let sidebar = PlaySidebar(definitions: assets.skills,assets:assets)
         sidebar.isHidden = true; view.sidebar = sidebar; skillsPanel = sidebar.skills
+        sidebar.onPickupMode = { [weak self] in self?.loginOverlay?.setAutoPickup($0) }
         sidebar.skills.onUse = { [weak self] in self?.loginOverlay?.useSkill($0) }
         sidebar.onCommand = { [weak self] command in
             switch command {
             case 0: self?.showCharacter()
             case 1: self?.loginOverlay?.openBackpack()
             case 2: self?.loginOverlay?.useEquippedTool()
+            case 4: self?.showTravel()
             default: self?.loginOverlay?.toggleWarMode()
             }
             self?.window?.makeFirstResponder(self?.worldView)

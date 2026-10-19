@@ -92,3 +92,17 @@ planning, exclusive transfer ownership/acknowledgement routing, visible controls
 recovery display, handling other heavy stacks, and interaction with smelting.
 The runner does not discover forges or execute packets itself. No live ore was
 dropped by these tests.
+
+## Travel and opportunistic gathering
+
+The requested travel journal and nearby-item gathering are now initial runnable
+workflows. Select a town or edit its coordinates (Pick on map), then Go/resume;
+Stop or manual movement ends travel. Destinations are scoped to server/character.
+Source city positions and limitations are recorded in STATUS.md. No travel resumes
+on reconnect, and tests have not moved the user's character outside Minoc.
+
+Gather is a session-only sidebar toggle: reagents, or reagents plus items explicitly
+marked movable by the server. It does not loot corpses or open containers, detour,
+sell, or drop belongings. Transfer confirmation, bounded timeout and failure stop
+are implemented. Full zone mining/herding and the broader macro runner remain
+separate unfinished requirements. The UI overhaul remains active for other dialogs.
