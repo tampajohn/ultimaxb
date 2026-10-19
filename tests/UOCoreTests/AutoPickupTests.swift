@@ -29,10 +29,18 @@ final class AutoPickupTests:XCTestCase {
         XCTAssertEqual(gather.gathered.credits[herb.serial]?.amount,2,"Late acknowledgement must not double-count goods")
         XCTAssertNil(gather.select(items:[herb],player:player,at:2))
     }
+    func testUnmarkedFurnitureIsNotAutomaticLootOrADetour() {
+        var gather=AutoPickup(); gather.mode = .all
+        let player=WorldMobile(serial:1,body:400,x:10,y:10,z:0)
+        XCTAssertNil(gather.select(items:[item(graphic:0xB2C)],player:player,at:0))
+        XCTAssertNil(gather.select(items:[item(graphic:0xB2C,x:14)],player:player,at:0,radius:6))
+        XCTAssertNotNil(gather.select(items:[item(graphic:0xEED)],player:player,at:0))
+        XCTAssertNotNil(gather.select(items:[item(graphic:0xF5E,flags:0x20)],player:player,at:0))
+    }
     func testTimeoutRefusalAndMovableFilter() {
         let player=WorldMobile(serial:1,body:400,x:10,y:10,z:0)
         var gather=AutoPickup(); gather.mode = .all
-        XCTAssertNotNil(gather.select(items:[item(graphic:0xF5E)],player:player,at:0))
+        XCTAssertNil(gather.select(items:[item(graphic:0xF5E)],player:player,at:0))
         XCTAssertNil(gather.select(items:[item(graphic:0xF5E)],player:player,at:0,portable:{_ in false}))
         XCTAssertNotNil(gather.select(items:[item(graphic:0xF5E,flags:0x20)],player:player,at:0))
         gather.begin(item(),bag:2,contents:[],at:0); gather.update(contents:[],at:5)

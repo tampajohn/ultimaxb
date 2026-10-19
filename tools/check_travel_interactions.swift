@@ -54,11 +54,13 @@ import UOCore
         login.cancelRoute()
         send(Data([0x1D,0,0,0,2]))
         send(Data([0x20,0,0,0,1,1,0x90,0,0,0,0,0,10,0,10,0,0,2,0]))
+        // An enemy still visible eleven tiles away does not veto a short pickup.
+        send(Data([0x77,0,0,0,3,0,0xD9,0,21,0,10,0,0,0,0,0,6]))
         login.followRoute([next],action:nil,running:false,continuing:true,resolver:{ _,_ in [next] })
         login.bankGatheredOnArrival=true
         login.tickMovement()
         precondition(detours==1 && login.bankGatheredOnArrival,"Safe visible pickup starts a detour without losing bank intent")
         login.cancelRoute()
-        print("Travel waits for doors, preserves banking intent and detours only without nearby enemies")
+        print("Travel waits for doors, preserves banking intent and permits pickups with sufficient enemy clearance")
     }
 }

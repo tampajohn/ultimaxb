@@ -1,6 +1,6 @@
 # Built-in assistant goal
 
-Automated mining and herding are explicit parts of the UltimaXB goal, alongside
+Automated mining, lumberjacking, herding, hauling, smelting and crafting are explicit parts of the UltimaXB goal, alongside
 classic-client playability. This document describes required work, not shipped
 features. Original Xbox support remains a later target.
 
@@ -33,6 +33,15 @@ mining and herding are additional requested UltimaXB workflows.
   tool/target sequence, and advance after resource depletion or invalid targets.
   Handle broken/missing tools, weight, stamina, movement refusal and interrupted
   actions without repeatedly issuing failed commands.
+- End-to-end resource workflows: equip an appropriate owned tool, travel to the
+  selected work zone, gather, haul to configured processing stations, and bank
+  outputs. Include lumberjacking with axe/tree targeting and mining with a pickaxe.
+  Smelt ore into ingots at a forge, then use a blacksmith hammer and anvil/forge
+  to craft user-selected recipes and quantities. Support resuming the gathering
+  stage when more materials are needed. Do not consume reserved equipment or
+  unrelated materials; confirm equipment changes, resource consumption and output
+  inventory before advancing. Handle tool breakage, resource depletion, full
+  containers, interrupted targets, enemy approach and server cooldowns.
 - Herding: select eligible animals and a destination/zone, use the shepherd's
   crook and its target sequence, and handle moving, missing or unreachable animals.
 - Ore hauling to a selected forge while overloaded: intentionally drop selected
@@ -75,7 +84,10 @@ play for routine tests.
 and the game packet adapter. It requires an equipment entry owned by the player on layer
 29, a matching open-container event and a full contents response before choosing
 goods. Each transfer waits for both source reduction and destination increase;
-moving, losing bank identity, refusal and timeout stop execution. It never sends
+moving, losing bank identity, permanent refusal and timeout stop execution.
+Busy lift rejection (0x27/255) gets at most three delayed retries, with unchanged
+source/destination snapshots required before replay. Opening and confirmed
+transfers are paced by one second. It never sends
 the next deposit from the same confirmation call. Thirteen focused gathering,
 overload and banking tests pass. An additional offline adapter fixture verifies
 arrival, bank identity/contents, deposit serialization and inventory confirmation.

@@ -14,13 +14,17 @@ public struct AutoPickup {
     private var nextAt:TimeInterval=0
     public init() {}
     public static let reagents:Set<Int> = [0xF7A,0xF7B,0xF84,0xF85,0xF86,0xF88,0xF8C,0xF8D]
+    // Classic packets do not reliably expose house lockdown/ownership. For
+    // non-resource objects require the server's movable override; low tiledata
+    // weight alone must not make town/house furniture automatic loot.
     public mutating func select(items:[GroundItem],player:WorldMobile,at time:TimeInterval,radius:Int = 1,portable:(GroundItem)->Bool = { _ in true })->GroundItem? {
         attempted.formIntersection(Set(items.map(\.serial)).union(pending.map { [$0] } ?? []))
         guard mode != .off,pending == nil,time>=nextAt,!player.isGhost,player.flags & 0x40 == 0 else { return nil }
         return items.filter {
             !attempted.contains($0.serial) && portable($0) && $0.graphic<0x4000 && $0.graphic != 0x2006 && $0.flags & 0x80 == 0 &&
             max(abs($0.x-player.x),abs($0.y-player.y))<=max(1,min(6,radius)) && abs($0.z-player.z)<=16 &&
-            (Self.reagents.contains($0.graphic) || mode == .all)
+            (Self.reagents.contains($0.graphic) || (mode == .all &&
+                ((0xEED...0xEEF).contains($0.graphic) || $0.flags & 0x20 != 0)))
         }.sorted {
             let a=max(abs($0.x-player.x),abs($0.y-player.y)), b=max(abs($1.x-player.x),abs($1.y-player.y))
             return a == b ? $0.serial<$1.serial : a<b

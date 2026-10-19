@@ -57,6 +57,34 @@ final class GatheredBankingTests:XCTestCase {
         XCTAssertNil(poll(&runner,[item(amount:10)],time:6))
         guard case .stopped=runner.state else { return XCTFail("A source removal is not a confirmed deposit") }
     }
+    func testBusyRetryIsDelayedBoundedAndRequiresUnchangedInventory() {
+        var runner=ready()
+        XCTAssertNil(poll(&runner,[item(amount:14)],time:0.5))
+        XCTAssertNotNil(poll(&runner,[item(amount:14)],time:1))
+        var now:Double=2
+        for attempt in 1...3 {
+            runner.refuse(reason:255,time:now)
+            XCTAssertEqual(runner.state,.retrying)
+            XCTAssertEqual(runner.retryCount,attempt)
+            XCTAssertNil(poll(&runner,[item(amount:14)],time:now+0.5))
+            now += Double(attempt+1)
+            XCTAssertEqual(poll(&runner,[item(amount:14)],time:now),.deposit(serial:4,amount:4,bank:3))
+        }
+        runner.refuse(reason:255,time:now)
+        guard case .stopped=runner.state else { return XCTFail("Retry budget must stop") }
+        runner=ready(); _=poll(&runner,[item(amount:14)])
+        runner.refuse(reason:255,time:2)
+        XCTAssertNil(poll(&runner,[item(amount:10)],time:4))
+        guard case .stopped=runner.state else { return XCTFail("Changed source cannot be lifted twice") }
+    }
+    func testConfirmedDepositDuringRetryDoesNotResend() {
+        var runner=ready(); _=poll(&runner,[item(amount:14)])
+        runner.refuse(reason:255,time:2)
+        XCTAssertNil(poll(&runner,[item(amount:10),item(9,amount:4,bag:3)],time:3))
+        XCTAssertEqual(runner.state,.ready)
+        XCTAssertNil(poll(&runner,[item(amount:10),item(9,amount:4,bag:3)],time:4))
+        XCTAssertEqual(runner.state,.complete)
+    }
     func testOpenTimeoutAndBankOwnershipLoss() {
         var runner=GatheredBanking(); _=runner.begin(player:1,at:point,time:0)
         XCTAssertNil(poll(&runner,[],time:5))

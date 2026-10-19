@@ -2,7 +2,7 @@
 
 The goal is full chosen-era playability on macOS, then evaluation of an original
 Xbox port. The scope also includes a built-in UOAssist-style assistant, with
-automated mining and herding as explicit deliverables. The present client is
+automated mining, lumberjacking, herding, hauling, smelting and crafting as explicit deliverables. The present client is
 experimental and is not at parity yet.
 
 ## Implemented, with live shard testing still ongoing
@@ -21,8 +21,9 @@ experimental and is not at parity yet.
   changes before crossing; locked/unresponsive doors stop travel. Banking and
   overload options survive door handling. With Gather enabled, travel considers
   new visible eligible ground items within six tiles, takes collision-checked
-  detours of at most twelve steps, and resumes its destination. Nearby enemies
-  suppress or cancel detours. These additions have offline packet coverage;
+  detours of at most six steps, and resumes its destination. Enemy distance must
+  exceed item distance and a conservative closing-time margin for every detour
+  step and pickup pause; shrinking clearance cancels the detour. These additions have offline packet coverage;
   the live Minoc bank entrance/deposit still needs retesting.
 - Spellbook, legacy choice menus, original-art hue picker and death/resurrection prompt.
 - General 0xB0 dialogs: original gump images/resizable backgrounds, labels,
@@ -55,7 +56,12 @@ experimental and is not at parity yet.
   landmarks are seeded; other destinations require a user-saved bank point.
   Confirmed route completion requests the bank, verifies player-owned layer 29
   plus a full contents response, and transfers gathered quantities one at a time.
-  Unrelated containers, movement, manual Stop, refusal and timeout stop deposits.
+  Unrelated containers, movement, manual Stop, permanent refusal and timeout stop deposits.
+  A busy lift refusal (0x27/255) receives at most three delayed retries (2/3/4s),
+  only with unchanged source/destination counts. Bank opening and successful
+  transfers have a one-second settling pause. Auto-gather requires the movable
+  override for non-resource items, avoiding unmarked furniture; classic packets
+  do not reliably reveal lockdown/ownership.
   An offline packet-adapter fixture covers arrival, unrelated container rejection,
   a single outstanding deposit and authoritative completion. Live banker reach,
   bank capacity/refusal and old-era banker placement remain unverified. Bank

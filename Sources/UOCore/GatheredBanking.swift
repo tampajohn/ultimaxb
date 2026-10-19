@@ -4,20 +4,22 @@ import Foundation
 /// then feeds authoritative inventory/open/contents events before polling again.
 public struct GatheredBanking {
     public enum Command:Equatable { case openBank, deposit(serial:UInt32,amount:Int,bank:UInt32) }
-    public enum State:Equatable { case idle, opening, waitingContents, ready, transferring, complete, stopped(String) }
+    public enum State:Equatable { case idle, opening, waitingContents, ready, transferring, retrying, complete, stopped(String) }
     public private(set) var state:State = .idle
     public private(set) var bank:UInt32?
     private var player:UInt32=0
     private var point=WalkPoint(x:0,y:0,z:0)
     private var deadline:TimeInterval=0
     private var transfer:Transfer?
+    private var nextDepositAt:TimeInterval=0
+    public private(set) var retryCount=0
     private struct Transfer {
         let source:UInt32, sourceBag:UInt32, graphic:Int, hue:Int, amount:Int
         let beforeSource:Int, beforeDestination:Int
     }
     public init() {}
     public mutating func begin(player:UInt32,at point:WalkPoint,time:TimeInterval)->Command {
-        self.player=player; self.point=point; bank=nil; transfer=nil
+        self.player=player; self.point=point; bank=nil; transfer=nil; retryCount=0; nextDepositAt=time
         state = .opening; deadline=time+5
         return .openBank
     }
@@ -28,13 +30,17 @@ public struct GatheredBanking {
     }
     /// Only a full contents response for the bank establishes the baseline;
     /// an empty bank still requires its explicit empty contents response.
-    public mutating func contentsReceived(for serial:UInt32) {
+    public mutating func contentsReceived(for serial:UInt32,time:TimeInterval=0) {
         guard state == .waitingContents,serial==bank else { return }
-        state = .ready
+        state = .ready; nextDepositAt=time+1
     }
-    public mutating func refuse() {
+    public mutating func refuse(reason:UInt8?=nil,time:TimeInterval=0) {
         guard state == .transferring else { return }
-        stop("Bank deposit refused by server.")
+        // 0x27/255 is the classic server's busy/unavailable lift rejection.
+        // It is explicit rejection, unlike a timeout with an unknown outcome.
+        if reason == 255,retryCount<3 {
+            retryCount += 1; state = .retrying; deadline=time+Double(retryCount+1)
+        } else { stop("Bank deposit refused by server.") }
     }
     public mutating func stop(_ reason:String) { state = .stopped(reason); transfer=nil }
     public mutating func next(position:WalkPoint,backpack:UInt32,equipment:[EquippedItem],
@@ -53,14 +59,25 @@ public struct GatheredBanking {
             let source=contents.first(where:{$0.serial==transfer.source && $0.container==transfer.sourceBag && $0.graphic==transfer.graphic && $0.hue==transfer.hue})?.amount ?? 0
             let destination=contents.filter { $0.container==bank && $0.graphic==transfer.graphic && $0.hue==transfer.hue }.reduce(0) { $0+$1.amount }
             guard source<=transfer.beforeSource-transfer.amount && destination>=transfer.beforeDestination+transfer.amount else {
+                if state == .retrying {
+                    guard time>=deadline else { return nil }
+                    // Only replay a rejected lift if both authoritative snapshots
+                    // are unchanged. Partial/missing updates must never be replayed.
+                    guard source==transfer.beforeSource,destination==transfer.beforeDestination else {
+                        stop("Bank retry stopped: inventory changed after refusal."); return nil
+                    }
+                    state = .transferring; deadline=time+5
+                    return .deposit(serial:transfer.source,amount:transfer.amount,bank:bank)
+                }
                 if time>=deadline { stop("Bank deposit was not confirmed.") }
                 return nil
             }
-            self.transfer=nil; state = .ready
+            self.transfer=nil; state = .ready; retryCount=0; nextDepositAt=time+1
             // Wait for the caller to reconcile the gathered ledger. Never emit
             // the next transfer using the same pre-confirmation snapshot.
             return nil
         }
+        guard time>=nextDepositAt else { return nil }
         var eligible=gathered
         eligible.reconcile(contents)
         guard let credit=eligible.transferable(in:backpack,includeGold:true).first else {
