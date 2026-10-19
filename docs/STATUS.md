@@ -42,6 +42,11 @@ experimental and is not at parity yet.
 - Offline packet-adapter coverage includes old tool-route cancellation, server cursor replacement/cancellation, item use, valid/absent spellbook entries, accepting the subsequent cursor and disconnect cleanup. These checks exercise local packet handling without connecting or sending actions to the live character.
 - The active client remains running; new target behavior takes effect on its next launch. This does not claim correlation of arbitrarily delayed server cursors to a specific skill/tool, which the classic protocol does not identify explicitly.
 
+### 2026-10-19 — Serialize manual inventory transfers
+- Manual moves, equip and unequip now share an outstanding-transfer guard. Further item use/transfers and automatic gather/bank/overload transfers wait for authoritative placement or refusal. Removal alone does not release the guard. Splits and merges observe destination changes, including drops onto existing stack serials.
+- An unconfirmed transfer expires after five seconds with an explicit message; it is never replayed automatically. Ownership remains entirely server-driven. Disconnect clears the guard. Classic packets do not carry transaction IDs, so unrelated identical stack changes and very late replies cannot be conclusively correlated.
+- Eight core tests cover placement/removal, same-bag splits, merges, rearrangement, equip/unequip, ground coordinates, refusal and timeout. All sixteen offline UI fixtures pass, including rapid manual actions, placement/refusal release and reconnect cleanup. No live inventory actions were sent; this change is pending the next client launch.
+
 ## Implemented, with live shard testing still ongoing
 
 - Login, shard/character selection, reconnect, creation stats/skills/appearance.

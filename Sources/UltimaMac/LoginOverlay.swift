@@ -194,6 +194,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private var awaitingDropWeight:TimeInterval?
     private var inventoryRecoveryBusy:Bool { gatheredDrop != nil || awaitingDropWeight != nil || banking != nil || bankingRequested || ProcessInfo.processInfo.systemUptime<bankTransferUntil }
     private var manualInventoryAt:TimeInterval = -.infinity
+    private var manualTransfer=ManualInventoryTransfer()
     var onAutoPickupMode:((Int)->Void)?
     func setAutoPickup(_ value:Int) {
         autoPickup.mode=AutoPickup.Mode(rawValue:value) ?? .off
@@ -213,7 +214,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         if wasPending && autoPickup.pending == nil && autoPickup.mode == .off {
             onInventoryMessage?(autoPickup.stoppedReason ?? "Auto-pickup stopped."); onAutoPickupMode?(0)
         }
-        guard travelDoor == nil,waitingDoor == nil,!inventoryRecoveryBusy,movement.pendingCount == 0,allowed,loginComplete,trade == nil,combatTarget.serial == nil,targetRequest == nil,now-manualInventoryAt>2,
+        guard travelDoor == nil,waitingDoor == nil,!inventoryRecoveryBusy,manualTransfer.serial == nil,movement.pendingCount == 0,allowed,loginComplete,trade == nil,combatTarget.serial == nil,targetRequest == nil,now-manualInventoryAt>2,
               let serial=playerSerial,let player=world.mobiles[serial],
               let weight=characterStatus?.weight,let strength=characterStatus?.strength,
               weight < 40+strength*7/2-10,
@@ -241,7 +242,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private func tickGatheredBanking()->Bool {
         guard loginComplete,let serial=playerSerial,let player=world.mobiles[serial] else { return false }
         if bankingRequested {
-            guard autoPickup.pending==nil,movement.pendingCount==0,!movement.awaitingPosition else { return true }
+            guard autoPickup.pending==nil,manualTransfer.serial == nil,movement.pendingCount==0,!movement.awaitingPosition else { return true }
             bankingRequested=false
             guard !player.isGhost,trade==nil,targetRequest==nil,combatTarget.serial==nil else {
                 cancelRoute(); onInventoryMessage?("Banking stopped for your current interaction."); return false
@@ -328,7 +329,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
               weight>40+strength*7/2 else { return false }
         // Finish any predicted steps and outstanding pickup before changing inventory.
         guard movement.pendingCount==0,!movement.awaitingPosition else { return true }
-        guard autoPickup.pending==nil,now-manualInventoryAt>2 else { return true }
+        guard autoPickup.pending==nil,manualTransfer.serial == nil,now-manualInventoryAt>2 else { return true }
         guard trade==nil,targetRequest==nil,combatTarget.serial==nil else {
             cancelRoute(); onInventoryMessage?("Overload recovery stopped for your active interaction."); return true
         }
@@ -352,6 +353,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         return true
     }
     func tickMovement(allowRoute:Bool = true) {
+        if let result=manualTransfer.poll(time:ProcessInfo.processInfo.systemUptime) { reportManualTransfer(result) }
         if loginComplete, let packet = movement.poll(at: ProcessInfo.processInfo.systemUptime) {
             Telemetry.shared.record("movement_position_sync", ["pending": movement.pendingCount])
             connection.send(packet)
@@ -440,7 +442,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                 }
             }
             if routeContinues,routeAction == nil,detourItem == nil,
-               autoPickup.pending == nil,!inventoryRecoveryBusy,
+               autoPickup.pending == nil,!inventoryRecoveryBusy,manualTransfer.serial == nil,
                trade == nil,targetRequest == nil,combatTarget.serial == nil,
                routeNow >= nextDetourAt,routeNow-manualInventoryAt>2,
                let weight=characterStatus?.weight,let strength=characterStatus?.strength,
@@ -847,7 +849,17 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         Telemetry.shared.record("quick_pickup", ["serial": serial, "amount": amount])
         moveItem(serial: serial, amount: amount, x: 0xFFFF, y: 0xFFFF, target: backpack.serial)
     }
+    private func reportManualTransfer(_ result:ManualInventoryTransfer.Result) {
+        manualInventoryAt=ProcessInfo.processInfo.systemUptime
+        Telemetry.shared.record("manual_inventory_result",["outcome":result.rawValue])
+        if result == .timedOut { onInventoryMessage?("Item move was not confirmed. Check its location before trying again.") }
+    }
     private func manualInventoryAvailable()->Bool {
+        if let result=manualTransfer.poll(time:ProcessInfo.processInfo.systemUptime) { reportManualTransfer(result) }
+        guard manualTransfer.serial == nil else {
+            onInventoryMessage?("Waiting for your previous item move to finish.")
+            return false
+        }
         guard autoPickup.pending == nil,!inventoryRecoveryBusy else {
             onInventoryMessage?("Waiting for automatic inventory transfer to finish.")
             return false
@@ -872,6 +884,10 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             if var value = trade, value.isOwnOffer(target) == true || value.isOwnOffer(serial) == true {
                 value.beginOfferChange(); trade = value; tradeTransfer = TradeTransfer(item:serial,destination:target); onTrade?(value)
             }
+            let destination:ManualInventoryTransfer.Destination
+            if target == 0xFFFFFFFF { destination = .ground(x,y,z) }
+            else { destination = .container(target,x:x,y:y) }
+            manualTransfer.begin(serial:serial,amount:amount,destination:destination,world:world,time:ProcessInfo.processInfo.systemUptime)
             for packet in packets { connection.send(packet) }
             Telemetry.shared.record("inventory_move", ["serial": serial, "amount": amount, "x": x, "y": y, "z":z, "target": target])
             onInventoryMessage?("Moving item…")
@@ -901,6 +917,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                 tradeTransfer = TradeTransfer(item:serial,destination:owner)
                 onTrade?(value)
             }
+            manualTransfer.begin(serial:serial,amount:1,destination:.equipment(owner,layer),world:world,time:ProcessInfo.processInfo.systemUptime)
             connection.send(pickup)
             connection.send(equip)
             onInventoryMessage?("Equipping item…")
@@ -914,8 +931,10 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
               EquipmentRules.isWearable(item.layer),
               let bag = world.equipment.values.first(where: { $0.owner == owner && $0.layer == 21 }) else { return }
         do {
-            connection.send(try InteractionPackets.pickup(serial: serial, amount: 1))
-            connection.send(try InteractionPackets.drop(serial: serial, x: 0xFFFF, y: 0xFFFF, container: bag.serial))
+            let pickup=try InteractionPackets.pickup(serial:serial,amount:1)
+            let drop=try InteractionPackets.drop(serial:serial,x:0xFFFF,y:0xFFFF,container:bag.serial)
+            manualTransfer.begin(serial:serial,amount:1,destination:.container(bag.serial,x:0xFFFF,y:0xFFFF),world:world,time:ProcessInfo.processInfo.systemUptime)
+            connection.send(pickup); connection.send(drop)
             onInventoryMessage?("Moving equipment to backpack…")
             Telemetry.shared.record("inventory_unequip", ["serial": serial, "layer": item.layer])
         } catch { onInventoryMessage?("Unable to remove equipment.") }
@@ -1267,7 +1286,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private func reset(_ message: String) {
         introControls.isHidden=true; artwork.mainMenu=false; settings.isHidden=true
         statusRefreshTask?.cancel(); statusRefreshTask = nil
-        world = WorldState(); openedTravelDoors=[:]
+        world = WorldState(); openedTravelDoors=[:]; manualTransfer=ManualInventoryTransfer()
         servers=[]; characters=[]; cities=[]; choices.removeAllItems(); cityChoice.removeAllItems()
         autoPickup = AutoPickup(); gatheredDrop=nil; awaitingDropWeight=nil; dropGatheredDuringTravel=false; banking=nil; bankingRequested=false; bankGatheredOnArrival=false; bankContentsContext=nil; bankTransferUntil=0; onAutoPickupMode?(0)
         hoverInspection = HoverInspection()
@@ -1380,6 +1399,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                     }
                     if try world.apply(packet) { changed = true; updateTradeItems() }
                     else if transferWasPending && tradeTransfer == nil { onTrade?(trade) }
+                    if let result=manualTransfer.receive(packet,world:world) { reportManualTransfer(result) }
                     invalidateInteractionObjects(world.removedObjects)
                     var invalidWindows=Set<UInt32>()
                     for serial in world.removedObjects { invalidWindows.formUnion(openObjectWindows.removed(serial)) }
