@@ -31,7 +31,7 @@ public struct DeathAnimations {
         if tracks.count >= 128, let oldest = tracks.min(by:{$0.value.started < $1.value.started})?.key { tracks.removeValue(forKey:oldest) }
         let serial = event.serial | 0x80000000
         let snapshot = WorldMobile(serial:serial,body:mobile.body,x:mobile.x,y:mobile.y,z:mobile.z,
-                                   direction:mobile.direction,hue:mobile.hue,flags:mobile.flags)
+                                   direction:mobile.direction,hue:mobile.hue,flags:mobile.flags,notoriety:mobile.notoriety)
         let worn = equipment.filter { $0.owner == event.serial }.map {
             EquippedItem(serial:$0.serial,graphic:$0.graphic,layer:$0.layer,owner:serial,hue:$0.hue)
         }

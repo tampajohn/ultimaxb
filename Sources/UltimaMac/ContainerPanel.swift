@@ -129,6 +129,11 @@ private final class ContainerCanvas: NSView {
     private func updateHover() {
         let next = pointerInside && !dragging ? hit(at: pointer)?.serial : nil
         if next != hovered { hovered = next; needsDisplay = true }
+        if let item = items.first(where: { $0.serial == next }) {
+            let name = (try? assets.itemName(graphic:item.graphic)) ?? "Item"
+            toolTip = item.amount > 1 && (try? assets.isStackable(graphic:item.graphic)) == true
+                ? "\(name) × \(item.amount)" : name
+        } else { toolTip = nil }
     }
     var onMove: ((UInt32, Int, Int, Int, UInt32) -> Void)?
     var onSplit: ((ContainerItem) -> Void)?
@@ -279,6 +284,18 @@ private final class ContainerCanvas: NSView {
                     in: NSRect(x: item.x, y: item.y, width: sprite.width, height: sprite.height),
                     from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
             } catch { Telemetry.shared.record("container_render_error") }
+        }
+        // Draw counts after sprites so neighboring items cannot cover the label.
+        for item in items where item.amount > 1 && (try? assets.isStackable(graphic:item.graphic)) == true {
+            let sprite = try? assets.sprite(item.displayGraphic + 0x4000)
+            let label = String(item.amount) as NSString
+            let attributes:[NSAttributedString.Key:Any] = [.font:NSFont.boldSystemFont(ofSize:11), .foregroundColor:NSColor.white]
+            let size = label.size(withAttributes:attributes)
+            let point = NSPoint(x:max(0,min(bounds.width-size.width,CGFloat(item.x+(sprite?.width ?? 12))-size.width)),
+                                y:max(0,min(bounds.height-size.height,CGFloat(item.y+(sprite?.height ?? 12))-size.height)))
+            NSColor.black.withAlphaComponent(0.85).setFill()
+            NSRect(origin:point,size:size).insetBy(dx:-1,dy:0).fill()
+            label.draw(at:point,withAttributes:attributes)
         }
     }
     private func drawSprite(_ sprite: Sprite, at point: NSPoint) {

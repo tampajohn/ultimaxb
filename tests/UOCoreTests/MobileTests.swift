@@ -35,6 +35,18 @@ final class MobileTests: XCTestCase {
     func testPlayerUpdateFieldOrder() throws {
         let packet = Data([0x20, 0,0,0,1, 1,0x90, 0, 0x83,0xEA, 0,
                            5,0x9B, 6,0x9F, 0,0, 3,0xF6])
-        XCTAssertEqual(try WorldMobile.decode(packet), try WorldMobile.decode(naked))
+        XCTAssertEqual(try WorldMobile.decode(packet), try WorldMobile.decode(naked).withNotoriety(0))
+        var world = WorldState()
+        _ = try world.apply(naked)
+        _ = try world.apply(packet)
+        XCTAssertEqual(world.mobiles[1]?.notoriety,1)
+    }
+    func testNotorietyClassification() throws {
+        for value:UInt8 in 0...7 {
+            var packet = naked; packet[16] = value
+            let mobile = try WorldMobile.decode(packet)
+            XCTAssertEqual(mobile.notoriety,value)
+            XCTAssertEqual(mobile.isEnemy,value == 5 || value == 6)
+        }
     }
 }

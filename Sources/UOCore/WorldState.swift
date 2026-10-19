@@ -68,7 +68,8 @@ public struct WorldState {
             corpseLayers[contents.serial] = contents.layers
             return true
         case 0x1B, 0x20, 0x77, 0x78:
-            let mobile = try WorldMobile.decode(packet)
+            var mobile = try WorldMobile.decode(packet)
+            if opcode == 0x20, let previous = mobiles[mobile.serial] { mobile = mobile.withNotoriety(previous.notoriety) }
             var equipmentChanged = false
             if opcode == 0x78 {
                 let incoming = try EquippedItem.list(from: packet)

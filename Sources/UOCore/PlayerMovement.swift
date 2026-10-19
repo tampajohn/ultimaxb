@@ -25,7 +25,7 @@ public struct PlayerMovement {
         let turn = player.direction & 7 != dir & 7
         let predicted = WorldMobile(serial: player.serial, body: player.body,
             x: player.x + (turn ? 0 : delta.0), y: player.y + (turn ? 0 : delta.1),
-            z: turn ? player.z : (predictedZ ?? player.z), direction: dir, hue: player.hue, flags: player.flags)
+            z: turn ? player.z : (predictedZ ?? player.z), direction: dir, hue: player.hue, flags: player.flags, notoriety:player.notoriety)
         let packet = Data([0x02, dir, sequence])
         steps.append(Step(sequence: sequence, predicted: predicted, origin: WalkPoint(x:player.x,y:player.y,z:player.z), sentAt: time))
         sequence = sequence == 255 ? 1 : sequence + 1
@@ -50,7 +50,7 @@ public struct PlayerMovement {
             }
             steps.removeAll(); sequence = 0; awaitingPosition = true; needsPosition = false
             return WorldMobile(serial: player.serial, body: player.body, x: x, y: y, z: z,
-                               direction: dir, hue: player.hue, flags: player.flags)
+                               direction: dir, hue: player.hue, flags: player.flags, notoriety:player.notoriety)
         }
         guard opcode == 0x22 else { return nil }
         guard packet.count == 3 else { throw LoginProtocolError.malformedPacket }
@@ -62,7 +62,7 @@ public struct PlayerMovement {
         // A movement acknowledgement confirms position only. Appearance updates
         // may have arrived since this step was queued (hide/reveal, poison, etc.).
         return WorldMobile(serial: player.serial, body: player.body, x: position.x, y: position.y,
-                           z: position.z, direction: position.direction, hue: player.hue, flags: player.flags)
+                           z: position.z, direction: position.direction, hue: player.hue, flags: player.flags, notoriety:player.notoriety)
     }
     public mutating func poll(at time: TimeInterval) -> Data? {
         if let oldest = steps.first, time - oldest.sentAt >= 2, !recoverySent {

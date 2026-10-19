@@ -7,10 +7,15 @@ public struct WorldMobile: Equatable, Sendable {
     public let direction: UInt8
     public let hue: Int
     public let flags: UInt8
+    public let notoriety: UInt8
+    public var isEnemy: Bool { notoriety == 5 || notoriety == 6 }
+    public func withNotoriety(_ value:UInt8)->WorldMobile {
+        WorldMobile(serial:serial,body:body,x:x,y:y,z:z,direction:direction,hue:hue,flags:flags,notoriety:value)
+    }
     public var isGhost: Bool { body == 402 || body == 403 }
-    public init(serial: UInt32, body: Int, x: Int, y: Int, z: Int, direction: UInt8 = 3, hue: Int = 0, flags: UInt8 = 0) {
+    public init(serial: UInt32, body: Int, x: Int, y: Int, z: Int, direction: UInt8 = 3, hue: Int = 0, flags: UInt8 = 0, notoriety: UInt8 = 0) {
         self.serial = serial; self.body = body; self.x = x; self.y = y; self.z = z
-        self.direction = direction; self.hue = hue; self.flags = flags
+        self.direction = direction; self.hue = hue; self.flags = flags; self.notoriety = notoriety
     }
 }
 
@@ -28,6 +33,7 @@ extension WorldMobile {
         } else if (opcode == 0x77 && packet.count == 17) || (opcode == 0x20 && packet.count == 19) {
             // fixed header
         } else { throw LoginProtocolError.malformedPacket }
+        var notoriety: UInt8 = 0
         let serial = try r.dword(), body = Int(try r.word())
         let x: Int, y: Int, z: Int, direction: UInt8, hue: Int, flags: UInt8
         if opcode == 0x20 {
@@ -40,7 +46,7 @@ extension WorldMobile {
             x = Int(try r.word()); y = Int(try r.word())
             z = Int(Int8(bitPattern: try r.byte())); direction = try r.byte()
             hue = Int(try r.word()); flags = try r.byte()
-            _ = try r.byte() // notoriety
+            notoriety = try r.byte()
             if opcode == 0x78 {
                 // Validate the terminated equipment list; WorldState retains its items.
                 var count = 0
@@ -54,6 +60,6 @@ extension WorldMobile {
             }
         }
         guard r.offset == packet.count else { throw LoginProtocolError.malformedPacket }
-        return WorldMobile(serial: serial, body: body, x: x, y: y, z: z, direction: direction, hue: hue, flags: flags)
+        return WorldMobile(serial: serial, body: body, x: x, y: y, z: z, direction: direction, hue: hue, flags: flags, notoriety:notoriety)
     }
 }

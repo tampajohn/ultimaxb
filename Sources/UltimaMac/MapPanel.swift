@@ -13,13 +13,27 @@ final class MapPanel:NSView {
     private var origin = (0,0)
     private var renderedKey:String?
     private var drag:NSPoint?
+    private var signs:[WorldTile] = []
+    var groundItems:[GroundItem] = [] { didSet { needsDisplay = true } }
+    private func signName(_ graphic:Int)->String? {
+        guard (0xBA3...0xBCE).contains(graphic) || (0xBD3...0xC0E).contains(graphic) else { return nil }
+        return try? assets.itemName(graphic:graphic)
+    }
+    private func mapContains(_ point:NSPoint)->Bool {
+        guard let artwork else { return false }
+        let x=Int(point.x), y=Int(point.y)
+        guard x>=0,y>=0,x<artwork.width,y<artwork.height else { return false }
+        let i=(y*artwork.width+x)*4
+        return artwork.rgba[i] == 8 && artwork.rgba[i+1] == 8 && artwork.rgba[i+2] == 8
+    }
+    var combatTarget:UInt32? { didSet { needsDisplay = true } }
     var onTravel: ((Int,Int)->Void)?
     override var isFlipped:Bool { true }
     init(assets:ClientAssets) {
         self.assets = assets
         artwork = try? assets.gumps?.sprite(0x1393)
         super.init(frame:NSRect(x:300,y:32,width:280,height:280))
-        toolTip = "Map · White: you · Cyan: nearby mobiles\nShift-click: travel · Double-click: Local/World · Right-click or M: close · Drag to move"
+        toolTip = "Map · White: you · Red: enemies/target · Blue: innocent · Green: ally · Gray: neutral\nShift-click: travel · Double-click: Local/World · Right-click or M: close · Drag to move"
         setAccessibilityLabel("Map. Double-click to switch Local and World views.")
     }
     required init?(coder:NSCoder) { fatalError() }
@@ -40,6 +54,7 @@ final class MapPanel:NSView {
         do {
             if key != renderedKey {
                 origin = (x,y)
+                signs = world ? [] : try assets.region(x:player.x,y:player.y,radius:64).filter { signName($0.art-0x4000) != nil }
                 terrain = try assets.radar?.render(x:x,y:y,pixelWidth:world ? assets.width/16 : 192,
                                                  pixelHeight:world ? assets.height/16 : 192,step:world ? 16 : 1)
                 renderedKey = key
@@ -74,9 +89,43 @@ final class MapPanel:NSView {
             let dx = mobile.x-player.x, dy = mobile.y-player.y
             return NSPoint(x:140+dx-dy,y:140+dx+dy)
         }
+        if !world {
+            var landmarks = signs.map { ($0.x,$0.y,$0.art-0x4000) }
+            landmarks += groundItems.filter { signName($0.graphic) != nil }.map { ($0.x,$0.y,$0.graphic) }
+            func priority(_ graphic:Int)->Int { (0xC0B...0xC0C).contains(graphic) ? 0 : (0xBC7...0xBC8).contains(graphic) ? 1 : 2 }
+            landmarks.sort {
+                let a=priority($0.2), b=priority($1.2)
+                return a == b ? abs($0.0-player.x)+abs($0.1-player.y) < abs($1.0-player.x)+abs($1.1-player.y) : a < b
+            }
+            var occupied:[NSRect] = [], seen=Set<String>()
+            for (x,y,graphic) in landmarks {
+                guard occupied.count < 6, let name=signName(graphic) else { continue }
+                let key="\(x):\(y):\(name)"
+                guard seen.insert(key).inserted else { continue }
+                let p=NSPoint(x:140+(x-player.x)-(y-player.y),y:140+(x-player.x)+(y-player.y))
+                let text=name as NSString
+                let attributes:[NSAttributedString.Key:Any] = [.font:NSFont.boldSystemFont(ofSize:10),.foregroundColor:NSColor.white]
+                let size=text.size(withAttributes:attributes)
+                let rect=NSRect(x:p.x-size.width/2,y:p.y+4,width:size.width,height:size.height).insetBy(dx:-2,dy:-1)
+                guard [p,NSPoint(x:rect.minX,y:rect.minY),NSPoint(x:rect.maxX,y:rect.minY),NSPoint(x:rect.minX,y:rect.maxY),NSPoint(x:rect.maxX,y:rect.maxY)].allSatisfy(mapContains),
+                      !occupied.contains(where: { $0.intersects(rect) }) else { continue }
+                occupied.append(rect)
+                NSColor.orange.setFill(); NSRect(x:p.x-2,y:p.y-2,width:4,height:4).fill()
+                NSColor.black.withAlphaComponent(0.8).setFill(); rect.fill()
+                text.draw(at:NSPoint(x:rect.minX+2,y:rect.minY+1),withAttributes:attributes)
+            }
+        }
         for mobile in mobiles where mobile.serial != player.serial && max(abs(mobile.x-player.x),abs(mobile.y-player.y))<=24 {
             let p = point(mobile)
-            NSColor.cyan.setFill(); NSBezierPath(ovalIn:NSRect(x:p.x-2,y:p.y-2,width:4,height:4)).fill()
+            let color:NSColor
+            if mobile.isEnemy || mobile.serial == combatTarget { color = .red }
+            else { switch mobile.notoriety {
+                case 1: color = .cyan
+                case 2: color = .green
+                case 7: color = .yellow
+                default: color = .lightGray
+            } }
+            color.setFill(); NSBezierPath(ovalIn:NSRect(x:p.x-2,y:p.y-2,width:4,height:4)).fill()
         }
         let p = point(player)
         NSColor.black.setFill(); NSBezierPath(ovalIn:NSRect(x:p.x-4,y:p.y-4,width:8,height:8)).fill()

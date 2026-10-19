@@ -9,7 +9,7 @@ public enum CombatPackets {
     public static func applyMode(_ packet: Data, to player: WorldMobile) throws -> WorldMobile {
         guard packet.count == 5, packet.first == 0x72, packet[1] <= 1 else { throw LoginProtocolError.malformedPacket }
         let flags = (player.flags & ~0x40) | (packet[1] == 1 ? 0x40 : 0)
-        return WorldMobile(serial:player.serial,body:player.body,x:player.x,y:player.y,z:player.z,direction:player.direction,hue:player.hue,flags:flags)
+        return WorldMobile(serial:player.serial,body:player.body,x:player.x,y:player.y,z:player.z,direction:player.direction,hue:player.hue,flags:flags,notoriety:player.notoriety)
     }
 }
 

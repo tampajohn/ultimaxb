@@ -32,7 +32,7 @@ public struct WorldCamera {
 public enum WorldRenderer {
     public static func render(_ assets: ClientAssets, x: Int, y: Int,
                               statics: Bool = true, width: Int = 960, height: Int = 720,
-                              legacyTerrain: Bool = false, visibility: WorldVisibility = WorldVisibility(), camera: WorldCamera? = nil, groundItems: [WorldTile] = [], mobiles: [WorldMobile] = [], equipment: [EquippedItem] = [], mobilePresentations: [UInt32: MobilePresentation] = [:], lighting:WorldLighting = WorldLighting(), animationTime:TimeInterval = 0) throws -> Frame {
+                              legacyTerrain: Bool = false, visibility: WorldVisibility = WorldVisibility(), camera: WorldCamera? = nil, groundItems: [WorldTile] = [], mobiles: [WorldMobile] = [], equipment: [EquippedItem] = [], mobilePresentations: [UInt32: MobilePresentation] = [:], lighting:WorldLighting = WorldLighting(), animationTime:TimeInterval = 0, outlinedMobiles:Set<UInt32> = []) throws -> Frame {
         guard (1...2048).contains(width), (1...2048).contains(height) else {
             throw AssetError("Frame dimensions must be 1...2048")
         }
@@ -135,6 +135,8 @@ public enum WorldRenderer {
                 let screenX = Double(width / 2) + ((px - cameraX) - (py - cameraY)) * 22
                 let screenY = Double(height / 2) + ((px - cameraX) + (py - cameraY)) * 22 - pz * 4
                 let mobileAction = try MobileAnimation.action(for:mobile,pose:presentation,equipment:equipment,assets:assets)
+                let outlined = outlinedMobiles.contains(mobile.serial)
+                var silhouette = Set<Int>()
                 func drawAnimation(_ body: Int, hue: Int, art: Int? = nil) throws {
                     guard let frame = try assets.animations?.frame(body: body, direction: mobile.direction,
                         action: mobileAction, frame: presentation?.frame ?? 0) else {
@@ -156,6 +158,7 @@ public enum WorldRenderer {
                             let src = (yy * sprite.width + (frame.mirrored ? sprite.width - 1 - xx : xx)) * 4
                             if sprite.rgba[src + 3] == 0 { continue }
                             let dest = ((sy + yy) * width + sx + xx) * 4
+                            if outlined { silhouette.insert(dest/4) }
                             let r = sprite.rgba[src], g = sprite.rgba[src + 1], b = sprite.rgba[src + 2]
                             let color = palette?.color(red: r, green: g, blue: b) ?? (r, g, b)
                             pixels[dest] = color.0; pixels[dest + 1] = color.1; pixels[dest + 2] = color.2
@@ -167,6 +170,19 @@ public enum WorldRenderer {
                     for item in EquipmentOrder.sorted(equipment.filter { $0.owner == mobile.serial }, direction: mobile.direction) {
                         if let animation = try assets.equipmentAnimation(graphic: item.graphic) {
                             try drawAnimation(animation, hue: item.hue, art: item.graphic + 0x4000)
+                        }
+                    }
+                }
+                if outlined {
+                    for pixel in silhouette {
+                        let x = pixel % width, y = pixel / width
+                        for (dx,dy) in [(-1,0),(1,0),(0,-1),(0,1)] {
+                            let nx=x+dx, ny=y+dy
+                            guard nx>=0,nx<width,ny>=0,ny<height else { continue }
+                            let neighbor=ny*width+nx
+                            if !silhouette.contains(neighbor) {
+                                pixels[neighbor*4]=255; pixels[neighbor*4+1]=45; pixels[neighbor*4+2]=45
+                            }
                         }
                     }
                 }

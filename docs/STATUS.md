@@ -744,3 +744,11 @@ both variants advance and their final frames match corpse art; the final render
 was visually inspected. Monster/equipment combinations and live combat timing
 still need broader verification. Reference packet/group behavior was checked
 against local OUO packet_manager.c and CrossUO DisplayDeath/animation groups.
+
+### Enemy and inventory feedback (2026-10-18)
+
+- Preserve mobile notoriety from 0x77/0x78, across position-only 0x20 updates and predicted movement. Enemy/murderer notoriety (5/6) and the active combat target receive a red silhouette outline in scene draw order, replacing the target circle. Neutral/criminal mobiles are not automatically classified as enemies.
+- Radar dots distinguish enemies/target, innocent, ally, neutral, and invulnerable mobiles. Local map labels come from nearby static and received dynamic shop signs, with bank/blacksmith priority, overlap suppression, and a six-label cap. This is nearby sign discovery, not a global POI database.
+- Containers show hover names and quantities, plus visible counts for stackable items only; equipment metadata is not interpreted as a stack count.
+- Validation: 219 tests passed (five opt-in integration tests skipped); release app build passed. `tools/check_enemy_outline.swift` rendered installed assets and verified 233 red edge pixels; image inspected. Map label and container UI behavior still require in-app visual testing. Mobile hover names remain pending.
+- Dye investigation: active HUES.MUL hue 1 is RGB (0,0,8); hue 0 disables palette replacement. Local OUO dye script clamps both to 2. No live dye packets sent or items changed.

@@ -314,7 +314,7 @@ final class WorldView: NSView {
             let renderGround = groundItems.filter { tile in !(tile.sourceSerial.map { hiddenCorpses.contains($0) } ?? false) }
             let renderMobiles = mobiles.filter { !deaths.hides($0) } + deaths.mobiles
             let renderPoses = presentations.merging(deaths.presentations(at:renderTime),uniquingKeysWith:{ _,death in death })
-            let frame = try WorldRenderer.render(assets, x: cx, y: cy, statics: rendersStatics, legacyTerrain: legacyTerrain, visibility: visibility, camera: camera, groundItems: renderGround + effects.tiles(at:renderTime,mobiles:mobiles,items:groundObjects,presentations:presentations), mobiles: renderMobiles, equipment: equipment + deaths.equipment, mobilePresentations: renderPoses, lighting:lighting, animationTime:renderTime)
+            let frame = try WorldRenderer.render(assets, x: cx, y: cy, statics: rendersStatics, legacyTerrain: legacyTerrain, visibility: visibility, camera: camera, groundItems: renderGround + effects.tiles(at:renderTime,mobiles:mobiles,items:groundObjects,presentations:presentations), mobiles: renderMobiles, equipment: equipment + deaths.equipment, mobilePresentations: renderPoses, lighting:lighting, animationTime:renderTime, outlinedMobiles:Set(mobiles.filter { $0.serial != player?.serial && ($0.isEnemy || $0.serial == combatTarget) }.map(\.serial)))
             let now = ProcessInfo.processInfo.systemUptime
             if now - lastRenderDiagnostic >= 5 {
                 Telemetry.shared.record("render_state", ["x":cx, "y":cy, "statics_enabled":rendersStatics,
@@ -535,18 +535,6 @@ final class WorldView: NSView {
     }
     private func drawObjectFeedback() {
         let scale = imageRect.width / 960
-        if let serial = combatTarget, let mobile = mobiles.first(where: { $0.serial == serial }) {
-            let pose = motion.presentations(at:ProcessInfo.processInfo.systemUptime)[serial]
-            let x = pose?.x ?? Double(mobile.x), y = pose?.y ?? Double(mobile.y), z = pose?.z ?? Double(mobile.z)
-            let sx = imageRect.minX + (480+(x-y-displayedCamera.x+displayedCamera.y)*22)*scale
-            let sy = imageRect.minY + (360+(x+y-displayedCamera.x-displayedCamera.y)*22-z*4+22)*scale
-            NSGraphicsContext.saveGraphicsState()
-            imageRect.clip()
-            NSColor.systemRed.setStroke()
-            let marker = NSBezierPath(ovalIn:NSRect(x:sx-16*scale,y:sy-5*scale,width:32*scale,height:10*scale))
-            marker.lineWidth = max(1,2*scale); marker.stroke()
-            NSGraphicsContext.restoreGraphicsState()
-        }
         if let selected = hovered, let item = groundObjects.first(where: { $0.serial == selected.serial }),
            let appearance = try? WorldItemAppearance.load(item,assets:assets,at:displayedAnimationTime) {
             let sprite = appearance.sprite
@@ -689,6 +677,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.travelOnMap(x:x,y:y)
                 self?.window?.makeFirstResponder(self?.worldView)
             }
+            panel.groundItems = view.groundObjects; panel.combatTarget = view.combatTarget
             panel.update(player:view.player,mobiles:view.mobiles); view.addSubview(panel)
         }
         Telemetry.shared.record("map_toggled",["visible":mapPanel?.superview != nil])
@@ -836,7 +825,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.onSkills = { [weak self] in self?.skillsPanel?.update($0) }
             panel.onCombatTarget = { [weak self] target in
                 self?.worldView?.combatTarget = target.serial
-                self?.worldView?.needsDisplay = true
+                self?.worldView?.refresh()
+                self?.mapPanel?.combatTarget = target.serial
                 self?.worldView?.sidebar?.updateCombatTarget(target)
             }
             panel.onCharacterStatus = { [weak self] in self?.characterPanel?.updateStatus($0); self?.vendorPanel?.updateGold($0?.gold); self?.worldView?.sidebar?.updateStatus($0) }
@@ -977,6 +967,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.onGroundObjects = { [weak self] items in
                 guard let view = self?.worldView else { return }
                 view.groundObjects = items
+                self?.mapPanel?.groundItems = items
                 view.multiTiles = []
                 for item in items where item.graphic >= 0x4000 && item.flags & 0x80 == 0 {
                     do {
