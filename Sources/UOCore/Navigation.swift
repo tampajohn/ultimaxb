@@ -130,6 +130,17 @@ public final class NavigationMap {
             cells[xy] = Cell(landZ:average,lowZ:corners.min()!,landBlocked:land.art<=2 || flags & 0xC0 != 0,surfaces:surfaces)
         }
     }
+    /// Superset of elevations which standingZ can return. Incoming edges must
+    /// still be validated with step; a surface can be obstructed at this height.
+    public func candidateStandingPoints(x:Int,y:Int)->[WalkPoint] {
+        guard let cell=cells[XY(x:x,y:y)] else { return [] }
+        var heights=Set<Int>()
+        if !cell.landBlocked { heights.insert(cell.landZ) }
+        for surface in cell.surfaces where surface.flags & 0x600 != 0 && surface.flags & 0x40 == 0 {
+            heights.insert(surface.z + (surface.flags & 0x400 != 0 ? surface.height/2 : surface.height))
+        }
+        return heights.sorted().map { WalkPoint(x:x,y:y,z:$0) }
+    }
     public func travelCost(_ point:WalkPoint)->Int { roads.contains(XY(x:point.x,y:point.y)) ? 1 : 3 }
     public func standingPoint(x:Int,y:Int,fromZ:Int)->WalkPoint? {
         guard let z = cells[XY(x:x,y:y)]?.standingZ(from:fromZ,ghost:ghost) else { return nil }

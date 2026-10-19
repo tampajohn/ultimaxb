@@ -37,6 +37,35 @@ public final class WorldTravelPlanner {
             // changing costs cannot make an island or enclosed tile reachable.
             if attempts.last?.statistics.outcome == .exhausted { return nil }
         }
-        return nil
+        // Coastal traps are often cheap to diagnose from the destination.
+        // Enumerate all surface levels and validate each incoming edge using
+        // forward collision, preserving one-way drops and bridge heights.
+        var goals:[WalkPoint]=[]
+        let radius=adjacent ? 1 : 0
+        for gx in (x-radius)...(x+radius) {
+            for gy in (y-radius)...(y+radius) {
+                let point=WalkPoint(x:gx,y:gy,z:0)
+                goals += try map(point).candidateStandingPoints(x:gx,y:gy)
+            }
+        }
+        let reverse=try ReverseWalkSearch.find(from:from,goals:goals,limit:60_000) { current in
+            if cancelled() { throw CancellationError() }
+            var incoming:[WalkPoint]=[]
+            for (direction,delta) in WalkPath.directions.enumerated() {
+                let px=current.x-delta.0,py=current.y-delta.1
+                guard (0..<self.assets.width).contains(px),(0..<self.assets.height).contains(py) else { continue }
+                let local=try self.map(WalkPoint(x:px,y:py,z:0))
+                var candidates=local.candidateStandingPoints(x:px,y:py)
+                // The authoritative starting elevation can be dynamic and absent
+                // from the static surface list.
+                if px==from.x && py==from.y { candidates.append(from) }
+                for previous in candidates where local.step(from:previous,direction:UInt8(direction))==current {
+                    incoming.append(previous)
+                }
+            }
+            return incoming
+        }
+        attempts.append(Attempt(strategy:"destination_connectivity",statistics:reverse.statistics))
+        return reverse.route
     }
 }

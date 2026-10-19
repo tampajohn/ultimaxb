@@ -1356,6 +1356,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                   let approach = WalkPath.find(from:start,x:door.x,y:door.y,adjacent:true,goalZ:door.z,
                                                 step:{ map.step(from:$0,direction:$1) }) else { continue }
             view.followPlayer = true
+            panel.cancelRoute()
             panel.followRoute(approach,action:.openDoor(door,destination,remaining-1),running:running) { [weak self] position,blocked in
                 guard let self,let view = self.worldView,
                       let current = try? NavigationMap(assets:self.assets,center:position,additional:view.groundItems,ghost:view.player?.isGhost == true) else { return nil }
@@ -1371,7 +1372,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     private func approach(_ location:TargetSelection, action:LoginOverlay.ArrivalAction?, running:Bool, doorsRemaining:Int = 4) {
         guard let view = worldView, let player = view.player, let panel = loginOverlay else { return }
-        panel.cancelRoute()
+        // Keep an existing journey until this click has a viable replacement.
         let start = WalkPoint(x:player.x,y:player.y,z:player.z)
         guard max(abs(start.x-location.x),abs(start.y-location.y)) <= 24 else {
             chatPanel.append("Choose a closer destination."); return
@@ -1407,6 +1408,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 chatPanel.append("No clear route to that location.")
                 Telemetry.shared.record("walk_route_unreachable",["x":location.x,"y":location.y]); return
             }
+            panel.cancelRoute()
             view.followPlayer = true
             panel.followRoute(route,action:action,running:running) { [weak self] start,blocked in
                 guard let self, let view = self.worldView,
