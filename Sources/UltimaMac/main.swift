@@ -104,6 +104,7 @@ final class WorldView: NSView {
     private var lastCeiling: Int?
     private var displayedCamera = WorldCamera(x: 0, y: 0)
     private var dragged = false
+    private var discardMouseUp = false
     private var groundDrag: GroundItem?
     private var groundPreview: ItemDragPreview?
     var onGroundDrop: ((GroundItem, NSPoint) -> Void)?
@@ -144,6 +145,12 @@ final class WorldView: NSView {
         movementKeys.direction.map { $0 | (running ? 0x80 : 0) }
     }
     private var rightPoint: NSPoint?
+    func cancelInteraction() {
+        movementKeys.clear(); rightPoint = nil; controllerInput.suspend(); controllerPoint = nil
+        dragOrigin = nil; dragged = false; groundDrag = nil; discardMouseUp = true
+        groundPreview?.removeFromSuperview(); groundPreview = nil
+        needsDisplay = true
+    }
     override func resignFirstResponder() -> Bool {
         movementKeys.clear(); rightPoint = nil; controllerInput.suspend(); controllerPoint = nil
         return super.resignFirstResponder()
@@ -403,7 +410,7 @@ final class WorldView: NSView {
             if let direction {
                 updateRunMode(event.modifierFlags)
                 if !event.isARepeat { Telemetry.shared.record("movement_key", ["direction": direction, "key_code": event.keyCode, "run": running]) }
-                movementKeys.press(event.keyCode, direction: direction)
+                if !event.isARepeat { movementKeys.press(event.keyCode, direction: direction) }
                 updateRunMode(event.modifierFlags)
                 return
             }
@@ -453,10 +460,11 @@ final class WorldView: NSView {
         updateRunMode(event.modifierFlags)
         rightPoint = convert(event.locationInWindow, from: nil)
     }
-    override func rightMouseDragged(with event: NSEvent) { rightPoint = convert(event.locationInWindow, from: nil) }
+    override func rightMouseDragged(with event: NSEvent) { if rightPoint != nil { rightPoint = convert(event.locationInWindow, from: nil) } }
     override func rightMouseUp(with event: NSEvent) { rightPoint = nil }
 
     override func mouseDown(with event: NSEvent) {
+        discardMouseUp = false
         controllerPoint = nil
         window?.makeFirstResponder(self)
         dragged = false
@@ -584,6 +592,7 @@ final class WorldView: NSView {
         return location
     }
     override func mouseUp(with event: NSEvent) {
+        if discardMouseUp { discardMouseUp = false; return }
         defer { dragOrigin = nil; groundDrag = nil; groundPreview?.removeFromSuperview(); groundPreview = nil }
         if dragged, let item = groundDrag { onGroundDrop?(item, event.locationInWindow); return }
         guard !dragged, player != nil else { return }
@@ -840,6 +849,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.onContainerItems = { [weak self] items in
                 self?.containerPanels.values.forEach { $0.update(items) }
                 self?.spellbooks.values.forEach { $0.update(items) }
+            }
+            panel.onActionsCancelled = { [weak self] in
+                self?.worldView?.cancelInteraction()
+                self?.characterPanel?.cancelInteraction()
+                self?.containerPanels.values.forEach { $0.cancelInteraction() }
             }
             panel.onDeath = { [weak self, weak panel] state in
                 guard let self else { return }

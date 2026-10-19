@@ -291,6 +291,17 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     }
     private var death = DeathState()
     var onDeath: ((DeathState)->Void)?
+    var onActionsCancelled: (() -> Void)?
+    private func cancelActionsForDeath() {
+        cancelRoute(); movement = PlayerMovement()
+        targetRequest = nil; equippedTargetTool = nil; equippedTargetDeadline = 0
+        awaitingSpellbook = false; onTargeting?(false)
+        combatTarget = CombatTarget(); onCombatTarget?(combatTarget)
+        trade = nil; tradeTransfer = nil; onTrade?(nil)
+        lastContainerContents = []; stagedVendorOffers = []; vendorOffers = []; vendorSerial = nil
+        onVendorClosed?(); onActionsCancelled?()
+        Telemetry.shared.record("death_actions_cancelled")
+    }
     func respondToDeath(resurrect:Bool) {
         guard loginComplete, let packet = try? death.response(resurrect:resurrect) else { return }
         connection.send(packet); onDeath?(death)
@@ -891,6 +902,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                        let serial = playerSerial {
                         let update = try WorldMobile.decode(packet)
                         if update.serial == serial, death.apply(player: update) {
+                            if death.phase == .ghost { cancelActionsForDeath() }
                             onDeath?(death)
                             Telemetry.shared.record("death_body_updated", ["body": update.body, "alive": death.phase == .alive])
                         }
@@ -917,9 +929,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                     case 0x2C:
                         try death.apply(packet)
                         if death.phase == .offered {
-                            cancelRoute(); movement = PlayerMovement()
-                            targetRequest = nil; onTargeting?(false)
-                            combatTarget = CombatTarget(); onCombatTarget?(combatTarget)
+                            cancelActionsForDeath()
                             onMusic?(42)
                         }
                         onDeath?(death)

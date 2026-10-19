@@ -639,3 +639,18 @@ spawn; it was stopped after verification. The user's client and port-2593 server
 were left running. Live UO1998 death, healer resurrection, corpse retrieval and
 resurrection denial still require broader workflow verification.
 Release suite after the fixture additions: 212 tests, 5 opt-in skips, zero failures.
+
+Death-time interaction cleanup (2026-10-18): death offers and authoritative
+living-to-ghost transitions now cancel routes, predicted movement, pending tool
+target context, spellbook-open intent, combat selection, trade transfer state
+and vendor offers. A shared UI callback cancels held keyboard/mouse/controller
+movement, ground/equipment drag previews, container placement monitors and stack
+quantity dialogs. Removed quantity dialogs lose their callbacks. Keyboard repeat
+and a continuing right-mouse drag cannot re-arm the cancelled movement; fresh
+input remains available for ghost movement. A stale ground mouse-up is discarded.
+
+Validation: 212 tests, 5 opt-in skips, zero failures; AppKit installed-asset
+container harness verifies cancelling an open quantity dialog, cancelling after
+quantity confirmation, no drop on stale mouse-up, and a successful new split
+interaction afterward. Full live death during each mouse/controller interaction
+has not been exercised; this validation does not establish that broader coverage.

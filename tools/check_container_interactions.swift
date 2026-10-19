@@ -51,6 +51,31 @@ import UOCore
             windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1)!
         canvas.mouseDown(with: click)
         precondition(pickups.last?.0 == 21 && pickups.last?.1 == 1, "Non-stackable items always pick up one")
-        print("Container hover, exit, stack pickup, target priority, and non-stackable pickup passed")
+        panel.update([gold])
+        func dragEvent(_ type: NSEvent.EventType) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: NSPoint(x: point.x + 20, y: point.y + 20),
+                modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                eventNumber: 1, clickCount: 1, pressure: 1)!
+        }
+        func startSplit() -> StackQuantityPanel {
+            canvas.mouseDown(with: event(.leftMouseDown))
+            canvas.mouseDragged(with: dragEvent(.leftMouseDragged))
+            canvas.mouseUp(with: dragEvent(.leftMouseUp))
+            return panel.subviews.compactMap { $0 as? StackQuantityPanel }.first!
+        }
+        let pending = startSplit()
+        panel.cancelInteraction()
+        precondition(pending.superview == nil && pending.onConfirm == nil && pending.onCancel == nil)
+        canvas.mouseUp(with: dragEvent(.leftMouseUp))
+        precondition(moves == 0, "Cancelling a split must not drop an item on later mouse-up")
+        let confirmed = startSplit()
+        confirmed.onConfirm?(25)
+        panel.cancelInteraction()
+        canvas.mouseUp(with: dragEvent(.leftMouseUp))
+        precondition(moves == 0, "Cancelling placement must discard the selected quantity")
+        let fresh = startSplit()
+        precondition(fresh.superview === panel, "A new interaction must still work after cancellation")
+        panel.cancelInteraction()
+        print("Container hover, pickups, target priority and split/placement cancellation passed")
     }
 }

@@ -109,6 +109,7 @@ final class CharacterPanel: NSView {
     }
     override func mouseUp(with event:NSEvent) { dragOrigin = nil }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
+    func cancelInteraction() { dragOrigin = nil; avatar.cancelInteraction() }
     func update(player: WorldMobile?, equipment: [EquippedItem]) {
         avatar.player = player; avatar.equipment = equipment; avatar.refresh()
         let war = (player?.flags ?? 0) & 0x40 != 0
@@ -188,6 +189,11 @@ private final class AvatarView: NSView {
             return player?.serial
         }
         return nil
+    }
+    func cancelInteraction() {
+        itemPreview?.removeFromSuperview(); itemPreview = nil
+        draggedItem = nil; itemOrigin = nil
+        movingBackground = false; closing = false; consumedTarget = true
     }
     private var consumedTarget = false
     private var movingBackground = false

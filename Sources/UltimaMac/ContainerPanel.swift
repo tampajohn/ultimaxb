@@ -89,6 +89,12 @@ final class ContainerPanel: NSView {
         canvas.onSelect = { [weak self] text in self?.caption.stringValue = text }
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
+    func cancelInteraction() {
+        canvas.cancelDrag()
+        quantityPanel?.onConfirm = nil; quantityPanel?.onCancel = nil
+        quantityPanel?.removeFromSuperview(); quantityPanel = nil
+        panelDragOrigin = nil
+    }
     func update(_ items: [ContainerItem]) {
         // Corpse contents include zero-quantity appearance records (hair/beard).
         // Keep those in world state for body rendering, but out of loot hit testing.
