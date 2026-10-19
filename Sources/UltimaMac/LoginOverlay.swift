@@ -345,6 +345,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     var onDeath: ((DeathState)->Void)?
     var onActionsCancelled: (() -> Void)?
     private func cancelActionsForDeath() {
+        autoPickup.stop("Auto-pickup stopped because you died."); onAutoPickupMode?(0)
         cancelRoute(); movement = PlayerMovement()
         targetRequest = nil; equippedTargetTool = nil; equippedTargetDeadline = 0
         awaitingSpellbook = false; onTargeting?(false)

@@ -46,6 +46,7 @@ import UOCore
         NSBezierPath(rect:bounds.insetBy(dx:0.5,dy:0.5)).stroke()
         let size=bitmap.size(title)
         bitmap.draw(title,at:NSPoint(x:max(1,(bounds.width-size.width)/2),y:max(0,(bounds.height-size.height)/2)))
+        if !isEnabled { NSColor.black.withAlphaComponent(0.35).setFill(); bounds.fill() }
     }
 }
 
