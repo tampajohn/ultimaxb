@@ -1,0 +1,96 @@
+import Foundation
+
+/// One attempt per selected backpack pile, at an explicit live forge. The
+/// adapter exclusively owns the target stream and stops this workflow for any
+/// manual action, danger, disconnect or overlapping inventory transaction.
+public struct SmeltWorkflow {
+    public enum State:Equatable { case idle, ready, working, coolingDown, completed, stopped(AssistantAction.StopReason) }
+    public private(set) var state:State = .idle
+    public private(set) var successes=0
+    public private(set) var skipped=0
+    private var piles:[ContainerItem]=[]
+    private var index=0
+    private var bag:UInt32=0
+    private var forge:GroundItem?
+    private var action=AssistantAction()
+    private var outcome:SmeltOutcome?
+    private var readyAt:TimeInterval=0
+    public init() {}
+    public mutating func start(backpack:UInt32,forge:GroundItem,world:WorldState) throws {
+        guard state == .idle,backpack != 0,backpack != .max,
+              forge.serial != 0,forge.serial != .max,SmeltOutcome.isForge(forge.graphic),
+              world.items[forge.serial]==forge else { throw AssetError("Select a visible forge") }
+        let candidates=world.containerItems.values.filter { $0.container==backpack && (0x19B7...0x19BA).contains($0.graphic) }.sorted { $0.serial<$1.serial }
+        guard !candidates.isEmpty,candidates.count<=256 else { throw AssetError("Open a backpack containing ore first") }
+        bag=backpack; self.forge=forge; piles=candidates; state = .ready
+    }
+    public mutating func stop(_ reason:AssistantAction.StopReason = .cancelled) {
+        switch state {
+        case .ready,.working,.coolingDown: action.stop(reason); outcome=nil; state = .stopped(reason)
+        default: break
+        }
+    }
+    private func validForge(world:WorldState,position:WalkPoint)->Bool {
+        guard let forge,let current=world.items[forge.serial],current.graphic==forge.graphic,
+              current.x==forge.x,current.y==forge.y,current.z==forge.z else { return false }
+        return max(abs(position.x-forge.x),abs(position.y-forge.y))<=3
+    }
+    public mutating func next(world:WorldState,position:WalkPoint,time:TimeInterval)->AssistantAction.Command? {
+        switch state { case .idle,.completed,.stopped: return nil; default: break }
+        guard time.isFinite else { stop(.timeout); return nil }
+        guard validForge(world:world,position:position) else { stop(.unreachable); return nil }
+        if state == .working {
+            observe(world:world,time:time)
+            if state == .working {
+                action.tick(at:time)
+                if case .stopped(let reason)=action.state { stop(reason) }
+            }
+            return nil
+        }
+        if state == .coolingDown {
+            guard time>=readyAt else { return nil }
+            state = .ready
+        }
+        guard index<piles.count else { state = .completed; return nil }
+        // A changed/moved source is not a new pile to silently substitute.
+        guard world.containerItems[piles[index].serial]==piles[index] else { stop(.missingTool); return nil }
+        action=AssistantAction()
+        let target=TargetSelection(serial:forge!.serial,x:forge!.x,y:forge!.y,z:forge!.z,graphic:forge!.graphic)
+        do {
+            let command=try action.start(tool:piles[index].serial,targets:[target],at:time)
+            state = .working; return command
+        } catch { stop(.invalidSelection); return nil }
+    }
+    public mutating func receive(_ request:TargetRequest,world:WorldState,position:WalkPoint,time:TimeInterval)->AssistantAction.Command? {
+        if case .stopped=state { return request.flags==3 ? nil:.cancelTarget(request) }
+        guard state == .working,validForge(world:world,position:position) else {
+            stop(.unexpectedTarget); return request.flags==3 ? nil:.cancelTarget(request)
+        }
+        let command=action.receive(request,at:time)
+        if case .target=command {
+            guard world.containerItems[piles[index].serial]==piles[index],
+                  let tracker=try? SmeltOutcome(ore:piles[index],backpack:bag,world:world,time:time) else {
+                stop(.missingTool); return .cancelTarget(request)
+            }
+            outcome=tracker
+        }
+        if case .stopped(let reason)=action.state { stop(reason) }
+        return command
+    }
+    public mutating func observe(speech:SpeechMessage?=nil,world:WorldState,time:TimeInterval) {
+        guard state == .working,var tracker=outcome else { return }
+        let result=tracker.observe(speech:speech,world:world,time:time)
+        outcome=tracker
+        guard let result else { return }
+        switch result {
+        case .success: successes += 1
+        case .insufficientOre: skipped += 1
+        case .lostMetal: stop(.noProgress); return
+        case .refused: stop(.refused); return
+        case .unreachable: stop(.unreachable); return
+        }
+        outcome=nil; index += 1
+        if index==piles.count { state = .completed }
+        else { readyAt=time+1; state = .coolingDown }
+    }
+}

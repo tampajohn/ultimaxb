@@ -1080,3 +1080,8 @@ Validation: release build passed; `tools/check_login_flow.swift` injects offline
 - Added SmeltOutcome for one classic ore/forge attempt, derived from the installed era ore.m behavior. Success requires exact system feedback plus an ingot increase in the player's backpack; skill-failure loss requires feedback plus a smaller/changed or removed source pile. Ordinary player chat, other containers and elapsed time cannot confirm success.
 - Distinguishes insufficient ore, ownership/in-use refusal and unreachable forge responses. Recognizes the era forge graphic range. No automatic retry or resource-loss prediction.
 - Four focused tests passed, covering both message/inventory orders, partial loss, removal, wrong sender/container, timeout, forge graphics and insufficient ore. This is core groundwork; automatic forge navigation and smelting UI/packet adapter remain pending. No live character actions were issued.
+
+### 2026-10-19 — Sequential forge work
+- SmeltWorkflow snapshots known backpack ore and an explicit visible forge, issues one ore-use/target attempt at a time, and advances only after correlated results and a cooldown. Insufficient piles are skipped once; metal-loss failure stops instead of repeatedly consuming the remainder.
+- Each source must still match its original serial/contents, and the selected forge must remain visible at the same location within classic three-tile reach. Changed sources, unreachable forges, unknown timeouts and manual cancellation cannot replay a use. Late cursors after Stop are cancelled.
+- Eight smelting workflow/outcome tests passed. This remains core logic: in-game controls, exclusive target ownership and approach routing are not yet connected, and live smelting is unverified.
