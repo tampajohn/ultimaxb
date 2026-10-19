@@ -17,7 +17,9 @@ public struct PlayerMovement {
     private var sequence: UInt8 = 0
     private var nextRequestAt: TimeInterval = 0
     private var needsPosition = false
-    private var recoverySent = false
+    private var syncSentAt:TimeInterval?
+    private var syncAttempts=0
+    public private(set) var positionSyncTimedOut=false
     public init() {}
     public mutating func request(direction: UInt8, player: WorldMobile, at time: TimeInterval, predictedZ: Int? = nil) -> Data? {
         guard steps.count < 5, !awaitingPosition, time >= nextRequestAt else { return nil }
@@ -39,7 +41,7 @@ public struct PlayerMovement {
         if opcode == 0x20 {
             guard packet.count == 19 else { throw LoginProtocolError.malformedPacket }
             if !steps.isEmpty { sequence = 0 }
-            steps.removeAll(); awaitingPosition = false; needsPosition = false; recoverySent = false
+            steps.removeAll(); awaitingPosition = false; needsPosition = false; syncSentAt=nil; syncAttempts=0; positionSyncTimedOut=false
             return nil // WorldState already applied this authoritative position.
         }
         if opcode == 0x21 {
@@ -51,6 +53,7 @@ public struct PlayerMovement {
                 return destination == step.origin ? nil : destination
             }
             steps.removeAll(); sequence = 0; awaitingPosition = true; needsPosition = false
+            syncSentAt=nil; syncAttempts=0; positionSyncTimedOut=false
             return WorldMobile(serial: player.serial, body: player.body, x: x, y: y, z: z,
                                direction: dir, hue: player.hue, flags: player.flags, notoriety:player.notoriety)
         }
@@ -68,14 +71,24 @@ public struct PlayerMovement {
         return WorldMobile(serial: player.serial, body: player.body, x: position.x, y: position.y,
                            z: position.z, direction: position.direction, hue: player.hue, flags: player.flags, notoriety:player.notoriety)
     }
+    /// Start a bounded recovery wait; this never authorizes further prediction.
+    public mutating func resynchronize(at time:TimeInterval)->Data {
+        awaitingPosition=true; syncSentAt=time; syncAttempts=1; positionSyncTimedOut=false
+        return Self.requestPosition
+    }
     public mutating func poll(at time: TimeInterval) -> Data? {
-        if let oldest = steps.first, time - oldest.sentAt >= 2, !recoverySent {
-            awaitingPosition = true; recoverySent = true
+        if awaitingPosition {
+            guard let sent=syncSentAt else { return resynchronize(at:time) }
+            guard time-sent>=2 else { return nil }
+            guard syncAttempts<3 else { positionSyncTimedOut=true; return nil }
+            syncAttempts += 1; syncSentAt=time
             return Self.requestPosition
         }
-        if steps.isEmpty, needsPosition, !awaitingPosition, time >= nextRequestAt + 0.12 {
-            awaitingPosition = true
-            return Self.requestPosition
+        if let oldest = steps.first, time - oldest.sentAt >= 2 {
+            return resynchronize(at:time)
+        }
+        if steps.isEmpty, needsPosition, time >= nextRequestAt + 0.12 {
+            return resynchronize(at:time)
         }
         return nil
     }

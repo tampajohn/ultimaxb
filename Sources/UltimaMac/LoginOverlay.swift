@@ -93,6 +93,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         Telemetry.shared.record("skill_used", ["id": id])
     }
     private var movement = PlayerMovement()
+    private var reportedMovementSyncTimeout=false
     var onEquipment: (([EquippedItem]) -> Void)?
     var onPlayer: ((WorldMobile?) -> Void)?
     var predictedElevation: ((Int, Int, Int) -> Int)?
@@ -242,6 +243,12 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             Telemetry.shared.record("movement_position_sync", ["pending": movement.pendingCount])
             connection.send(packet)
         }
+        if movement.positionSyncTimedOut && !reportedMovementSyncTimeout {
+            reportedMovementSyncTimeout=true
+            cancelRoute()
+            onInventoryMessage?("Waiting for the server to confirm your position. If this persists, reconnect.")
+            Telemetry.shared.record("movement_position_sync_timeout")
+        } else if !movement.positionSyncTimedOut { reportedMovementSyncTimeout=false }
     }
     private func performArrival(_ action:ArrivalAction, player:WorldMobile) {
         if case .openDoor(let planned,let destination,let remaining) = action {
@@ -1076,7 +1083,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                                     onWalkRoute?([])
                                     Telemetry.shared.record("walk_route_retry_pending",["attempt":routeRecovery.attempts,"x":blocked.x,"y":blocked.y,"z":blocked.z])
                                 } else { cancelRoute(); onInventoryMessage?("Movement was blocked; route stopped.") }
-                                connection.send(PlayerMovement.requestPosition)
+                                connection.send(movement.resynchronize(at:ProcessInfo.processInfo.systemUptime))
                             }
                         }
                     }
