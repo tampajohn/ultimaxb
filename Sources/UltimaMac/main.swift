@@ -862,7 +862,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                       let direction=WalkPath.direction(from:start,to:next) else { return nil }
                 let doors=self.loginOverlay?.routeItems.filter {
                     max(abs($0.x-start.x),abs($0.y-start.y))<=1 && abs($0.z-start.z)<=16 &&
-                    (try? self.assets.isDoor(graphic:$0.graphic)) == true
+                    (($0.x==next.x && $0.y==next.y) || (start.x != next.x && start.y != next.y &&
+                      (($0.x==next.x && $0.y==start.y) || ($0.x==start.x && $0.y==next.y)))) &&
+                    (try? self.assets.isDoor(graphic:$0.graphic)) == true &&
+                    self.loginOverlay?.travelDoorAlreadyChanged($0) != true
                 } ?? []
                 guard !doors.isEmpty,
                       let map=try? NavigationMap(assets:self.assets,center:start,additional:view.groundItems,radius:3),
@@ -1214,36 +1217,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Local replanning must follow that actual endpoint, not repeatedly
             // attempt the blocked landmark after the global route finishes.
             let endpoint=bankGathered ? (route.last ?? start) : WalkPoint(x:x,y:y,z:start.z)
-            self.beginWorldTravel(route,start:start,x:endpoint.x,y:endpoint.y,panel:panel,view:view)
+            guard self.beginWorldTravel(route,start:start,x:endpoint.x,y:endpoint.y,panel:panel,view:view) else { return }
             panel.dropGatheredDuringTravel=dropGathered
             panel.bankGatheredOnArrival=bankGathered
         }
     }
-    private func beginWorldTravel(_ itinerary:[WalkPoint],start:WalkPoint,x:Int,y:Int,panel:LoginOverlay,view:WorldView) {
+    private func beginWorldTravel(_ itinerary:[WalkPoint],start:WalkPoint,x:Int,y:Int,panel:LoginOverlay,view:WorldView)->Bool {
         var progress=0
         let planner: (WalkPoint,Set<WalkPoint>)->[WalkPoint]? = { [weak self] start,blocked in
             guard let self,let view=self.worldView else { return nil }
             if start.x == x && start.y == y { return [] }
             if let reached=itinerary.indices.dropFirst(progress).prefix(96).first(where:{ itinerary[$0].x == start.x && itinerary[$0].y == start.y && abs(itinerary[$0].z-start.z)<=16 }) { progress=reached+1 }
             let candidates=itinerary.dropFirst(progress).prefix(64).filter { max(abs($0.x-start.x),abs($0.y-start.y))<=28 }
-            guard let goal=candidates.last,
-                  let map=try? NavigationMap(assets:self.assets,center:start,additional:view.groundItems,radius:48,ghost:view.player?.isGhost == true) else { return nil }
+            guard let map=try? NavigationMap(assets:self.assets,center:start,additional:view.groundItems,radius:48,ghost:view.player?.isGhost == true) else { return nil }
             let enemies=view.mobiles.filter { $0.serial != view.player?.serial && ($0.isEnemy || $0.serial == view.combatTarget) }
-            func route(ignoringDoors:Bool)->[WalkPoint]? {
+            let openedLeaves=Set((self.loginOverlay?.travelDoorObstacles ?? []).filter { map.standingPoint(x:$0.x,y:$0.y,fromZ:$0.z) == nil })
+            func route(to goal:WalkPoint,ignoringDoors:Bool)->[WalkPoint]? {
                 TravelSafety.route(from:start,to:goal,enemies:enemies,cost:map.travelCost) { point,direction in
-                    guard let next=map.step(from:point,direction:direction,ignoringDoors:ignoringDoors),!blocked.contains(next) else { return nil }
+                    guard let next=map.step(from:point,direction:direction,ignoringDoors:ignoringDoors),!blocked.contains(next),
+                          TravelSafety.clearsDoorLeaves(from:point,to:next,leaves:openedLeaves) else { return nil }
                     return next
                 }
             }
-            // Relax doors only when the ordinary collision route fails. Execution
-            // opens the actual door and waits for its server update before crossing.
-            return route(ignoringDoors:false) ?? route(ignoringDoors:true)
+            // A dynamic object may occupy the preferred section endpoint. Try
+            // earlier forward waypoints instead of treating that one cell as the
+            // only possible entry into the globally planned itinerary.
+            let forward=candidates.filter { $0 != start }
+            let goals=forward.reversed().enumerated().filter { $0.offset % 8 == 0 }.prefix(8).map(\.element)
+            for goal in goals {
+                if let path=route(to:goal,ignoringDoors:false) ?? route(to:goal,ignoringDoors:true),!path.isEmpty { return path }
+            }
+            Telemetry.shared.record("travel_section_blocked",["x":start.x,"y":start.y,"candidates":goals.count,"opened_doors":openedLeaves.count])
+            return nil
         }
-        guard let route=planner(start,[]) else { chatPanel.append("The route is planned, but a nearby obstacle blocks the first section."); return }
+        guard let route=planner(start,[]) else { chatPanel.append("The route is planned, but a nearby obstacle blocks the first section."); return false }
         view.followPlayer=true
         panel.followRoute(route,action:nil,running:view.running,continuing:true,resolver:planner)
         chatPanel.append("Route planned: \(itinerary.count) steps. Starting travel.")
         Telemetry.shared.record("map_travel_requested",["x":x,"y":y,"steps":itinerary.count])
+        return true
     }
     /// Door-free planning is only used to find the first gate. Actual walking
     /// always uses the ordinary collision map, then waits for a server update.

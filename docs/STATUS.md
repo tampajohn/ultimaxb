@@ -18,7 +18,11 @@ experimental and is not at parity yet.
 - Skills/status sidebar, equipped tool use, action animations, sound and music.
 - Original radar frame, local/world view, Shift-click travel in local sections.
 - Long-distance travel opens blocking doors and waits for authoritative geometry
-  changes before crossing; locked/unresponsive doors stop travel. Banking and
+  changes before crossing; locked/unresponsive doors stop travel. Explicit system
+  action-throttle responses allow two delayed door retries. Confirmed opened
+  geometry is remembered across route restarts so an open leaf is routed around
+  rather than immediately toggled closed. Local sections try earlier forward
+  waypoints when their preferred endpoint is blocked. Banking and
   overload options survive door handling. With Gather enabled, travel considers
   new visible eligible ground items within six tiles, takes collision-checked
   detours of at most six steps, and resumes its destination. Enemy distance must

@@ -26,12 +26,23 @@ import UOCore
         login.tickMovement(); login.tickMovement()
         precondition(playerX==10 && replans==0 && cancelled==0,"Wait for door update without walking through it")
         precondition(login.bankGatheredOnArrival && login.dropGatheredDuringTravel,"Door use must retain travel options")
+        let text=Array("You must wait to perform another action.".utf8)+[UInt8(0)]
+        let length=44+text.count
+        send(Data([0x1C,UInt8(length>>8),UInt8(length&255),255,255,255,255,255,255,6,0,0,0,3])+Data(repeating:0,count:30)+Data(text))
+        login.tickMovement()
+        precondition(playerX==10 && cancelled==0,"Throttle must wait without discarding the journey")
+        Thread.sleep(forTimeInterval:2.05); login.tickMovement()
+        precondition(playerX==10 && login.bankGatheredOnArrival,"Retry must still wait for actual door change")
         send(Data([0x1A,0,14,0x40,0,0,4,0x06,0x76,0,11,0,11,0]))
         login.blockingTravelDoor={ _,_ in nil }
         login.tickMovement()
         precondition(playerX==11 && replans==1 && cancelled==0,"Confirmed door update resumes original planner")
         precondition(login.bankGatheredOnArrival,"Bank option must survive replan")
+        let opened=login.routeItems.first { $0.serial==0x40000004 }!
+        precondition(login.travelDoorAlreadyChanged(opened),"Updated door must not be toggled again")
+        precondition(login.travelDoorObstacles.contains(WalkPoint(x:11,y:11,z:0)))
         login.cancelRoute()
+        precondition(login.travelDoorAlreadyChanged(opened),"Restarting travel must remember the opened door")
 
         // Reset the authoritative player position before testing opportunistic detours.
         send(Data([0x20,0,0,0,1,1,0x90,0,0,0,0,0,10,0,10,0,0,2,0]))

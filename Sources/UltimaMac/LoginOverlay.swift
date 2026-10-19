@@ -115,6 +115,17 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     var blockingTravelDoor:((WalkPoint,WalkPoint)->GroundItem?)?
     var pickupDetour:((WalkPoint,GroundItem)->[WalkPoint]?)?
     private var travelDoor:(item:GroundItem,wait:DoorOpeningWait)?
+    private var openedTravelDoors:[UInt32:GroundItem]=[:]
+    func travelDoorAlreadyChanged(_ item:GroundItem)->Bool {
+        guard let opened=openedTravelDoors[item.serial] else { return false }
+        return !DoorOpeningWait.geometryChanged(from:opened,to:item)
+    }
+    var travelDoorObstacles:Set<WalkPoint> {
+        Set(openedTravelDoors.values.compactMap { opened in
+            guard let current=world.items[opened.serial],travelDoorAlreadyChanged(current) else { return nil }
+            return WalkPoint(x:current.x,y:current.y,z:current.z)
+        })
+    }
     private var detourItem:UInt32?
     private var detourArrivedAt:TimeInterval?
     private var detourAttempts:Set<UInt32>=[]
@@ -129,6 +140,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     var onRouteCancelled:(()->Void)?
     private func invalidateInteractionObjects(_ removed:Set<UInt32>) {
         guard !removed.isEmpty else { return }
+        for serial in removed { openedTravelDoors.removeValue(forKey:serial) }
         var affected=false
         if let action=routeAction {
             affected=action.serial != 0 && removed.contains(action.serial)
@@ -197,7 +209,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         if wasPending && autoPickup.pending == nil && autoPickup.mode == .off {
             onInventoryMessage?(autoPickup.stoppedReason ?? "Auto-pickup stopped."); onAutoPickupMode?(0)
         }
-        guard !inventoryRecoveryBusy,(detourItem == nil || movement.pendingCount == 0),allowed,loginComplete,trade == nil,combatTarget.serial == nil,targetRequest == nil,now-manualInventoryAt>2,
+        guard travelDoor == nil,waitingDoor == nil,!inventoryRecoveryBusy,(detourItem == nil || movement.pendingCount == 0),allowed,loginComplete,trade == nil,combatTarget.serial == nil,targetRequest == nil,now-manualInventoryAt>2,
               let serial=playerSerial,let player=world.mobiles[serial],
               let weight=characterStatus?.weight,let strength=characterStatus?.strength,
               weight < 40+strength*7/2-10,
@@ -341,10 +353,20 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         tickAutoPickup(allowed:allowRoute || walkRoute != nil)
         if tickGatheredRecovery() { return }
         if tickGatheredBanking() { return }
-        if let waiting=travelDoor {
+        if var waiting=travelDoor {
             switch waiting.wait.result(door:world.items[waiting.item.serial],at:ProcessInfo.processInfo.systemUptime) {
             case .waiting: return
+            case .retry:
+                guard let current=world.items[waiting.item.serial],let serial=playerSerial,let player=world.mobiles[serial],
+                      max(abs(current.x-player.x),abs(current.y-player.y))<=1,abs(current.z-player.z)<=16 else {
+                    cancelRoute(); return
+                }
+                waiting.wait.didRetry(at:ProcessInfo.processInfo.systemUptime); travelDoor=waiting
+                connection.send(InteractionPackets.use(serial:current.serial))
+                Telemetry.shared.record("travel_door_retry",["serial":current.serial,"attempt":waiting.wait.retries])
+                return
             case .changed:
+                if let opened=world.items[waiting.item.serial] { openedTravelDoors[opened.serial]=opened }
                 travelDoor=nil; needsRouteRetry=true
                 Telemetry.shared.record("travel_door_opened",["serial":waiting.item.serial])
             case .timedOut:
@@ -358,7 +380,12 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         // Stop/manual input/disconnect still cancel travel through cancelRoute().
         if let waiting = waitingDoor {
             let result = waiting.wait.result(door:world.items[waiting.item.serial],at:ProcessInfo.processInfo.systemUptime)
-            if result == .changed {
+            if result == .retry {
+                var retry=waiting
+                retry.wait.didRetry(at:ProcessInfo.processInfo.systemUptime); waitingDoor=retry
+                connection.send(InteractionPackets.use(serial:waiting.item.serial))
+                Telemetry.shared.record("door_route_retry",["serial":waiting.item.serial,"attempt":retry.wait.retries])
+            } else if result == .changed {
                 waitingDoor = nil
                 Telemetry.shared.record("door_route_changed", ["serial":waiting.item.serial])
                 onDoorOpenedRoute?(waiting.destination,waiting.remaining,waiting.running)
@@ -1175,7 +1202,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private func reset(_ message: String) {
         introControls.isHidden=true; artwork.mainMenu=false; settings.isHidden=true
         statusRefreshTask?.cancel(); statusRefreshTask = nil
-        world = WorldState()
+        world = WorldState(); openedTravelDoors=[:]
         servers=[]; characters=[]; cities=[]; choices.removeAllItems(); cityChoice.removeAllItems()
         autoPickup = AutoPickup(); gatheredDrop=nil; awaitingDropWeight=nil; dropGatheredDuringTravel=false; banking=nil; bankingRequested=false; bankGatheredOnArrival=false; bankContentsContext=nil; bankTransferUntil=0; onAutoPickupMode?(0)
         hoverInspection = HoverInspection()
@@ -1411,6 +1438,14 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         Telemetry.shared.record("target_requested", ["cursor": request.cursor, "flags": request.flags, "allows_location": request.allowsLocation])
                     case 0x1C:
                         let speech = try SpeechMessage.decode(packet)
+                        if speech.serial == 0xFFFFFFFF && speech.text == "You must wait to perform another action." {
+                            let now=ProcessInfo.processInfo.systemUptime
+                            travelDoor?.wait.throttled(at:now); waitingDoor?.wait.throttled(at:now)
+                            if travelDoor != nil || waitingDoor != nil {
+                                Telemetry.shared.record("door_use_throttled")
+                                onInventoryMessage?("Server is busy; waiting before trying the door again…")
+                            }
+                        }
                         onSpeech?(speech)
                         Telemetry.shared.record("speech_received", ["serial": speech.serial, "type": speech.type, "bytes": packet.count])
                     case 0x27, 0x28:

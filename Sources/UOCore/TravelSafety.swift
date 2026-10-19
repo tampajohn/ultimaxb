@@ -4,6 +4,16 @@ public enum TravelSafety {
     public static func penalty(_ point:WalkPoint,enemies:[WorldMobile])->Int {
         enemies.filter { abs($0.z-point.z)<=16 }.map { max(0,10-distance(point,$0))*4 }.max() ?? 0
     }
+    /// An opened leaf is still solid. Do not relax it along with closed doors,
+    /// including when it obstructs a diagonal corner.
+    public static func clearsDoorLeaves(from:WalkPoint,to:WalkPoint,leaves:Set<WalkPoint>)->Bool {
+        !leaves.contains { leaf in
+            guard abs(leaf.z-to.z)<=16 else { return false }
+            if leaf.x==to.x && leaf.y==to.y { return true }
+            return from.x != to.x && from.y != to.y &&
+                ((leaf.x==to.x && leaf.y==from.y) || (leaf.x==from.x && leaf.y==to.y))
+        }
+    }
     /// Conservative estimate, not a guarantee of monster speed or intent.
     /// Reserve four tiles for the pickup pause and two tiles of enemy travel
     /// per player step, including turns/latency. Do not assume walls protect us.

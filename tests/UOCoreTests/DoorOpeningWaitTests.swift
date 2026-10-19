@@ -26,6 +26,32 @@ final class DoorOpeningWaitTests: XCTestCase {
         XCTAssertEqual(wait.result(door: nil, at: 14), .timedOut)
         XCTAssertEqual(wait.result(door: door(graphic: 0x676), at: 15), .timedOut)
     }
+    func testExplicitThrottleRetriesAreDelayedAndBounded() {
+        var wait=DoorOpeningWait(door:door(),at:0)
+        wait.throttled(at:0.1)
+        XCTAssertEqual(wait.result(door:door(),at:2),.waiting)
+        XCTAssertEqual(wait.result(door:door(),at:2.1),.retry)
+        wait.didRetry(at:2.1)
+        wait.throttled(at:2.2)
+        XCTAssertEqual(wait.result(door:door(graphic:0x676),at:3),.changed)
+        XCTAssertEqual(wait.result(door:door(),at:4.2),.retry)
+        wait.didRetry(at:4.2)
+        wait.throttled(at:4.3)
+        XCTAssertEqual(wait.result(door:door(),at:6.5),.waiting)
+        XCTAssertEqual(wait.result(door:door(),at:8.3),.timedOut)
+        XCTAssertEqual(wait.retries,2)
+    }
+    func testUncorrelatedThrottleDoesNotEnableRetry() {
+        var wait=DoorOpeningWait(door:door(),at:0)
+        wait.throttled(at:3)
+        XCTAssertEqual(wait.result(door:door(),at:4),.timedOut)
+    }
+    func testOpenedLeavesCannotBeCrossedOrCutDiagonally() {
+        let start=WalkPoint(x:10,y:10,z:0),leaf=WalkPoint(x:11,y:10,z:0)
+        XCTAssertFalse(TravelSafety.clearsDoorLeaves(from:start,to:leaf,leaves:[leaf]))
+        XCTAssertFalse(TravelSafety.clearsDoorLeaves(from:start,to:WalkPoint(x:11,y:11,z:0),leaves:[leaf]))
+        XCTAssertTrue(TravelSafety.clearsDoorLeaves(from:start,to:WalkPoint(x:10,y:11,z:0),leaves:[leaf]))
+    }
     func testPlanningPastDoorDoesNotRemoveWallsOrBlockedLand() {
         let door = NavigationMap.Surface(z: 0, height: 20, flags: 0x20000040)
         let wall = NavigationMap.Surface(z: 0, height: 20, flags: 0x40)
