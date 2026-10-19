@@ -198,6 +198,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private var harvestRestartAfter:TimeInterval=0
     private var harvestKnownContents=Set<UInt32>()
     private var harvest:HarvestWorkflow?
+    private var harvestAfterEquip:(()->Void)?
     private var harvestOutcome:HarvestOutcome?
     private var harvestKind:HarvestOutcome.Kind = .mining
     private var harvestTool:UInt32=0
@@ -206,6 +207,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private var harvestCursorUntil:TimeInterval=0
     var onHarvestStatus:((String)->Void)?
     var harvestActive:Bool {
+        if harvestAfterEquip != nil { return true }
         guard let harvest else { return false }
         switch harvest.state { case .idle,.completed,.stopped: return false; default: return true }
     }
@@ -232,7 +234,21 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             onHarvestStatus?("Opening your backpack to establish inventory. Press Start once its contents arrive."); return false
         }
         let carried=world.containerItems.values.filter { $0.container==bag && graphics.contains($0.graphic) }.sorted { $0.serial<$1.serial }.first?.serial
-        // Mining permits a carried tool; classic lumberjacking requires an axe in hand.
+        // Equip carried tools through the same confirmed inventory transaction
+        // used by the paperdoll; never issue a use before the server accepts it.
+        if equipped == nil,let carried,let item=world.containerItems[carried],
+           let layer=equipmentLayer?(item.graphic),[1,2].contains(layer) {
+            cancelRoute()
+            equipItem(serial:carried,layer:layer)
+            guard manualTransfer.serial == carried else { return false }
+            harvestAfterEquip={ [weak self] in
+                _=self?.startHarvest(zone:zone,sites:sites,kind:kind,route:route)
+            }
+            onHarvestStatus?("Equipping the harvesting tool; waiting for the server.")
+            Telemetry.shared.record("harvest_equipping",["serial":carried,"layer":layer])
+            return true
+        }
+        // Mining can still use a carried tool if its era has no equipment layer.
         guard let tool=equipped ?? (kind == .mining ? carried : nil) else {
             onHarvestStatus?(kind == .mining ? "Equip a pickaxe or shovel, or open the backpack containing one." : "Equip an axe before starting lumberjacking."); return false
         }
@@ -248,6 +264,11 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     }
     func stopHarvest() {
         guard harvestActive else { return }
+        if harvestAfterEquip != nil {
+            harvestAfterEquip=nil
+            onHarvestStatus?("Harvesting cancelled. Any pending equipment change may still finish.")
+            return
+        }
         if harvest?.state == .working { harvestRestartAfter=harvestNow()+10 }
         harvest?.stop(); harvestOutcome=nil; harvestRoute=nil
         harvestCursorUntil=harvestNow()+10
@@ -308,6 +329,11 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private func harvestTarget(_ request:TargetRequest)->Bool {
         let now=harvestNow()
         guard harvestActive || now<harvestCursorUntil else { return false }
+        if harvestAfterEquip != nil {
+            stopHarvest()
+            if request.flags != 3,let packet=try? request.response(nil) { connection.send(packet) }
+            return true
+        }
         if let command=harvest?.receive(request,time:now) { harvestCommand(command) }
         if !harvestActive {
             harvestOutcome=nil; harvestRoute=nil
@@ -335,6 +361,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             world.mobiles.values.contains(where:{$0.serial != playerSerial && $0.isEnemy && max(abs($0.x-player.x),abs($0.y-player.y))<=6}) {
             stopHarvest(); onHarvestStatus?("Harvesting stopped: danger or another interaction nearby."); return
         }
+        if harvestAfterEquip != nil { return }
         observeHarvest()
         guard movement.pendingCount==0,!movement.awaitingPosition else { return }
         let bag=world.equipment.values.first { $0.owner==playerSerial && $0.layer==21 }?.serial
@@ -1023,6 +1050,11 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private func reportManualTransfer(_ result:ManualInventoryTransfer.Result) {
         manualInventoryAt=ProcessInfo.processInfo.systemUptime
         Telemetry.shared.record("manual_inventory_result",["outcome":result.rawValue])
+        if let resume=harvestAfterEquip {
+            harvestAfterEquip=nil
+            if result == .placed { resume() }
+            else { onHarvestStatus?("Tool equip was not confirmed. Check your equipment before starting again.") }
+        }
         if result == .timedOut { onInventoryMessage?("Item move was not confirmed. Check its location before trying again.") }
     }
     private func manualInventoryAvailable()->Bool {

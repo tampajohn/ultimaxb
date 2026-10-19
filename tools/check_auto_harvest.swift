@@ -61,6 +61,26 @@ import UOCore
         send(Data([0x77,0,0,0,9,0,0xD9,0,11,0,11,0,0,0,0,0,6]))
         login.tickMovement()
         precondition(!login.harvestActive && messages.last!.contains("danger"))
+        send(Data([0x1D,0,0,0,9])) // Remove the nearby hostile from the fixture.
+        now += 10.1
+        login.equipmentLayer={_ in 2}
+        func carriedAxe() { send(Data([0x25,0x40,0,0,5,0x0F,0x43,0,0,1,0,0,0,0,0x40,0,0,2,0,0])) }
+        func equipAxe() { send(Data([0x2E,0x40,0,0,5,0x0F,0x43,0,2,0,0,0,1,0,0])) }
+        carriedAxe()
+        precondition(login.startHarvest(zone:zone,sites:[site],kind:.lumberjacking,route:{_,_ in []}))
+        precondition(login.harvestActive && messages.last!.contains("Equipping"))
+        login.tickMovement()
+        precondition(messages.last!.contains("Equipping"),"Do not use an unconfirmed equipped tool")
+        equipAxe(); login.tickMovement()
+        precondition(login.harvestActive && messages.last!.contains("Using tool"))
+        login.stopHarvest(); now += 10.1
+        carriedAxe()
+        precondition(login.startHarvest(zone:zone,sites:[site],kind:.lumberjacking,route:{_,_ in []}))
+        send(Data([0x27,0]))
+        precondition(!login.harvestActive && messages.last!.contains("not confirmed"),"Refused equipment cannot start harvesting")
+        precondition(login.startHarvest(zone:zone,sites:[site],kind:.lumberjacking,route:{_,_ in []}))
+        login.stopHarvest(); equipAxe(); login.tickMovement()
+        precondition(!login.harvestActive,"Late equip confirmation after Stop must not restart harvesting")
         print("Harvest adapter confirms resources, advances depleted sites, cancels late cursors and stops for manual actions/danger")
     }
 }

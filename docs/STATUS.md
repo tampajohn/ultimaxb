@@ -1069,3 +1069,9 @@ Validation: release build passed; `tools/check_login_flow.swift` injects offline
 - Server icon menus now initialize game fonts and classic scrollbars before first display and composite as a clipped layer. Previously fonts/scrollers could change during a later window update. Icon buttons preserve native proportions instead of stretching to their entire cells; the footer fits its frame and uses a tooltip for cancellation instructions.
 - Scrollbars are created only when the options exceed the visible area. Added an offline fixture comparing initial and moved renders byte-for-byte and verifying game fonts and option selection. Screenshot inspected.
 - All nineteen offline UI fixtures passed in both passes, including server-menu initial/moved rendering and harvesting controls. Live menu redraw behavior remains for user verification.
+
+### 2026-10-19 — Confirmed harvesting tool equip
+- Start prefers an appropriate held tool, then a tool directly in the known backpack. If that tool has an era equipment layer, it sends the normal lift/equip transaction and waits for the matching server equipment update before starting the work zone. Mining retains carried-tool support when no equipment layer exists.
+- Refused/unconfirmed equipment changes do not start harvesting. Stop, manual inventory use, disconnect or danger cancels the queued start; a late equipment confirmation may update the paperdoll but cannot restart the run. Unexpected targeting during equip is cancelled.
+- Nested unopened bags are not searched. Automatic harvesting still stops with carrying headroom; smelting/crafting/hauling integration remains pending.
+- Release build and all nineteen offline UI fixtures passed in both passes, including equip confirmation, refusal and Stop racing a late confirmation. Live auto-equipping remains unverified.
