@@ -149,7 +149,12 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             affected=action.serial != 0 && removed.contains(action.serial)
             if case .toolTarget(_,_,let tool)=action { affected = affected || removed.contains(tool) }
         }
-        if let waitingDoor { affected = affected || removed.contains(waitingDoor.item.serial) }
+        // Opening a door can arrive as remove + replacement geometry, even in
+        // separate TCP reads. The bounded door wait owns this invalidation;
+        // missing geometry must neither cancel immediately nor permit movement.
+        if let waitingDoor,removed.contains(waitingDoor.item.serial) {
+            Telemetry.shared.record("door_route_geometry_removed",["serial":waitingDoor.item.serial])
+        }
         if affected {
             cancelRoute()
             onInventoryMessage?("The target or tool is no longer nearby; route stopped.")
@@ -579,7 +584,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         case .openDoor(let planned,let destination,let remaining):
             let serial = planned.serial
             guard let door = world.items[serial] else { return }
-            use(serial:serial)
+            guard use(serial:serial) else { return }
             waitingDoor = (door,destination,remaining,routeRunning,DoorOpeningWait(door:door,at:ProcessInfo.processInfo.systemUptime))
             onInventoryMessage?("Opening door…")
             Telemetry.shared.record("door_route_open_requested", ["serial":serial])

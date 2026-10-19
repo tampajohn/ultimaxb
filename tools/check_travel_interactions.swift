@@ -38,6 +38,9 @@ import UOCore
         precondition(playerX==10 && cancelled==0,"Throttle must wait without discarding the journey")
         Thread.sleep(forTimeInterval:2.05); login.tickMovement()
         precondition(playerX==10 && login.bankGatheredOnArrival,"Retry must still wait for actual door change")
+        send(Data([0x1D,0x40,0,0,4]))
+        login.tickMovement()
+        precondition(playerX==10 && replans==0 && cancelled==0,"Long-distance travel also waits through a missing door update")
         send(Data([0x1A,0,14,0x40,0,0,4,0x06,0x76,0,11,0,11,0]))
         login.blockingTravelDoor={ _,_ in nil }
         login.tickMovement()
@@ -55,6 +58,39 @@ import UOCore
         precondition(!login.travelDoorAlreadyChanged(closed))
         precondition(!login.travelDoorObstacles.contains(WalkPoint(x:11,y:10,z:0)))
         precondition(!login.travelDoorObstacles.contains(WalkPoint(x:11,y:11,z:0)))
+
+        // Local click-to-walk must also survive remove/reinsert updates while
+        // waiting for a door. Exercise separate TCP reads and a tick in between.
+        send(Data([0x20,0,0,0,1,1,0x90,0,0,0,0,0,10,0,10,0,0,2,0]))
+        let destination=TargetSelection(serial:0,x:13,y:10,z:0,graphic:0)
+        var resumed=0
+        login.onDoorOpenedRoute={ target,remaining,running in
+            precondition(target.x==13 && remaining==3 && !running)
+            resumed += 1
+        }
+        login.followRoute([],action:.openDoor(closed,destination,3),running:false,resolver:{ _,_ in [] })
+        login.tickMovement()
+        let beforeRemoval=cancelled
+        send(Data([0x1D,0x40,0,0,4]))
+        login.tickMovement()
+        precondition(cancelled==beforeRemoval && resumed==0 && playerX==10,"Removal during door opening waits for replacement geometry")
+        send(Data([0x1A,0,14,0x40,0,0,4,0x06,0x76,0,11,0,11,0]))
+        login.tickMovement(); login.tickMovement()
+        precondition(resumed==1 && cancelled==beforeRemoval,"Replacement resumes the local destination exactly once")
+        // A permanently removed door must expire without assuming it opened.
+        send(Data([0x1A,0,14,0x40,0,0,4,0x06,0x75,0,11,0,10,0]))
+        var doorMessages:[String]=[]
+        login.onInventoryMessage={doorMessages.append($0)}
+        login.followRoute([],action:.openDoor(closed,destination,3),running:false,resolver:{ _,_ in [] })
+        login.tickMovement(); send(Data([0x1D,0x40,0,0,4]))
+        Thread.sleep(forTimeInterval:4.05); login.tickMovement()
+        precondition(resumed==1 && doorMessages.contains(where:{$0.contains("door did not open")}),"Missing replacement times out without resuming")
+        // Removing a door while still approaching remains an immediate cancel.
+        send(Data([0x1A,0,14,0x40,0,0,4,0x06,0x75,0,11,0,10,0]))
+        login.followRoute([next],action:.openDoor(closed,destination,3),running:false,resolver:{ _,_ in [next] })
+        let beforeApproachRemoval=cancelled
+        send(Data([0x1D,0x40,0,0,4]))
+        precondition(cancelled==beforeApproachRemoval+1)
 
         // Reset the authoritative player position before testing opportunistic detours.
         send(Data([0x20,0,0,0,1,1,0x90,0,0,0,0,0,10,0,10,0,0,2,0]))

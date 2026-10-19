@@ -47,6 +47,11 @@ experimental and is not at parity yet.
 - An unconfirmed transfer expires after five seconds with an explicit message; it is never replayed automatically. Ownership remains entirely server-driven. Disconnect clears the guard. Classic packets do not carry transaction IDs, so unrelated identical stack changes and very late replies cannot be conclusively correlated.
 - Eight core tests cover placement/removal, same-bag splits, merges, rearrangement, equip/unequip, ground coordinates, refusal and timeout. All sixteen offline UI fixtures pass, including rapid manual actions, placement/refusal release and reconnect cleanup. No live inventory actions were sent; this change is pending the next client launch.
 
+### 2026-10-19 — Preserve door waits through removal/replacement
+- Current live-session telemetry showed two click-to-walk door requests followed about 40 ms later by `arrival_route_invalidated`, with 0x1D removal and 0x1A item updates nearby. The local OUO reference's door-open handler explicitly hides then repositions the door. Our arrival invalidation cancelled the pending local door wait on the intermediate removal.
+- A pending door-open wait now owns that removal: no movement resumes until replacement geometry changes; a permanently absent door reaches the existing bounded timeout. Doors removed while still approaching and unrelated target/tool invalidations retain their previous cancellation behavior. Door waits are only created when local item-use validation accepts the request.
+- Offline adapter checks cover separate removal/replacement reads with a tick between, one local destination continuation, permanent disappearance timeout, approach-time cancellation and long-distance wait preservation. Nine door core tests and all sixteen UI fixtures pass. Live confirmation remains pending next launch; the active client is preserved.
+
 ## Implemented, with live shard testing still ongoing
 
 - Login, shard/character selection, reconnect, creation stats/skills/appearance.
