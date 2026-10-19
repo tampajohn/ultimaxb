@@ -26,6 +26,15 @@ import UOCore
 }
 
 @MainActor final class ClassicButton:NSButton {
+    var gemBackground: NSImage?
+    static let sapphireGem: NSImage? = {
+        #if SWIFT_PACKAGE
+        let url = Bundle.module.url(forResource:"sapphire-button",withExtension:"png",subdirectory:"Resources")
+        #else
+        let url: URL? = URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("Resources/sapphire-button.png")
+        #endif
+        return url.flatMap { NSImage(contentsOf:$0) }
+    }()
     private let bitmap:ClassicText
     override var isFlipped:Bool { true }
     init(_ title:String,fonts:ClassicFonts?,target:AnyObject?,action:Selector?) {
@@ -35,6 +44,13 @@ import UOCore
     }
     required init?(coder:NSCoder) { fatalError() }
     override func draw(_ rect:NSRect) {
+        if let gemBackground {
+            NSGraphicsContext.current?.imageInterpolation = .high
+            gemBackground.draw(in:bounds,from:.zero,operation:.sourceOver,fraction:isEnabled ? (cell?.isHighlighted == true ? 0.7 : 1) : 0.45,respectFlipped:true,hints:nil)
+            let size=bitmap.size(title)
+            bitmap.draw(title,at:NSPoint(x:(bounds.width-size.width)/2,y:(bounds.height-size.height)/2 + (cell?.isHighlighted == true ? 1 : 0)))
+            return
+        }
         if imagePosition == .imageOnly, let image {
             let sprite = cell?.isHighlighted == true ? (alternateImage ?? image) : image
             NSGraphicsContext.current?.imageInterpolation = .none

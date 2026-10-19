@@ -37,7 +37,7 @@ import UOCore
         let heading=shardSelection ? "Choose your shard" : "Log in to Ultima Online"
         text.draw(heading,at:NSPoint(x:320-text.size(heading).width/2,y:80))
         if !shardSelection {
-            drawImage(0x410,at:NSPoint(x:135,y:110))
+            panel(0xA28,NSRect(x:135,y:110,width:371,height:256))
             drawImage(0x412,at:NSPoint(x:226,y:140))
             drawImage(0x414,at:NSPoint(x:224,y:175))
 

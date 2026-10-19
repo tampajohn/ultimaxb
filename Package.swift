@@ -7,7 +7,7 @@ let package = Package(
     products: [.executable(name: "UltimaMac", targets: ["UltimaMac"])],
     targets: [
         .target(name: "UOCore"),
-        .executableTarget(name: "UltimaMac", dependencies: ["UOCore"]),
+        .executableTarget(name: "UltimaMac", dependencies: ["UOCore"], resources: [.copy("Resources")]),
         .testTarget(name: "UOCoreTests", dependencies: ["UOCore"])
     ]
 )

@@ -101,6 +101,11 @@ final class ContainerPanel: NSView {
         let contents = items.filter { $0.container == serial && (!isCorpse || $0.amount > 0) }
             .sorted { $0.serial < $1.serial }
         guard contents != canvas.items else { return }
+        if let source=canvas.interactionItem,contents.first(where: { $0.serial == source.serial }) != source {
+            cancelInteraction()
+            caption.stringValue="The item changed. Pick it up again."
+            Telemetry.shared.record("inventory_drag_invalidated",["serial":source.serial])
+        }
         canvas.items = contents
         for item in canvas.items {
             let sprite = try? canvas.assets.sprite(item.displayGraphic + 0x4000)
@@ -173,6 +178,7 @@ private final class ContainerCanvas: NSView {
         overlay.needsDisplay = true
     }
     private var candidate: ContainerItem?
+    var interactionItem:ContainerItem? { candidate }
     private var origin = NSPoint.zero
     private var grabOffset = NSPoint.zero
     private var pointer = NSPoint.zero

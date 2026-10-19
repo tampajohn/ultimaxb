@@ -847,3 +847,9 @@ Validation: release build passed; `tools/check_login_flow.swift` injects offline
 - Missing position-sync replies now trigger at most two retries, two seconds apart (three requests total). Denied movement registers its immediate sync request with the same recovery state. After the final unanswered wait, travel stops and one message explains that the client is waiting for a server position, with reconnect as a fallback.
 - Recovery never fabricates acknowledgement, unlocks prediction on timeout, or disconnects automatically. A late authoritative 0x20 position clears the wait and permits movement; ordinary movement acknowledgements alone do not release it. Timeout produces metadata-only telemetry once per recovery episode.
 - Full regression: 245 tests, five skips, no failures. New tests cover missing replies, bounded retries, denied movement, no speculative recovery, late acknowledgement, and late authoritative recovery. Live latency behavior remains unverified and the active session was left running.
+
+### 2026-10-19 — Generated login gems
+- Added a generated blank sapphire button resource, bundled with the executable, with runtime bitmap labels and pressed/disabled states.
+- Login and shard selection use the gem for Continue/Connect and Back; removed the old login shield backdrop with baked-in button lettering.
+- Offline shard transition fixture verifies the asset loads and captures `build/gem-shard-selection.png`; all twelve offline UI fixtures passed. Live server login remains user-testable after relaunch.
+- Pending container drag/split now cancels when its source item changes, preserving interactions through unrelated updates; offline regression passed.

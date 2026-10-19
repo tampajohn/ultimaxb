@@ -624,12 +624,9 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             artwork.shardSelection = phase == .server || (phase == .connecting && !choices.isHidden)
             account.isHidden = artwork.shardSelection; password.isHidden = artwork.shardSelection
             rememberPassword.isHidden = artwork.shardSelection
-            action.imagePosition = artwork.shardSelection ? .noImage : .imageOnly
-            action.image = artwork.shardSelection ? nil : artwork.image(0x418)
-            action.alternateImage = artwork.shardSelection ? nil : artwork.image(0x419)
-            action.frame = artwork.shardSelection
-                ? NSRect(x:310,y:270,width:170,height:32)
-                : NSRect(x:378,y:224,width:94,height:85)
+            action.imagePosition = .noImage
+            action.image = nil; action.alternateImage = nil
+            action.frame = NSRect(x:310,y:290,width:180,height:52)
             action.needsDisplay = true
             localLoginButton.isEnabled = phase == .login
             primaryLoginButton.isEnabled = phase == .login
@@ -701,15 +698,15 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         status.frame=NSRect(x:115,y:418,width:420,height:45); status.font=NSFont(name:"Georgia",size:11)
         status.textColor=NSColor(calibratedRed:0.9,green:0.85,blue:0.7,alpha:1); card.addSubview(status)
         action.target=self; action.action=#selector(performAction)
-        action.frame=NSRect(x:378,y:224,width:94,height:85)
-        action.image=artwork.image(0x418); action.alternateImage=artwork.image(0x419)
-        action.isBordered=false; action.imagePosition = .imageOnly; action.setAccessibilityLabel("Connect or continue")
+        action.frame=NSRect(x:310,y:290,width:180,height:52)
+        action.gemBackground=ClassicButton.sapphireGem
+        action.isBordered=false; action.imagePosition = .noImage; action.setAccessibilityLabel("Connect or continue")
         card.addSubview(action)
         let disconnect=ClassicButton("Disconnect",fonts:assets.fonts,target:self,action:#selector(disconnect))
         disconnect.frame=NSRect(x:8,y:448,width:105,height:24); card.addSubview(disconnect)
-        let close=NSButton(title:"Back",target:self,action:#selector(dismissOverlay))
-        close.frame=NSRect(x:168,y:224,width:93,height:84)
-        close.image=artwork.image(0x415); close.alternateImage=artwork.image(0x416); close.imagePosition = .imageOnly; close.isBordered=false
+        let close=ClassicButton("Back",fonts:assets.fonts,target:self,action:#selector(dismissOverlay))
+        close.frame=NSRect(x:150,y:290,width:140,height:52)
+        close.gemBackground=ClassicButton.sapphireGem
         card.addSubview(close)
         secondaryButtons=[disconnect,close,settingsButton]
         introControls.frame=NSRect(x:0,y:0,width:640,height:480); artwork.addSubview(introControls); introControls.isHidden=true

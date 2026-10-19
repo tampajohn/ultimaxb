@@ -1,0 +1,5 @@
+# Sapphire button
+
+`sapphire-button.png` was generated with the built-in image generation tool on 2026-10-19. It contains no lettering; ClassicButton draws the current action using the client bitmap font. Normal, pressed and disabled appearances share the same sprite with runtime opacity changes.
+
+Prompt: Use case: stylized-concept. Asset type: production UI button sprite for a classic 1998 isometric fantasy RPG. Generate ONE wide horizontal faceted sapphire blue gemstone button in a thin aged brass gold setting, orthographic front view, centered and filling most of a wide 3:1 image. Silhouette is an elongated hexagonal jewel with clipped pointed ends. Dark blue spacious flat central face intentionally blank for a game-rendered label; restrained lighter blue angular bevel facets around edges, subtle hand-painted pixel-era texture, warm antique gold rim. Fits Ultima Online's old jewel and parchment interface. Genuine transparent background outside the button, no scene, no drop shadow outside silhouette. NO text, letters, runes, icons, symbols, watermark or extra objects. Button must remain readable when displayed at 170 by 48 pixels. Deliver transparent PNG.

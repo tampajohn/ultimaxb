@@ -31,6 +31,11 @@ import UOCore
         precondition(!accountVisible())
         let select=all(overlay.view).compactMap { $0 as? NSButton }.first { $0.title == "Select Server" }!
         precondition(select.imagePosition == .noImage)
+        precondition((select as? ClassicButton)?.gemBackground != nil)
+        if let rep=overlay.view.bitmapImageRepForCachingDisplay(in:overlay.view.bounds) {
+            overlay.view.cacheDisplay(in:overlay.view.bounds,to:rep)
+            try rep.representation(using:.png,properties:[:])!.write(to:URL(fileURLWithPath:"build/gem-shard-selection.png"))
+        }
         click("dismissOverlay")
         click("enterLogin")
         precondition(accountVisible())
