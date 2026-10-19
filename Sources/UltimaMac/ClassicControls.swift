@@ -5,8 +5,8 @@ import UOCore
     private let text:ClassicText
     var stringValue:String { didSet { needsDisplay=true; setAccessibilityValue(stringValue) } }
     override var isFlipped:Bool { true }
-    init(_ value:String,fonts:ClassicFonts?) {
-        text=ClassicText(fonts); stringValue=value; super.init(frame:.zero)
+    init(_ value:String,fonts:ClassicFonts?,color:(UInt8,UInt8,UInt8) = (230,215,170),outlined:Bool = true) {
+        text=ClassicText(fonts,color:color,outlined:outlined); stringValue=value; super.init(frame:.zero)
         setAccessibilityElement(true); setAccessibilityRole(.staticText); setAccessibilityValue(value)
     }
     required init?(coder:NSCoder) { fatalError() }

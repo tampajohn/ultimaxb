@@ -5,9 +5,10 @@ import UOCore
 @MainActor final class ClassicText {
     private let fonts:ClassicFonts?
     private var glyphs:[UInt32:(NSImage,NSImage,NSSize,Int)] = [:]
+    private let outlined:Bool
     private let fontID:Int
     private let color:(UInt8,UInt8,UInt8)
-    init(_ fonts:ClassicFonts?,font:Int = 9,color:(UInt8,UInt8,UInt8) = (230,215,170)) { self.fonts=fonts; fontID=font; self.color=color }
+    init(_ fonts:ClassicFonts?,font:Int = 9,color:(UInt8,UInt8,UInt8) = (230,215,170),outlined:Bool = true) { self.fonts=fonts; fontID=font; self.color=color; self.outlined=outlined }
     func lines(_ value:String,width:CGFloat)->[String] {
         var result:[String]=[]
         for paragraph in value.components(separatedBy:"\n") {
@@ -56,7 +57,7 @@ import UOCore
         for scalar in text.unicodeScalars {
             guard let g=glyph(scalar) else { x += 4; continue }
             let rect=NSRect(x:x.rounded(),y:(point.y+CGFloat(g.3)).rounded(),width:g.2.width,height:g.2.height)
-            for (dx,dy) in (fontID == 0 || fontID == 3 ? [] : [(-1,0),(1,0),(0,-1),(0,1)]) {
+            for (dx,dy) in (!outlined || fontID == 0 || fontID == 3 ? [] : [(-1,0),(1,0),(0,-1),(0,1)]) {
                 g.1.draw(in:rect.offsetBy(dx:CGFloat(dx),dy:CGFloat(dy)),from:.zero,operation:.sourceOver,fraction:1,respectFlipped:true,hints:nil)
             }
             g.0.draw(in:rect,from:.zero,operation:.sourceOver,fraction:1,respectFlipped:true,hints:nil)
