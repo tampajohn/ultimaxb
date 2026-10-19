@@ -86,6 +86,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         Telemetry.shared.record("skills_requested")
     }
     func useSkill(_ id: Int) {
+        stopHarvest(); harvestCursorUntil=0
         guard loginComplete, let packet = try? SkillState.use(id: id) else { return }
         if targeting { target(nil,allowApproach:false) }
         equippedTargetTool = nil
@@ -165,6 +166,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         }
     }
     func cancelRoute() {
+        if harvestActive { stopHarvest(); return }
         dropGatheredDuringTravel=false; bankGatheredOnArrival=false; bankingRequested=false
         bankingCancelled=true
         onRouteCancelled?()
@@ -192,6 +194,140 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     var bankGatheredOnArrival=false
     private var bankingRequested=false
     private var bankStackable:(Int)->Bool = { _ in false }
+    var harvestNow:()->TimeInterval = { ProcessInfo.processInfo.systemUptime }
+    private var harvestRestartAfter:TimeInterval=0
+    private var harvestKnownContents=Set<UInt32>()
+    private var harvest:HarvestWorkflow?
+    private var harvestOutcome:HarvestOutcome?
+    private var harvestKind:HarvestOutcome.Kind = .mining
+    private var harvestTool:UInt32=0
+    private var harvestRoute:((WalkPoint,WalkPoint)->[WalkPoint]?)?
+    private var harvestLastState:HarvestWorkflow.State?
+    private var harvestCursorUntil:TimeInterval=0
+    var onHarvestStatus:((String)->Void)?
+    var harvestActive:Bool {
+        guard let harvest else { return false }
+        switch harvest.state { case .idle,.completed,.stopped: return false; default: return true }
+    }
+    @discardableResult func startHarvest(zone:HarvestWorkflow.Zone,sites:[HarvestWorkflow.Site],kind:HarvestOutcome.Kind,
+                                        route:@escaping (WalkPoint,WalkPoint)->[WalkPoint]?)->Bool {
+        guard harvestNow()>=harvestRestartAfter else {
+            onHarvestStatus?("Waiting for the previous tool request to expire. Try Start in a few seconds."); return false
+        }
+        guard loginComplete,let playerSerial,let player=world.mobiles[playerSerial],!player.isGhost,
+              targetRequest == nil,trade == nil,combatTarget.serial == nil,
+              manualTransfer.serial == nil,autoPickup.pending == nil,!inventoryRecoveryBusy,
+              characterStatus?.weight != nil,characterStatus?.strength != nil else {
+            onHarvestStatus?("Finish the current action and wait for player status before harvesting."); return false
+        }
+        let graphics:Set<Int> = kind == .mining ? [0xE85,0xE86,0xF39,0xF3A] :
+            [0xF43,0xF44,0xF45,0xF46,0xF47,0xF48,0xF49,0xF4A,0xF4B,0xF4C,0xF5E,0xF5F,0x13FA,0x13FB]
+        let equipped=world.equipment.values.filter { $0.owner==playerSerial && [1,2].contains($0.layer) && graphics.contains($0.graphic) }.sorted { $0.serial<$1.serial }.first?.serial
+        let bag=world.equipment.values.first { $0.owner==playerSerial && $0.layer==21 }?.serial
+        guard let bag,harvestKnownContents.contains(bag) else {
+            if let bag { connection.send(InteractionPackets.use(serial:bag)) }
+            onHarvestStatus?("Opening your backpack to establish inventory. Press Start once its contents arrive."); return false
+        }
+        let carried=world.containerItems.values.filter { $0.container==bag && graphics.contains($0.graphic) }.sorted { $0.serial<$1.serial }.first?.serial
+        // Mining permits a carried tool; classic lumberjacking requires an axe in hand.
+        guard let tool=equipped ?? (kind == .mining ? carried : nil) else {
+            onHarvestStatus?(kind == .mining ? "Equip a pickaxe or shovel, or open the backpack containing one." : "Equip an axe before starting lumberjacking."); return false
+        }
+        var runner=HarvestWorkflow()
+        do { try runner.start(zone:zone,sites:sites,tool:tool,successfulActions:100,maxConsecutiveEmptyAttempts:20) }
+        catch { onHarvestStatus?("Preview a zone with reachable work sites first."); return false }
+        cancelRoute()
+        harvest=runner; harvestTool=tool; harvestKind=kind; harvestRoute=route
+        harvestOutcome=nil; harvestLastState=nil; harvestCursorUntil=0
+        Telemetry.shared.record("harvest_started",["kind":kind == .mining ? "mining":"lumberjacking","sites":sites.count,"tool":tool,"limit":100])
+        publishHarvestStatus()
+        return true
+    }
+    func stopHarvest() {
+        guard harvestActive else { return }
+        if harvest?.state == .working { harvestRestartAfter=harvestNow()+10 }
+        harvest?.stop(); harvestOutcome=nil; harvestRoute=nil
+        harvestCursorUntil=harvestNow()+10
+        publishHarvestStatus()
+        cancelRoute()
+    }
+    private func publishHarvestStatus() {
+        guard let harvest,harvestLastState != harvest.state else { return }
+        harvestLastState=harvest.state
+        let text:String
+        switch harvest.state {
+        case .idle: text="Harvesting idle."
+        case .ready,.coolingDown: text="Harvesting: \(harvest.successfulActions) successful attempts. Waiting before the next action."
+        case .travelling: text="Walking to the next work site."
+        case .working: text="Using tool; waiting for the server."
+        case .paused: text="Harvesting paused."
+        case .completed: text="Harvesting finished: \(harvest.successfulActions) successful attempts."
+        case .stopped(let reason): text="Harvesting stopped: \(reason)."
+        }
+        onHarvestStatus?(text)
+        Telemetry.shared.record("harvest_state",["state":String(describing:harvest.state),"successes":harvest.successfulActions])
+    }
+    private func harvestCommand(_ command:HarvestWorkflow.Command) {
+        switch command {
+        case .route(let steps):
+            guard let goal=steps.last,let route=harvestRoute else { return }
+            followRoute(steps,action:nil,running:false) { start,blocked in
+                guard let path=route(start,goal),!path.contains(where:blocked.contains) else { return nil }
+                return path
+            }
+        case .tool(.useItem(let serial)):
+            harvestCursorUntil=harvestNow()+10
+            connection.send(InteractionPackets.use(serial:serial))
+            Telemetry.shared.record("harvest_tool_used",["serial":serial])
+        case .tool(.target(let request,let selection)):
+            guard let playerSerial,let player=world.mobiles[playerSerial],
+                  let bag=world.equipment.values.first(where:{$0.owner==playerSerial && $0.layer==21}),
+                  let packet=try? request.response(selection) else { stopHarvest(); return }
+            harvestOutcome=HarvestOutcome(kind:harvestKind,backpack:bag.serial,position:.init(x:player.x,y:player.y,z:player.z),
+                world:world,time:harvestNow())
+            connection.send(packet)
+            Telemetry.shared.record("harvest_target_sent",["x":selection.x,"y":selection.y,"z":selection.z,"graphic":selection.graphic])
+        case .tool(.cancelTarget(let request)):
+            if let packet=try? request.response(nil) { connection.send(packet) }
+        }
+    }
+    private func harvestTarget(_ request:TargetRequest)->Bool {
+        let now=harvestNow()
+        guard harvestActive || now<harvestCursorUntil else { return false }
+        if let command=harvest?.receive(request,time:now) { harvestCommand(command) }
+        publishHarvestStatus()
+        return true
+    }
+    private func observeHarvest(_ speech:SpeechMessage? = nil) {
+        guard harvestActive,var outcome=harvestOutcome else { return }
+        let now=harvestNow()
+        let result=outcome.observe(speech:speech,world:world,time:now)
+        harvestOutcome=outcome
+        if let result {
+            harvest?.receive(result,time:now); harvestOutcome=nil; harvestCursorUntil=0
+            Telemetry.shared.record("harvest_result",["result":String(describing:result)])
+            publishHarvestStatus()
+        }
+    }
+    private func tickHarvest() {
+        guard harvestActive,loginComplete,let playerSerial,let player=world.mobiles[playerSerial] else { return }
+        if player.isGhost || trade != nil || combatTarget.serial != nil ||
+            world.mobiles.values.contains(where:{$0.serial != playerSerial && $0.isEnemy && max(abs($0.x-player.x),abs($0.y-player.y))<=6}) {
+            stopHarvest(); onHarvestStatus?("Harvesting stopped: danger or another interaction nearby."); return
+        }
+        observeHarvest()
+        guard movement.pendingCount==0,!movement.awaitingPosition else { return }
+        let bag=world.equipment.values.first { $0.owner==playerSerial && $0.layer==21 }?.serial
+        let owns=world.equipment[harvestTool].map { $0.owner==playerSerial && [1,2].contains($0.layer) } == true ||
+            (harvestKind == .mining && world.containerItems[harvestTool].map { $0.container==bag } == true)
+        let weight=characterStatus?.weight ?? Int.max
+        let capacity=40+(characterStatus?.strength ?? 0)*7/2
+        let command=harvest?.next(position:.init(x:player.x,y:player.y,z:player.z),ownsTool:owns,
+            overweight:weight>=capacity-10,time:harvestNow(),route:{ [weak self] start,goal in self?.harvestRoute?(start,goal) })
+        if let command { harvestCommand(command) }
+        publishHarvestStatus()
+        if !harvestActive { harvestOutcome=nil; harvestRoute=nil; cancelRoute() }
+    }
     private var banking:GatheredBanking?
     private var bankingCancelled=false
     private var bankContentsContext:UInt32?
@@ -368,7 +504,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             onInventoryMessage?("Waiting for the server to confirm your position. If this persists, reconnect.")
             Telemetry.shared.record("movement_position_sync_timeout")
         } else if !movement.positionSyncTimedOut { reportedMovementSyncTimeout=false }
-        tickAutoPickup(allowed:allowRoute || walkRoute != nil)
+        tickHarvest()
+        if !harvestActive { tickAutoPickup(allowed:allowRoute || walkRoute != nil) }
         if tickGatheredRecovery() { return }
         if tickGatheredBanking() { return }
         // Opportunistic lifts do not stop escape/travel while inventory replies
@@ -657,6 +794,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         else { awaitingSpellbook = true; openBackpack() }
     }
     func castSpell(_ id:Int,book:UInt32) {
+        stopHarvest(); harvestCursorUntil=0
         guard loginComplete, ClassicSpells.contents(book:book,items:Array(world.containerItems.values)).contains(id),
               let packet = try? ClassicSpells.cast(id:id,book:book) else { return }
         if targeting { target(nil,allowApproach:false) }
@@ -764,6 +902,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         connection.send(InteractionPackets.inspect(serial: serial))
     }
     @discardableResult func use(serial: UInt32)->Bool {
+        stopHarvest(); harvestCursorUntil=0
         guard loginComplete else { return false }
         guard manualInventoryAvailable() else { return false }
         if targeting { target(nil,allowApproach:false) }
@@ -862,6 +1001,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         if result == .timedOut { onInventoryMessage?("Item move was not confirmed. Check its location before trying again.") }
     }
     private func manualInventoryAvailable()->Bool {
+        stopHarvest()
         if let result=manualTransfer.poll(time:ProcessInfo.processInfo.systemUptime) { reportManualTransfer(result) }
         guard manualTransfer.serial == nil else {
             onInventoryMessage?("Waiting for your previous item move to finish.")
@@ -874,6 +1014,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         return true
     }
     func moveItem(serial: UInt32, amount: Int, x: Int, y: Int, target: UInt32, z: Int = 0) {
+        stopHarvest(); harvestCursorUntil=0
         guard manualInventoryAvailable() else { return }
         autoPickup.relinquish(serial)
         manualInventoryAt=ProcessInfo.processInfo.systemUptime
@@ -1294,6 +1435,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private func reset(_ message: String) {
         introControls.isHidden=true; artwork.mainMenu=false; settings.isHidden=true
         statusRefreshTask?.cancel(); statusRefreshTask = nil
+        stopHarvest(); harvest=nil; harvestOutcome=nil; harvestCursorUntil=0; harvestRestartAfter=0; harvestKnownContents=[]
         world = WorldState(); openedTravelDoors=[:]; manualTransfer=ManualInventoryTransfer()
         servers=[]; characters=[]; cities=[]; choices.removeAllItems(); cityChoice.removeAllItems()
         autoPickup = AutoPickup(); gatheredDrop=nil; awaitingDropWeight=nil; dropGatheredDuringTravel=false; banking=nil; bankingRequested=false; bankGatheredOnArrival=false; bankContentsContext=nil; bankTransferUntil=0; onAutoPickupMode?(0)
@@ -1524,6 +1666,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         Telemetry.shared.record("mobile_animation",["serial":animation.serial,"action":animation.action,"frames":animation.frameCount,"repeats":animation.repeatCount,"delay":animation.delay])
                     case 0x6C:
                         let request = try TargetRequest.decode(packet)
+                        if harvestTarget(request) { break }
                         if case .toolTarget = routeAction { cancelRoute() }
                         if ProcessInfo.processInfo.systemUptime>equippedTargetDeadline || request.flags == 3 { equippedTargetTool = nil }
                         targetRequest = request.flags == 3 ? nil : request
@@ -1539,6 +1682,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                                 onInventoryMessage?("Server is busy; waiting before trying the door again…")
                             }
                         }
+                        observeHarvest(speech)
                         onSpeech?(speech)
                         Telemetry.shared.record("speech_received", ["serial": speech.serial, "type": speech.type, "bytes": packet.count])
                     case 0x27, 0x28:
@@ -1569,6 +1713,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         if packet.first == 0x3C {
                             lastContainerContents = try ContainerItem.decode(packet)
                             let parents=Set(lastContainerContents.map(\.container))
+                            harvestKnownContents.formUnion(parents)
+                            if parents.isEmpty,let root=bankContentsContext { harvestKnownContents.insert(root) }
                             if let root=bankContentsContext,
                                parents.isEmpty || parents == Set([root]) { banking?.contentsReceived(for:root,time:ProcessInfo.processInfo.systemUptime) }
                             bankContentsContext=nil

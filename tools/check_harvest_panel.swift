@@ -27,8 +27,16 @@ import UOCore
         precondition(restored.x.stringValue=="2584" && restored.kind == .lumberjacking)
         let other=HarvestPanel(assets:assets,scope:"fixture:2",position:.init(x:10,y:10,z:0),defaults:defaults)
         precondition(other.x.stringValue=="10" && other.kind == .mining)
-        panel.showResult("23 reachable work sites. Gold lines mark the zone; dots mark targets. Preview only.")
-        let window=NSWindow(contentRect:NSRect(x:0,y:0,width:420,height:330),styleMask:[.borderless],backing:.buffered,defer:false)
+        panel.onPlayerPosition={ .init(x:2600,y:490,z:0) }
+        panel.centerOnMe()
+        precondition(panel.x.stringValue=="2600" && panel.y.stringValue=="490" && panel.radius.stringValue=="8")
+        var started=false,stopped=false
+        panel.onStart={zone,_ in started=zone.minX==2592 && zone.maxX==2608 }
+        panel.onStop={stopped=true}
+        panel.startHarvesting(); precondition(started)
+        panel.stopHarvesting(); precondition(stopped)
+        panel.showResult("23 reachable work sites. Gold lines mark the zone; dots mark targets. Start runs up to 100 successes; Stop cancels.")
+        let window=NSWindow(contentRect:NSRect(x:0,y:0,width:420,height:430),styleMask:[.borderless],backing:.buffered,defer:false)
         window.contentView=panel; ClassicNativeFont.apply(to:panel); panel.layoutSubtreeIfNeeded()
         precondition(panel.x.font?.fontName == "UltimaXB-ClassicBitmap")
         precondition(panel.x.nextKeyView === panel.y && panel.y.nextKeyView === panel.radius)

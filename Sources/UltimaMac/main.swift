@@ -1196,6 +1196,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let view=worldView,let login=loginOverlay,let player=view.player else { return }
         harvestPanel?.closePanel()
         let panel=HarvestPanel(assets:assets,scope:login.assistantScope,position:.init(x:player.x,y:player.y,z:player.z)); harvestPanel=panel
+        panel.onPlayerPosition={ [weak view] in view?.player.map { WalkPoint(x:$0.x,y:$0.y,z:$0.z) } }
+        panel.onStop={ [weak login] in login?.stopHarvest() }
+        login.onHarvestStatus={ [weak panel] text in panel?.showResult(text) }
+        panel.onStart={ [weak self,weak view,weak login,weak panel] zone,kind in
+            guard let self,let view,let login,let player=view.player,
+                  zone.contains(x:player.x,y:player.y) else { panel?.showResult("Enter the work zone before starting."); return }
+            do {
+                let plan=try HarvestSitePlanner.discover(assets:self.assets,zone:zone,kind:kind,
+                    start:.init(x:player.x,y:player.y,z:player.z),additional:view.groundItems)
+                guard !plan.sites.isEmpty else { panel?.showResult("No reachable harvest sites in this zone."); return }
+                _=login.startHarvest(zone:zone,sites:plan.sites,kind:kind) { [weak self,weak view] start,goal in
+                    guard let self,let view,
+                          let map=try? NavigationMap(assets:self.assets,center:start,additional:view.groundItems,radius:66) else { return nil }
+                    return WalkPath.find(from:start,x:goal.x,y:goal.y,goalZ:goal.z,limit:8192) { point,direction in
+                        guard let next=map.step(from:point,direction:direction),zone.contains(x:next.x,y:next.y) else { return nil }
+                        return next
+                    }
+                }
+            } catch { panel?.showResult("Could not prepare the harvest zone.") }
+        }
         panel.onClear={ [weak view] in view?.harvestBoundary=[]; view?.harvestSites=[]; view?.needsDisplay=true }
         panel.onPreview={ [weak self,weak view,weak panel] zone,kind in
             guard let self,let view,let player=view.player else { return }
@@ -1209,7 +1229,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 for x in stride(from:zone.maxX-1,through:zone.minX,by:-1) { try add(x,zone.maxY) }
                 for y in stride(from:zone.maxY-1,through:zone.minY+1,by:-1) { try add(zone.minX,y) }
                 view.harvestBoundary=edge; view.harvestSites=plan.sites; view.needsDisplay=true
-                panel?.showResult("\(plan.sites.count) reachable work sites. Gold lines mark the zone; dots mark targets. Preview only."+(plan.searchTruncated || plan.omittedSites>0 ? " Reduce the radius to see all sites." : ""))
+                panel?.showResult("\(plan.sites.count) reachable work sites. Gold lines mark the zone; dots mark targets. Start runs up to 100 successes; Stop cancels."+(plan.searchTruncated || plan.omittedSites>0 ? " Reduce the radius to see all sites." : ""))
                 Telemetry.shared.record("harvest_zone_preview",["kind":kind == .mining ? "mining" : "lumberjacking","sites":plan.sites.count,"reachable":plan.reachablePoints,"truncated":plan.searchTruncated])
             } catch { panel?.showResult("Could not preview this work zone.") }
         }
