@@ -168,6 +168,12 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         let now=ProcessInfo.processInfo.systemUptime
         let wasPending=autoPickup.pending != nil
         autoPickup.update(contents:Array(world.containerItems.values),at:now)
+        if wasPending && autoPickup.pending == nil && autoPickup.mode != .off {
+            Telemetry.shared.record("auto_pickup_confirmed",[
+                "tracked_stacks":autoPickup.gathered.credits.count,
+                "tracked_amount":autoPickup.gathered.credits.values.reduce(0) { $0+$1.amount }
+            ])
+        }
         if wasPending && autoPickup.pending == nil && autoPickup.mode == .off {
             onInventoryMessage?(autoPickup.stoppedReason ?? "Auto-pickup stopped."); onAutoPickupMode?(0)
         }
@@ -471,6 +477,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     }
     func use(serial: UInt32) {
         guard loginComplete else { return }
+        autoPickup.relinquish(serial)
         if waitingDoor != nil { cancelRoute() }
         if case .toolTarget = routeAction { cancelRoute() }
         if let item = world.equipment[serial],item.owner == playerSerial,(item.layer == 1 || item.layer == 2) {
@@ -559,6 +566,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     }
     func moveItem(serial: UInt32, amount: Int, x: Int, y: Int, target: UInt32, z: Int = 0) {
         guard autoPickup.pending == nil else { onInventoryMessage?("Waiting for auto-pickup to finish."); return }
+        autoPickup.relinquish(serial)
         manualInventoryAt=ProcessInfo.processInfo.systemUptime
         guard loginComplete, let playerSerial else { return }
         if var value = trade {
@@ -586,6 +594,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     }
     func equipItem(serial: UInt32, layer: UInt8) {
         guard autoPickup.pending == nil else { return }
+        autoPickup.relinquish(serial)
         manualInventoryAt=ProcessInfo.processInfo.systemUptime
         guard trade?.isOwnOffer(serial) != false else { return }
         guard loginComplete, let owner = playerSerial, (world.containerItems[serial] != nil || world.items[serial] != nil) else { return }

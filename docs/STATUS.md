@@ -33,6 +33,11 @@ experimental and is not at parity yet.
   including merged stacks. Preserve gold on overload. Do not infer ownership or
   permission to loot merely because a container opens. Bank destinations must be
   editable on the map; transfers must await server confirmation and stop on refusal.
+  The gathered-inventory ledger is now implemented: confirmed auto-pickups credit
+  only observed added quantities, including merges; reductions, disappearance,
+  ownership changes and manual interaction relinquish credit. Gold is excluded
+  from overload candidates. This is bookkeeping only: travel option controls,
+  chest eligibility, automatic drops and bank arrival/deposits remain pending.
 - Validate every interaction against live UO1998, particularly long travel,
   spellcasting, death/resurrection and general server dialogs.
 - Full original menu layouts, fonts and hue fidelity; more general gump commands

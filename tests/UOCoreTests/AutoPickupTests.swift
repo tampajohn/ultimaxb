@@ -13,8 +13,10 @@ final class AutoPickupTests:XCTestCase {
         XCTAssertNil(gather.select(items:[item(0x40000003)],player:player,at:1))
         let received=ContainerItem(serial:herb.serial,graphic:herb.graphic,amount:2,x:0,y:0,container:0x40000002,hue:0)
         gather.update(contents:[received],at:1); XCTAssertNil(gather.pending)
+        XCTAssertEqual(gather.gathered.credits[herb.serial]?.amount,2)
         XCTAssertEqual(gather.mode,.reagents)
         gather.receive(Data([0x29])); gather.update(contents:[received],at:1.1); XCTAssertNil(gather.pending)
+        XCTAssertEqual(gather.gathered.credits[herb.serial]?.amount,2,"Late acknowledgement must not double-count goods")
         XCTAssertNil(gather.select(items:[herb],player:player,at:2))
     }
     func testTimeoutRefusalAndMovableFilter() {
@@ -25,9 +27,11 @@ final class AutoPickupTests:XCTestCase {
         XCTAssertNotNil(gather.select(items:[item(graphic:0xF5E,flags:0x20)],player:player,at:0))
         gather.begin(item(),bag:2,contents:[],at:0); gather.update(contents:[],at:5)
         XCTAssertEqual(gather.mode,.off); XCTAssertNil(gather.pending)
+        XCTAssertTrue(gather.gathered.credits.isEmpty)
         gather.mode = .reagents; gather.begin(item(),bag:2,contents:[],at:6)
         gather.receive(Data([0x27,0])); XCTAssertEqual(gather.mode,.reagents)
         XCTAssertNil(gather.pending)
+        XCTAssertTrue(gather.gathered.credits.isEmpty)
         XCTAssertNil(gather.select(items:[item()],player:player,at:10))
         XCTAssertEqual(gather.select(items:[item(99)],player:player,at:10)?.serial,99)
     }
@@ -38,6 +42,7 @@ final class AutoPickupTests:XCTestCase {
         gather.update(contents:[before],at:1); XCTAssertNotNil(gather.pending)
         let after=ContainerItem(serial:9,graphic:0xF7A,amount:12,x:0,y:0,container:2,hue:0)
         gather.update(contents:[after],at:2); XCTAssertNil(gather.pending)
+        XCTAssertEqual(gather.gathered.credits[9]?.amount,2,"The original ten herbs are not gathered goods")
         XCTAssertEqual(gather.mode,.reagents)
     }
 }

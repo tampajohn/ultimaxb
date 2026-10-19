@@ -6,6 +6,8 @@ public struct AutoPickup {
     public var mode:Mode = .off
     public private(set) var pending:UInt32?
     public private(set) var stoppedReason:String?
+    public private(set) var gathered=GatheredInventory()
+    private var beforePickup:[ContainerItem]=[]
     private var attempted:Set<UInt32> = []
     private var sentAt:TimeInterval = 0
     private var bag:UInt32=0, graphic=0, hue=0, previousAmount=0, pickedAmount=0
@@ -24,22 +26,29 @@ public struct AutoPickup {
     public mutating func begin(_ item:GroundItem,bag:UInt32,contents:[ContainerItem],at time:TimeInterval) {
         pending=item.serial; attempted.insert(item.serial); sentAt=time; stoppedReason=nil
         self.bag=bag; graphic=item.graphic; hue=item.hue; pickedAmount=max(1,item.amount)
+        beforePickup=contents.filter { $0.container==bag && $0.graphic==item.graphic && $0.hue==item.hue }
         previousAmount=contents.filter { $0.container==bag && $0.graphic==item.graphic && $0.hue==item.hue }.reduce(0) { $0+max(1,$1.amount) }
     }
     public mutating func receive(_ packet:Data) {
         guard pending != nil else { return }
         if packet.first == 0x27 || packet.first == 0x28 {
+            beforePickup=[]
             pending=nil; nextAt=sentAt+2
             stoppedReason="Auto-pickup skipped an item the server refused."
         }
     }
     public mutating func update(contents:[ContainerItem],at time:TimeInterval) {
+        gathered.reconcile(contents)
         guard let pending else { return }
         let arrived=contents.contains { $0.serial==pending && $0.container==bag }
         let amount=contents.filter { $0.container==bag && $0.graphic==graphic && $0.hue==hue }.reduce(0) { $0+max(1,$1.amount) }
-        if arrived || amount>=previousAmount+pickedAmount { self.pending=nil; nextAt=time+0.5 }
+        if arrived || amount>=previousAmount+pickedAmount {
+            gathered.confirm(graphic:graphic,hue:hue,amount:pickedAmount,bag:bag,before:beforePickup,after:contents)
+            beforePickup=[]; self.pending=nil; nextAt=time+0.5
+        }
         else if time-sentAt>=5 { stop("Auto-pickup stopped: no confirmed inventory update.") }
     }
     public mutating func skip(_ serial:UInt32) { attempted.insert(serial) }
-    public mutating func stop(_ reason:String) { mode = .off; pending=nil; stoppedReason=reason }
+    public mutating func relinquish(_ serial:UInt32) { gathered.relinquish(serial) }
+    public mutating func stop(_ reason:String) { mode = .off; pending=nil; beforePickup=[]; stoppedReason=reason }
 }
