@@ -8,6 +8,7 @@ final class VendorPanel: NSView {
     private let selling: Bool
     private let offers: [VendorOffer]
     private var pendingPurchase = false
+    private var tradeTimeout:Task<Void,Never>?
     private var quantities: [UInt32:Int] = [:]
     private let stock = NSStackView(), cart = NSStackView()
     private let gold:ClassicLabel
@@ -15,7 +16,7 @@ final class VendorPanel: NSView {
     private let status:ClassicLabel
     private var buttons: [NSButton] = []
     private var documents: [(NSScrollView, NSStackView)] = []
-    var onBuy: (([UInt32:Int]) -> Void)?
+    var onBuy: (([UInt32:Int]) -> String?)?
     var onClose: (() -> Void)?
     override var isFlipped: Bool { true }
     init(serial:UInt32, offers:[VendorOffer], assets:ClientAssets, selling:Bool = false) {
@@ -109,9 +110,28 @@ final class VendorPanel: NSView {
     }
     @objc private func buy() {
         guard !pendingPurchase, quantities.values.contains(where: { $0 > 0 }) else { return }
+        guard let onBuy else { status.stringValue="Vendor session closed. Request stock again."; return }
+        if let error=onBuy(quantities) { status.stringValue=error; return }
         pendingPurchase = true
         buttons.forEach { $0.isEnabled = false }; status.stringValue = "Trade sent. Waiting for the server…"
-        onBuy?(quantities)
+        tradeTimeout?.cancel()
+        tradeTimeout=Task { [weak self] in
+            try? await Task.sleep(nanoseconds:10_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.expirePendingTrade()
+        }
+    }
+    /// A missing close packet is not proof of a failed transaction. Keep the
+    /// accepted selection locked so another click cannot duplicate the trade.
+    func expirePendingTrade() {
+        guard pendingPurchase else { return }
+        tradeTimeout?.cancel(); tradeTimeout=nil
+        status.stringValue="No confirmation yet. Close and reopen vendor stock before trying again."
+        Telemetry.shared.record("vendor_trade_confirmation_timeout",["vendor":serial,"selling":selling])
+    }
+    override func viewWillMove(toSuperview newSuperview:NSView?) {
+        if newSuperview == nil { tradeTimeout?.cancel(); tradeTimeout=nil }
+        super.viewWillMove(toSuperview:newSuperview)
     }
     override func rightMouseDown(with event:NSEvent) { onClose?() }
 }

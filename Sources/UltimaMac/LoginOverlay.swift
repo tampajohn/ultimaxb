@@ -413,13 +413,17 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private var vendorSelling = false
     var onVendor: ((UInt32, [VendorOffer], Bool) -> Void)?
     var onVendorClosed: (() -> Void)?
-    func submitVendorTrade(_ quantities: [UInt32:Int]) {
-        guard loginComplete, let vendorSerial else { return }
+    func submitVendorTrade(_ quantities: [UInt32:Int]) -> String? {
+        guard loginComplete, let vendorSerial else { return "Vendor session closed. Request stock again." }
         do {
             let packet = try vendorSelling ? VendorPackets.sell(vendor:vendorSerial,offers:vendorOffers,quantities:quantities) : VendorPackets.buy(vendor:vendorSerial,offers:vendorOffers,quantities:quantities)
             connection.send(packet)
             Telemetry.shared.record(vendorSelling ? "vendor_sell_requested" : "vendor_buy_requested",["vendor":vendorSerial,"lines":quantities.filter { $0.value > 0 }.count])
-        } catch { onInventoryMessage?("The purchase selection is invalid. Request the vendor's stock again.") }
+            return nil
+        } catch {
+            Telemetry.shared.record("vendor_trade_invalid",["selling":vendorSelling])
+            return "Invalid trade selection. Clear it or request stock again."
+        }
     }
     func closeVendor() {
         if let vendorSerial { connection.send(vendorSelling ? VendorPackets.cancelSell(vendor:vendorSerial) : VendorPackets.cancel(vendor:vendorSerial)) }

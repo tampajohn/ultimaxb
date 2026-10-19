@@ -847,7 +847,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let vendor = VendorPanel(serial:serial,offers:offers,assets:self.assets,selling:selling)
                 vendor.updateGold(panel?.characterStatus?.gold)
                 panel?.requestStatus()
-                vendor.onBuy = { [weak panel] in panel?.submitVendorTrade($0) }
+                vendor.onBuy = { [weak panel] quantities in
+                    guard let panel else { return "Vendor session closed. Request stock again." }
+                    return panel.submitVendorTrade(quantities)
+                }
                 vendor.onClose = { [weak panel] in panel?.closeVendor() }
                 view.addSubview(vendor); self.vendorPanel = vendor
             }

@@ -34,10 +34,25 @@ import UOCore
   all(panel).compactMap { $0 as? NSButton }.first { $0.action == NSSelectorFromString("addItem:") }!.performClick(nil)
   all(panel).compactMap { $0 as? NSButton }.first { $0.action == NSSelectorFromString("removeItem:") }!.performClick(nil)
   precondition(abs(scroll.contentView.bounds.origin.y-offset)<1)
+  let accept=panel.subviews.compactMap { $0 as? NSButton }.first { $0.toolTip == (selling ? "Sell selected items" : "Buy selected items") }!
+  panel.onBuy = { _ in "Fixture validation failure" }
+  accept.performClick(nil)
+  precondition(accept.isEnabled)
+  precondition(all(panel).compactMap { $0 as? ClassicLabel }.contains { $0.stringValue == "Fixture validation failure" })
   var purchased = false
-  panel.onBuy = { quantities in precondition(quantities[20] == 1); purchased = true }
+  var submissions=0
+  panel.onBuy = { quantities in precondition(quantities[20] == 1); purchased = true; submissions += 1; return nil }
   panel.subviews.compactMap { $0 as? NSButton }.first { $0.toolTip == (selling ? "Sell selected items" : "Buy selected items") }!.performClick(nil)
   precondition(purchased)
+  panel.expirePendingTrade()
+  precondition(!accept.isEnabled)
+  precondition(all(panel).compactMap { $0 as? ClassicLabel }.contains { $0.stringValue.hasPrefix("No confirmation yet") })
+  accept.performClick(nil)
+  precondition(submissions == 1)
+  var closed=false
+  panel.onClose={closed=true}
+  panel.rightMouseDown(with:event)
+  precondition(closed)
   print("Vendor scroll artwork, gold display, double click and purchase callback passed")
  }
 }
