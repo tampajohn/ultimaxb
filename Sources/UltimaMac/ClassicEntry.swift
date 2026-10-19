@@ -3,12 +3,14 @@ import AppKit
 /// Use the same content rectangle for display and the native field editor.
 /// Center the visible game glyphs, whose bitmap ink occupies only part of the
 /// font's line box, rather than centering that line box alone.
-@MainActor private func centeredEntryRect(_ bounds:NSRect,font:NSFont?,view:NSView)->NSRect {
+@MainActor private func centeredEntryRect(_ bounds:NSRect,font:NSFont?,view:NSView,secure:Bool=false)->NSRect {
     guard let font else { return bounds }
     let line=ceil(font.ascender-font.descender+font.leading)
-    let text="Ag" as NSString
+    let text=(secure ? "*" : "Ag") as NSString
     let ink=text.boundingRect(with:NSSize(width:1000,height:1000),options:[.usesDeviceMetrics],attributes:[.font:font])
-    let optical=max(0,(line-ink.height)/2)
+    // Device metrics are relative to the baseline. Height alone loses the
+    // glyph's vertical offset and pushes both display and editing too low.
+    let optical=line/2-(font.ascender-ink.midY)
     let shift=max(0,(bounds.height-line)/2)+optical
     return NSRect(x:bounds.minX,y:bounds.minY+(view.isFlipped ? shift : -shift),width:bounds.width,height:line)
 }
@@ -39,7 +41,7 @@ import AppKit
     }
     override func drawingRect(forBounds rect:NSRect)->NSRect {
         guard let view=controlView else { return super.drawingRect(forBounds:rect) }
-        return centeredEntryRect(super.drawingRect(forBounds:rect),font:font,view:view)
+        return centeredEntryRect(super.drawingRect(forBounds:rect),font:font,view:view,secure:true)
     }
     override func select(withFrame rect:NSRect,in view:NSView,editor:NSText,delegate:Any?,start:Int,length:Int) {
         super.select(withFrame:drawingRect(forBounds:rect),in:view,editor:editor,delegate:delegate,start:start,length:length)

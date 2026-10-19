@@ -79,6 +79,14 @@ experimental and is not at parity yet.
 
 ## Local verification snapshot
 
+2026-10-19 typography follow-up: field centering now uses the glyph ink's
+baseline-relative bounds rather than height alone. Secure fields center the
+password mask glyph. Pixel-based AppKit fixtures verify ordinary and secure
+fields at 21/30/44-point heights, with identical glyph bounds before/during
+editing and centers within one rendered pixel. All 15 offline UI/packet
+fixtures pass in both harness runs. This addresses the low field alignment;
+it does not establish full original-menu layout parity.
+
 2026-10-18: 189 Swift tests executed, 2 opt-in integration tests skipped, no
 failures. The server-dialog harness additionally verifies page changes without
 replies, selection state and Unicode text across pages, plus formatted text, item art
