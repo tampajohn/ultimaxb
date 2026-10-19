@@ -4,10 +4,10 @@ A native **Swift macOS client for classic Ultima Online**, with the original Xbo
 as a later target. The current integration target is UO1998 and its 1.25.32-era
 protocol. This is an independent work in progress, not an official UO client.
 
-![Live UO1998 gameplay near the Minoc mine and forge](docs/screenshots/live-minoc-mining.png)
+![Live UO1998 travel along the coast](docs/screenshots/live-travel-coastal-route.png)
 
-*Actual player session on UO1998, October 18, 2026: Minoc mine entrance,
-forge, equipped pickaxe, radar, and status/skills sidebar.*
+*Actual UO1998 session, October 19, 2026: automatic travel with a dotted route,
+Gather enabled, classic bitmap UI, and stamina-reserve feedback.*
 
 The client connects to a shard, enters the world, renders terrain and animated
 characters with equipment, and supports movement, containers, vendors, chat,
@@ -15,8 +15,9 @@ targeting, skills, and basic spell/combat interactions. **Full classic-client
 parity is not finished.** See [status and remaining work](docs/STATUS.md).
 
 The goal also includes a [built-in assistant](docs/ASSISTANT.md), including
-automated mining and herding with selectable zones and visible controls. These
-workflows are planned and are not implemented yet.
+automatic travel, nearby ground-item gathering, and optional gathered-goods
+banking and overload recovery. Automated mining, lumberjacking, herding, smelting
+and crafting remain planned; the existing workflows still need live testing.
 
 ## Run on macOS
 
@@ -81,14 +82,33 @@ another app or chat.
 Open the paperdoll (**P**) and click **HELP** to request the server help menu,
 including any stuck/recovery options offered by the shard.
 
-Travel plans local sections and may stop at large or inaccessible obstacles.
+Open **Travel journal** in the sidebar to choose a town or edit a destination.
+Travel plans a complete static route, including bridges, then resolves local
+sections against visible obstacles. It prefers roads, falls back to a more direct
+connectivity search, opens blocking doors, and reserves stamina for nearby enemies.
+Optional gathering makes short detours to eligible items; banking and overload
+recovery operate only on goods confirmed as automatically gathered this session.
+Locked doors, disconnected islands and server refusals can still stop travel.
 Server validation remains authoritative for movement and item operations.
 
 ## Screenshots
 
-The lead image above is a window capture from an actual connected player session
-on UO1998. It shows the current client as played, including unfinished behavior
-and route feedback; it is not a staged render.
+The lead image and the following travel captures are unedited game-window
+screenshots from the connected UO1998 session on October 19, 2026. They show
+actual navigation, including unfinished behavior and server refusal messages;
+they are not staged renders. No desktop or login screen is included.
+
+| Forest travel and classic journal | Continuing through the forest |
+| --- | --- |
+| ![Live forest travel with journal](docs/screenshots/live-travel-forest-journal.png) | ![Live route near creatures](docs/screenshots/live-travel-forest-route.png) |
+
+The three captures show progress through (2122,928), (2269,796), and (2390,758).
+They document an active journey, not a claim that bank arrival or depositing
+completed successfully.
+
+![Earlier live Minoc mining session](docs/screenshots/live-minoc-mining.png)
+
+*October 18 session: Minoc mine entrance, forge and equipped pickaxe.*
 
 The images below are offline client renders and UI fixtures. Artwork is loaded
 from a separately installed game. The appearance preview uses optional 1.26-era
