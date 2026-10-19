@@ -788,3 +788,8 @@ against local OUO packet_manager.c and CrossUO DisplayDeath/animation groups.
 Returning from shard selection to the main menu now disconnects the pending login and resets stale lists before showing the account form again. Keyboard traversal includes only visible, enabled controls and focuses the current selection/creation screen. The shard action explicitly uses text-only drawing (AppKit can substitute a placeholder image when assigned nil).
 
 Validation: release build passed; `tools/check_login_flow.swift` injects offline server-list and failure events with isolated preferences, verifying shard → back → login and failure recovery without a network login. The existing gameplay instance remains running for live crowd-routing validation; these login changes take effect on the next relaunch.
+
+### 2026-10-19 — Travel recovery after forward progress
+- Replaced the journey-wide three-refusal budget with local obstruction recovery. Eight tiles of displacement from the first failure, confirmed by server movement acknowledgements, renew the budget. Repeated failures in one area remain limited to three replans. New routes start fresh.
+- Movement exposes the exact acknowledged step separately from the latest predicted display position. Queued predictions, duplicate acknowledgements and turns cannot renew retry allowance. Old blocked tiles are distance-pruned during recovery and the retained set is bounded.
+- Validation: 239 tests, five skips, no failures; release build passed. Added regression coverage for repeated nearby failures, renewed progress, stale obstacle pruning, and acknowledgement/prediction separation. Existing gameplay process was preserved; this recovery change and the login transition follow-up await the next relaunch/live validation.

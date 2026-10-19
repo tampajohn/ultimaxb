@@ -9,6 +9,7 @@ public struct PlayerMovement {
         let sentAt: TimeInterval
     }
     private var steps: [Step] = []
+    public private(set) var acknowledgedStep: WalkPoint?
     public private(set) var rejectedStep: WalkPoint?
     public var pendingCount: Int { steps.count }
     public var predictedPosition: WorldMobile? { steps.last?.predicted }
@@ -33,6 +34,7 @@ public struct PlayerMovement {
         return packet
     }
     public mutating func receive(_ packet: Data, player: WorldMobile) throws -> WorldMobile? {
+        acknowledgedStep = nil
         guard let opcode = packet.first else { throw LoginProtocolError.malformedPacket }
         if opcode == 0x20 {
             guard packet.count == 19 else { throw LoginProtocolError.malformedPacket }
@@ -56,6 +58,8 @@ public struct PlayerMovement {
         guard packet.count == 3 else { throw LoginProtocolError.malformedPacket }
         guard let first = steps.first, first.sequence == packet[1] else { return nil }
         steps.removeFirst()
+        let confirmed=WalkPoint(x:first.predicted.x,y:first.predicted.y,z:first.predicted.z)
+        if confirmed != first.origin { acknowledgedStep=confirmed }
         needsPosition = true
         // An older acknowledgement must never roll the display back over later predictions.
         let position = steps.last?.predicted ?? first.predicted

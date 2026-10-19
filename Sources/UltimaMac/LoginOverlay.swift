@@ -113,9 +113,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     var assistantScope:String { "\(host.stringValue):\(port.stringValue):\(playerSerial ?? 0)" }
     private var routeRunning = false
     private var routeResolver: ((WalkPoint,Set<WalkPoint>)->[WalkPoint]?)?
-    private var blockedRouteTiles: Set<WalkPoint> = []
+    private var routeRecovery=RouteRecovery()
     private var needsRouteRetry = false
-    private var routeRetries = 0
     private var routeContinues = false
     private var routeSegments = 0
     private var travelActivity:NSObjectProtocol?
@@ -126,13 +125,14 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         waitingDoor = nil
         if walkRoute != nil { Telemetry.shared.record("walk_route_cancelled") }
         walkRoute = nil; routeAction = nil; onWalkRoute?([])
-        routeResolver = nil; blockedRouteTiles.removeAll(); needsRouteRetry = false; routeRetries = 0; routeContinues = false; routeSegments = 0
+        routeResolver = nil; routeRecovery=RouteRecovery(); needsRouteRetry = false; routeContinues = false; routeSegments = 0
     }
     func followRoute(_ route:[WalkPoint], action:ArrivalAction?, running:Bool, continuing:Bool = false, resolver: @escaping (WalkPoint,Set<WalkPoint>)->[WalkPoint]?) {
         guard loginComplete else { return }
         if travelActivity == nil {
             travelActivity=ProcessInfo.processInfo.beginActivity(options:.userInitiatedAllowingIdleSystemSleep,reason:"Completing requested Ultima Online travel")
         }
+        routeRecovery=RouteRecovery(); needsRouteRetry=false
         routeResolver = resolver; routeContinues = continuing
         walkRoute = route; routeAction = action; routeRunning = running; onWalkRoute?(route)
         Telemetry.shared.record("walk_route_started",["steps":route.count,"target":action?.serial as Any? ?? NSNull(),"running":running])
@@ -191,9 +191,9 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         if needsRouteRetry, !movement.awaitingPosition, let serial = playerSerial, let player = world.mobiles[serial] {
             needsRouteRetry = false
             let start = WalkPoint(x:player.x,y:player.y,z:player.z)
-            if let route = routeResolver?(start,blockedRouteTiles) {
+            if let route = routeResolver?(start,routeRecovery.blocked) {
                 walkRoute = route; onWalkRoute?(route)
-                Telemetry.shared.record("walk_route_replanned",["attempt":routeRetries,"steps":route.count])
+                Telemetry.shared.record("walk_route_replanned",["attempt":routeRecovery.attempts,"steps":route.count])
             } else { cancelRoute(); onInventoryMessage?("No clear route around the obstruction.") }
         }
         if !movement.awaitingPosition, let serial = playerSerial, let player = world.mobiles[serial], var route = walkRoute {
@@ -207,7 +207,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                 } else { cancelRoute() }
             } else if movement.pendingCount == 0 && !movement.awaitingPosition {
                 if routeContinues {
-                    guard routeSegments < 256, let next = routeResolver?(current,blockedRouteTiles) else {
+                    guard routeSegments < 256, let next = routeResolver?(current,routeRecovery.blocked) else {
                         cancelRoute(); onInventoryMessage?("Unable to continue toward the map destination."); return
                     }
                     if !next.isEmpty {
@@ -1042,13 +1042,15 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         if let moved = try movement.receive(packet, player: player) {
                             Telemetry.shared.record(packet.first == 0x21 ? "move_denied" : "move_accepted",
                                 ["sequence": packet[1], "x": moved.x, "y": moved.y, "z": moved.z, "direction": moved.direction])
+                            if let confirmed=movement.acknowledgedStep { routeRecovery.progress(confirmed) }
                             world.setPlayerPosition(moved)
                             changed = true
                             if packet.first == 0x21 {
-                                if walkRoute != nil, let blocked = movement.rejectedStep, routeRetries < 3 {
-                                    blockedRouteTiles.insert(blocked); routeRetries += 1; needsRouteRetry = true
+                                if walkRoute != nil, let blocked = movement.rejectedStep,
+                                   routeRecovery.reject(blocked,from:WalkPoint(x:moved.x,y:moved.y,z:moved.z)) {
+                                    needsRouteRetry = true
                                     onWalkRoute?([])
-                                    Telemetry.shared.record("walk_route_retry_pending",["attempt":routeRetries,"x":blocked.x,"y":blocked.y,"z":blocked.z])
+                                    Telemetry.shared.record("walk_route_retry_pending",["attempt":routeRecovery.attempts,"x":blocked.x,"y":blocked.y,"z":blocked.z])
                                 } else { cancelRoute(); onInventoryMessage?("Movement was blocked; route stopped.") }
                                 connection.send(PlayerMovement.requestPosition)
                             }
