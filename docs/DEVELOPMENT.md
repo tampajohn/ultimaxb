@@ -284,8 +284,11 @@ Use `tools/run_macos.sh` to build, sign with the identity in ignored
 Stable certificate signing keeps Keychain identity consistent across rebuilds.
 The first migration from an ad-hoc binary can require one Keychain approval.
 
-Local metadata-only telemetry lives in `build/telemetry/session-*.jsonl` (16 MiB
-cap per run). It records pointer locations/control classes, semantic movement
+Local metadata-only telemetry lives in `build/telemetry/session-*.jsonl`. Each
+session keeps three chunks of at most 16 MiB: the base file is newest, `.1.jsonl`
+is the previous chunk and `.2.jsonl` is the oldest. Rotation preserves whole records;
+old chunks from the same session are discarded. Separate sessions remain separate.
+ It records pointer locations/control classes, semantic movement
 input, login stages, incoming/outgoing packet opcodes and sizes, world counts,
 player position/equipment, and movement acknowledgements/corrections. It excludes
 passwords, account/character names, field values, chat, and raw packet payloads.

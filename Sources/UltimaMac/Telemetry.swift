@@ -6,9 +6,8 @@ import Foundation
 @MainActor
 final class Telemetry {
     static let shared = Telemetry()
-    private var handle: FileHandle?
-    private var bytes = 0
-    private let limit = 16 * 1024 * 1024
+    private var file:TelemetryFile?
+    private let dateFormatter=ISO8601DateFormatter()
     private var monitor: Any?
     let path: String
     private init() {
@@ -18,22 +17,20 @@ final class Telemetry {
         let file = directory.appendingPathComponent(name)
         path = file.path
         do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            FileManager.default.createFile(atPath: file.path, contents: nil)
-            handle = try FileHandle(forWritingTo: file)
+            self.file=try TelemetryFile(url:file)
         } catch { print("Telemetry unavailable: \(error)") }
     }
     func record(_ event: String, _ fields: [String: Any] = [:]) {
-        guard let handle, bytes < limit else { return }
+        guard let file else { return }
         var row = fields
         row["event"] = event
-        row["time"] = ISO8601DateFormatter().string(from: Date())
+        row["time"] = dateFormatter.string(from: Date())
         row["uptime"] = ProcessInfo.processInfo.systemUptime
         guard JSONSerialization.isValidJSONObject(row),
               var data = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]) else { return }
         data.append(10)
-        do { try handle.write(contentsOf: data); bytes += data.count }
-        catch { self.handle = nil }
+        do { try file.append(data) }
+        catch { self.file = nil }
     }
     func installClickMonitor() {
         guard monitor == nil else { return }
