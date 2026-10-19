@@ -29,6 +29,11 @@ experimental and is not at parity yet.
   exceed item distance and a conservative closing-time margin for every detour
   step and pickup pause; shrinking clearance cancels the detour. These additions have offline packet coverage;
   the live Minoc bank entrance/deposit still needs retesting.
+- Automatic travel preserves a stamina reserve (about 25%, capped at ten).
+  It conserves by walking, spends the reserve for one enemy within four tiles
+  or at least two within eight, and holds escape pace for three seconds after
+  the threat clears. Recovery hysteresis avoids pace flicker. Exhaustion still
+  forces walking; manual Shift/Caps controls are unchanged.
 - Spellbook, legacy choice menus, original-art hue picker and death/resurrection prompt.
 - General 0xB0 dialogs: original gump images/resizable backgrounds, labels,
   buttons, pages, checkboxes, radio groups and editable fields; 0xB1 replies.

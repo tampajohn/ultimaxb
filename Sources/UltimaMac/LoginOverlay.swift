@@ -161,6 +161,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         bankingCancelled=true
         onRouteCancelled?()
         if let activity=travelActivity { ProcessInfo.processInfo.endActivity(activity); travelActivity=nil }
+        travelPace=TravelPace()
         waitingDoor = nil; travelDoor=nil; detourItem=nil; detourArrivedAt=nil; detourAttempts=[]; nextDetourAt=0
         if walkRoute != nil { Telemetry.shared.record("walk_route_cancelled") }
         walkRoute = nil; routeAction = nil; onWalkRoute?([])
@@ -171,7 +172,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         if travelActivity == nil {
             travelActivity=ProcessInfo.processInfo.beginActivity(options:.userInitiatedAllowingIdleSystemSleep,reason:"Completing requested Ultima Online travel")
         }
-        routeRecovery=RouteRecovery(); needsRouteRetry=false
+        routeRecovery=RouteRecovery(); needsRouteRetry=false; travelPace=TravelPace()
         travelDoor=nil; detourItem=nil; detourArrivedAt=nil; detourAttempts=[]; nextDetourAt=0
         routeResolver = resolver; routeContinues = continuing
         walkRoute = route; routeAction = action; routeRunning = running; onWalkRoute?(route)
@@ -551,9 +552,23 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         Telemetry.shared.record("arrival_action_performed",["serial":action.serial])
     }
     private var staminaWalking = false
+    private var travelPace=TravelPace()
     func move(direction requestedDirection: UInt8, routeStep:WalkPoint? = nil) {
-        let direction = MovementPace.direction(requestedDirection,stamina:characterStatus?.stamina)
-        let walking = direction != requestedDirection
+        var direction = MovementPace.direction(requestedDirection,stamina:characterStatus?.stamina)
+        if routeStep != nil,routeContinues,let serial=playerSerial,let player=world.mobiles[serial] {
+            let previous=travelPace.mode
+            let distances=world.mobiles.values.filter { $0.serial != serial && !$0.isGhost && ($0.isEnemy || $0.serial == combatTarget.serial) }
+                .map { max(abs($0.x-player.x),abs($0.y-player.y)) }
+            direction=travelPace.direction(requestedDirection,stamina:characterStatus?.stamina,
+                maximum:characterStatus?.maxStamina,enemyDistances:distances,at:ProcessInfo.processInfo.systemUptime)
+            if previous != travelPace.mode {
+                Telemetry.shared.record("travel_pace_changed",["mode":travelPace.mode.rawValue,
+                    "stamina":characterStatus?.stamina as Any? ?? NSNull(),"nearby_enemies":distances.filter { $0<=8 }.count])
+                if travelPace.mode == .conserving { onInventoryMessage?("Walking to save stamina for nearby enemies.") }
+                else if travelPace.mode == .escaping { onInventoryMessage?("Enemies nearby: using stamina reserve to run.") }
+            }
+        }
+        let walking = requestedDirection & 0x80 != 0 && direction & 0x80 == 0
         if walking != staminaWalking {
             staminaWalking = walking
             Telemetry.shared.record("stamina_pace_changed",["walking":walking,"stamina":characterStatus?.stamina as Any? ?? NSNull()])
