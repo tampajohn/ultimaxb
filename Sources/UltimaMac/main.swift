@@ -1261,7 +1261,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             for goal in goals {
                 if let path=route(to:goal,ignoringDoors:false) ?? route(to:goal,ignoringDoors:true),!path.isEmpty { return path }
             }
-            Telemetry.shared.record("travel_section_blocked",["x":start.x,"y":start.y,"candidates":goals.count,"opened_doors":openedLeaves.count])
+            let nearbyTiles=view.groundItems.filter { max(abs($0.x-start.x),abs($0.y-start.y))<=48 }
+            func coordinates(_ point:WalkPoint)->[Int] { [point.x,point.y,point.z] }
+            Telemetry.shared.record("travel_section_blocked",[
+                "x":start.x,"y":start.y,"z":start.z,"candidates":goals.count,"opened_doors":openedLeaves.count,
+                "ghost":view.player?.isGhost == true,
+                "goals":goals.map(coordinates),"blocked":blocked.map(coordinates),
+                "door_leaves":openedLeaves.map(coordinates),
+                "tile_count":nearbyTiles.count,
+                "collision_tiles":nearbyTiles.prefix(2048).map { [$0.x,$0.y,$0.z,$0.art,$0.isDynamic ? 1 : 0] }
+            ])
             return nil
         }
         guard let route=planner(start,[]) else { chatPanel.append("The route is planned, but a nearby obstacle blocks the first section."); return false }
