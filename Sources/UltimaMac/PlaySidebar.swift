@@ -38,12 +38,14 @@ final class PlaySidebar: ClassicPanel {
         pickup.toolTip="Cycle: off, nearby reagents, all nearby portable ground items. Refused items are skipped. Stops on timeout or disconnect."
         let travel=ClassicButton("Travel journal",fonts:assets.fonts,target:self,action:#selector(command(_:)))
         travel.tag=4; travel.frame=NSRect(x:12,y:408,width:256,height:28); addSubview(travel)
+        let harvest=ClassicButton("Harvest planning",fonts:assets.fonts,target:self,action:#selector(command(_:)))
+        harvest.tag=5; harvest.frame=NSRect(x:12,y:442,width:256,height:28); addSubview(harvest)
         addSubview(skills)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
     override func layout() {
         super.layout()
-        skills.frame = NSRect(x:0,y:444,width:bounds.width,height:max(80,bounds.height-444))
+        skills.frame = NSRect(x:0,y:478,width:bounds.width,height:max(80,bounds.height-478))
     }
     func updatePickupMode(_ mode:Int) {
         pickupMode=mode; pickupButton?.title=["Gather: off","Gather: reagents","Gather: all"][max(0,min(2,mode))]

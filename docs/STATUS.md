@@ -1010,3 +1010,9 @@ Validation: release build passed; `tools/check_login_flow.swift` injects offline
 - Quantity sliders draw the original 0x845/0x846 jewel thumb. Native slider tracking and keyboard behavior are retained.
 - Sprite IDs checked against the local CrossUO GumpDrag, GumpBaseScroll and GUIHTMLGump references. The installed era lacks later 0xFE/0x100 scrollbar graphics; the available journal thumb 0x1F is used vertically and 0xD8 horizontally.
 - Removed native entry bezels restored by convenience initialization. Thirteen offline UI fixtures passed, including original sprite presence, custom cell/scroller classes, scroll offsets, editing and split interaction tests. Quantity/scrollbar previews inspected; exact original scrollbar geometry remains different because native tracking bounds are retained.
+
+### 2026-10-19 — Moving pickups and harvest preview
+- Reachable opportunistic pickups no longer use detour enemy-clearance rules or pause ordinary travel waiting for inventory confirmation. Require reach from the current position and every outstanding movement origin/destination; position resynchronization still blocks pickup.
+- Detours keep conservative enemy checks. Manual inventory exclusion, weight limits, refusal handling and one outstanding lift remain intact.
+- Added packet-adapter regression for an adjacent enemy, pending movement, an actual pickup transaction and continued walking. Four focused core tests and all seventeen offline UI fixtures passed.
+- Harvest planning panel previews bounded mining/lumberjacking zones, reachable sites and map-picked centers, scoped to server/character. Original game fonts; screenshot inspected. Preview only: automatic harvesting is not enabled yet.

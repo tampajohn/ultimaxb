@@ -219,16 +219,14 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         if wasPending && autoPickup.pending == nil && autoPickup.mode == .off {
             onInventoryMessage?(autoPickup.stoppedReason ?? "Auto-pickup stopped."); onAutoPickupMode?(0)
         }
-        guard travelDoor == nil,waitingDoor == nil,!inventoryRecoveryBusy,manualTransfer.serial == nil,movement.pendingCount == 0,allowed,loginComplete,trade == nil,combatTarget.serial == nil,targetRequest == nil,now-manualInventoryAt>2,
+        guard travelDoor == nil,waitingDoor == nil,!inventoryRecoveryBusy,manualTransfer.serial == nil,!movement.awaitingPosition,allowed,loginComplete,trade == nil,combatTarget.serial == nil,targetRequest == nil,now-manualInventoryAt>2,
               let serial=playerSerial,let player=world.mobiles[serial],
               let weight=characterStatus?.weight,let strength=characterStatus?.strength,
               weight < 40+strength*7/2-10,
               let bag=world.equipment.values.first(where:{$0.owner==serial && $0.layer==21}),
               let item=autoPickup.select(items:Array(world.items.values),player:player,at:now,radius:AutoPickup.reach,portable:{ item in
                   (self.itemWeight?(item.graphic) ?? 255)<255 &&
-                  TravelSafety.pickupIsSafe(from:WalkPoint(x:player.x,y:player.y,z:player.z),
-                    target:WalkPoint(x:item.x,y:item.y,z:item.z),path:[],
-                    enemies:self.world.mobiles.values.filter { $0.serial != serial && $0.isEnemy })
+                  self.movement.canPickUp(at:WalkPoint(x:item.x,y:item.y,z:item.z),player:player)
               }) else { return }
         guard let unitWeight=itemWeight?(item.graphic),unitWeight<255,
               weight+unitWeight*max(1,item.amount)<40+strength*7/2-10 else {
@@ -372,7 +370,9 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         tickAutoPickup(allowed:allowRoute || walkRoute != nil)
         if tickGatheredRecovery() { return }
         if tickGatheredBanking() { return }
-        if autoPickup.pending != nil && walkRoute != nil { return }
+        // Opportunistic lifts do not stop escape/travel while inventory replies
+        // arrive. Only a dedicated pickup detour waits at its destination.
+        if autoPickup.pending != nil && detourItem != nil { return }
         if var waiting=travelDoor {
             switch waiting.wait.result(door:world.items[waiting.item.serial],at:ProcessInfo.processInfo.systemUptime) {
             case .waiting: return
@@ -454,6 +454,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                weight<40+strength*7/2-10 {
                 let nearby=world.items.values.filter { max(abs($0.x-player.x),abs($0.y-player.y))<=6 }
                 let candidates=autoPickup.candidates(items:Array(world.items.values),player:player,at:routeNow,radius:6,portable:{
+                    guard max(abs($0.x-player.x),abs($0.y-player.y))>AutoPickup.reach else { return false }
                     let unit=self.itemWeight?($0.graphic) ?? 255
                     return !self.detourAttempts.contains($0.serial) && unit<255 && weight+unit*max(1,$0.amount)<40+strength*7/2-10 &&
                         TravelSafety.pickupIsSafe(from:current,target:WalkPoint(x:$0.x,y:$0.y,z:$0.z),path:[],enemies:enemies)

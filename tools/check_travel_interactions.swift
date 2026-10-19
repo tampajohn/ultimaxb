@@ -142,6 +142,26 @@ import UOCore
         login.tickMovement()
         precondition(tried == [0x40000007,0x40000008],"An unreachable nearest item must not starve the next candidate")
         login.cancelRoute()
+        // A reachable resource must be lifted even beside enemies and with a
+        // movement acknowledgement outstanding. Inventory latency must not
+        // freeze the continuing route.
+        send(Data([0x1D,0x40,0,0,7])); send(Data([0x1D,0x40,0,0,8]))
+        send(Data([0x20,0,0,0,1,1,0x90,0,0,0,0,0,10,0,10,0,0,2,0]))
+        Thread.sleep(forTimeInterval:0.45)
+        login.followRoute([next,WalkPoint(x:12,y:10,z:0)],action:nil,running:false,continuing:true,resolver:{ _,_ in [WalkPoint(x:13,y:10,z:0)] })
+        login.tickMovement()
+        precondition(playerX==11)
+        send(Data([0x77,0,0,0,9,0,0xD9,0,11,0,11,0,0,0,0,0,6]))
+        send(Data([0x1A,0,16,0xC0,0,0,10,0x0F,0x7A,0,2,0,12,0,10,0]))
+        Thread.sleep(forTimeInterval:0.45); login.tickMovement()
+        precondition(playerX==12,"An in-reach pickup must not stop travel beside enemies")
+        // A manual transfer must be refused while the automatic lift awaits
+        // confirmation, proving the pickup actually began.
+        var pickupMessages:[String]=[]
+        login.onInventoryMessage={pickupMessages.append($0)}
+        login.moveItem(serial:0x4000000A,amount:2,x:0xFFFF,y:0xFFFF,target:0x40000002)
+        precondition(!pickupMessages.isEmpty,"Automatic pickup must own the inventory transaction")
+        login.cancelRoute()
         print("Travel door waits, threat clearance, movement settling and alternate pickup candidates passed")
     }
 }

@@ -13,6 +13,18 @@ public struct PlayerMovement {
     public private(set) var rejectedStep: WalkPoint?
     public var pendingCount: Int { steps.count }
     public var predictedPosition: WorldMobile? { steps.last?.predicted }
+    /// Pickup packets follow queued movement on the same connection. Require
+    /// reach throughout the outstanding predictions, including their origin,
+    /// so an unacknowledged step alone never authorizes a distant pickup.
+    public func canPickUp(at target:WalkPoint,player:WorldMobile)->Bool {
+        func inReach(_ point:WalkPoint)->Bool {
+            max(abs(point.x-target.x),abs(point.y-target.y))<=AutoPickup.reach &&
+                abs(point.z-target.z)<=16
+        }
+        return !awaitingPosition && inReach(WalkPoint(x:player.x,y:player.y,z:player.z)) &&
+            steps.allSatisfy { inReach($0.origin) &&
+                inReach(WalkPoint(x:$0.predicted.x,y:$0.predicted.y,z:$0.predicted.z)) }
+    }
     public private(set) var awaitingPosition = false
     private var sequence: UInt8 = 0
     private var nextRequestAt: TimeInterval = 0

@@ -127,6 +127,8 @@ final class WorldView: NSView {
     var debugCamera = false
     var onUseEquippedTool: (() -> Void)?
     var walkRoute:[WalkPoint] = []
+    var harvestBoundary:[WalkPoint]=[]
+    var harvestSites:[HarvestWorkflow.Site]=[]
     var combatTarget: UInt32?
     var onWarMode: (() -> Void)?
     var onAttack: ((UInt32) -> Void)?
@@ -392,6 +394,7 @@ final class WorldView: NSView {
             image.draw(in: imageRect, from: .zero, operation: .copy, fraction: 1,
                        respectFlipped: true, hints: nil)
         }
+        drawHarvestPreview()
         drawWalkRoute()
         drawObjectFeedback()
         if let point = controllerPoint {
@@ -532,6 +535,23 @@ final class WorldView: NSView {
         let newX = dragCenter.0 - Int(((dx + dy) / 44).rounded())
         let newY = dragCenter.1 - Int(((dy - dx) / 44).rounded())
         if cx != newX || cy != newY { followPlayer = false; cx = newX; cy = newY; refresh() }
+    }
+    private func drawHarvestPreview() {
+        guard !harvestBoundary.isEmpty else { return }
+        func screen(_ p:WalkPoint)->NSPoint {
+            NSPoint(x:imageRect.minX+(worldCenterX+(Double(p.x-p.y)-displayedCamera.x+displayedCamera.y)*22)*worldScale,
+                    y:imageRect.minY+(worldCenterY+(Double(p.x+p.y)-displayedCamera.x-displayedCamera.y)*22-Double(p.z)*4+22)*worldScale)
+        }
+        NSGraphicsContext.saveGraphicsState(); imageRect.clip()
+        let path=NSBezierPath(); path.move(to:screen(harvestBoundary[0]))
+        for point in harvestBoundary.dropFirst() { path.line(to:screen(point)) }; path.close()
+        NSColor(calibratedRed:0.85,green:0.65,blue:0.25,alpha:0.1).setFill(); path.fill()
+        NSColor(calibratedRed:1,green:0.8,blue:0.3,alpha:0.9).setStroke(); path.lineWidth=2; path.stroke()
+        for site in harvestSites {
+            let p=screen(.init(x:site.target.x,y:site.target.y,z:site.target.z))
+            NSBezierPath(ovalIn:NSRect(x:p.x-3,y:p.y-3,width:6,height:6)).stroke()
+        }
+        NSGraphicsContext.restoreGraphicsState()
     }
     private func drawWalkRoute() {
         guard let player, !walkRoute.isEmpty else { return }
@@ -687,6 +707,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var skillsPanel: SkillsPanel?
     private var mapPanel:MapPanel?
     private var travelPanel:TravelPanel?
+    private var harvestPanel:HarvestPanel?
     private var deathPanel:DeathPanel?
     private var textPromptPanel:TextPromptPanel?
     private var tradePanel:TradePanel?
@@ -1116,7 +1137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 view.window?.invalidateCursorRects(for:view)
                 view.sidebar?.isHidden = player == nil
                 view.sidebar?.updateEquipment(view.equipment, player:player?.serial, assets:view.assets)
-                if player == nil { self?.travelPanel?.removeFromSuperview(); self?.travelPanel=nil; self?.mapPanel?.onPickLocation=nil; view.resetDeathAnimations(); view.effects = WorldEffects(); self?.audio.stop(); view.sidebar?.updateStatus(nil); self?.skillsPanel?.update(SkillState()) }
+                if player == nil { self?.harvestPanel?.closePanel(); self?.harvestPanel=nil; view.harvestBoundary=[]; view.harvestSites=[]; self?.travelPanel?.removeFromSuperview(); self?.travelPanel=nil; self?.mapPanel?.onPickLocation=nil; view.resetDeathAnimations(); view.effects = WorldEffects(); self?.audio.stop(); view.sidebar?.updateStatus(nil); self?.skillsPanel?.update(SkillState()) }
                 view.needsLayout = true
                 if player == nil { self?.worldView?.overheadSpeech = OverheadSpeech(); self?.spellShortcuts.values.forEach { $0.removeFromSuperview() }; self?.spellShortcuts.removeAll(); self?.spellbooks.values.forEach { $0.removeFromSuperview() }; self?.spellbooks.removeAll(); self?.chatPanel.reset(); self?.journalPanel?.removeFromSuperview(); self?.characterPanel?.removeFromSuperview(); self?.characterPanel = nil; self?.containerPanels.values.forEach { $0.removeFromSuperview() }; self?.containerPanels.removeAll() }
                 if let player, view.followPlayer, player.x != view.cx || player.y != view.cy {
@@ -1170,6 +1191,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             loginOverlay = panel
         }
         if let worldView { loginOverlay?.show(in: worldView) }
+    }
+    private func showHarvest() {
+        guard let view=worldView,let login=loginOverlay,let player=view.player else { return }
+        harvestPanel?.closePanel()
+        let panel=HarvestPanel(assets:assets,scope:login.assistantScope,position:.init(x:player.x,y:player.y,z:player.z)); harvestPanel=panel
+        panel.onClear={ [weak view] in view?.harvestBoundary=[]; view?.harvestSites=[]; view?.needsDisplay=true }
+        panel.onPreview={ [weak self,weak view,weak panel] zone,kind in
+            guard let self,let view,let player=view.player else { return }
+            guard zone.contains(x:player.x,y:player.y) else { panel?.showResult("Enter the selected zone, then preview its reachable work sites."); return }
+            do {
+                let plan=try HarvestSitePlanner.discover(assets:self.assets,zone:zone,kind:kind,start:.init(x:player.x,y:player.y,z:player.z),additional:view.groundItems)
+                var edge:[WalkPoint]=[]
+                @MainActor func add(_ x:Int,_ y:Int) throws { edge.append(.init(x:x,y:y,z:try self.assets.elevation(x:x,y:y))) }
+                for x in zone.minX...zone.maxX { try add(x,zone.minY) }
+                for y in (zone.minY+1)...zone.maxY { try add(zone.maxX,y) }
+                for x in stride(from:zone.maxX-1,through:zone.minX,by:-1) { try add(x,zone.maxY) }
+                for y in stride(from:zone.maxY-1,through:zone.minY+1,by:-1) { try add(zone.minX,y) }
+                view.harvestBoundary=edge; view.harvestSites=plan.sites; view.needsDisplay=true
+                panel?.showResult("\(plan.sites.count) reachable work sites. Gold lines mark the zone; dots mark targets. Preview only."+(plan.searchTruncated || plan.omittedSites>0 ? " Reduce the radius to see all sites." : ""))
+                Telemetry.shared.record("harvest_zone_preview",["kind":kind == .mining ? "mining" : "lumberjacking","sites":plan.sites.count,"reachable":plan.reachablePoints,"truncated":plan.searchTruncated])
+            } catch { panel?.showResult("Could not preview this work zone.") }
+        }
+        panel.onPick={ [weak self,weak panel] in
+            guard let self else { return }
+            if self.mapPanel?.superview == nil { self.toggleMap() }
+            self.mapPanel?.showWorld(); panel?.isHidden=true
+            self.mapPanel?.onPickCancelled={ [weak panel] in panel?.isHidden=false }
+            self.mapPanel?.onPickLocation={ [weak panel] x,y in panel?.picked(x:x,y:y); panel?.isHidden=false }
+        }
+        view.addSubview(panel)
     }
     private func showTravel() {
         guard let view=worldView,let login=loginOverlay,view.player != nil else { return }
@@ -1412,6 +1463,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case 1: self?.loginOverlay?.openBackpack()
             case 2: self?.loginOverlay?.useEquippedTool()
             case 4: self?.showTravel()
+            case 5: self?.showHarvest()
             default: self?.loginOverlay?.toggleWarMode()
             }
             self?.window?.makeFirstResponder(self?.worldView)
