@@ -7,6 +7,8 @@ public struct GatheredBanking {
     public enum State:Equatable { case idle, opening, waitingContents, ready, transferring, retrying, complete, stopped(String) }
     public private(set) var state:State = .idle
     public private(set) var bank:UInt32?
+    public private(set) var depositedAmount=0
+    public private(set) var confirmedTransfers=0
     private var player:UInt32=0
     private var point=WalkPoint(x:0,y:0,z:0)
     private var deadline:TimeInterval=0
@@ -20,6 +22,7 @@ public struct GatheredBanking {
     public init() {}
     public mutating func begin(player:UInt32,at point:WalkPoint,time:TimeInterval)->Command {
         self.player=player; self.point=point; bank=nil; transfer=nil; retryCount=0; nextDepositAt=time
+        depositedAmount=0; confirmedTransfers=0
         state = .opening; deadline=time+5
         return .openBank
     }
@@ -72,6 +75,7 @@ public struct GatheredBanking {
                 if time>=deadline { stop("Bank deposit was not confirmed.") }
                 return nil
             }
+            depositedAmount += transfer.amount; confirmedTransfers += 1
             self.transfer=nil; state = .ready; retryCount=0; nextDepositAt=time+1
             // Wait for the caller to reconcile the gathered ledger. Never emit
             // the next transfer using the same pre-confirmation snapshot.

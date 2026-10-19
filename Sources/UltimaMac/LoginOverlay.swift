@@ -257,21 +257,27 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         guard let bag=world.equipment.values.first(where:{$0.owner==serial && $0.layer==21}) else {
             banking=nil; cancelRoute(); onInventoryMessage?("Banking stopped: backpack unavailable."); return false
         }
+        let previousTransfers=runner.confirmedTransfers
         let command=runner.next(position:WalkPoint(x:player.x,y:player.y,z:player.z),backpack:bag.serial,
                                 equipment:Array(world.equipment.values),contents:Array(world.containerItems.values),
                                 gathered:autoPickup.gathered,time:ProcessInfo.processInfo.systemUptime)
         banking=runner
+        if runner.confirmedTransfers>previousTransfers {
+            Telemetry.shared.record("gathered_bank_confirmed",["transfers":runner.confirmedTransfers,"amount":runner.depositedAmount])
+        }
         switch runner.state {
         case .complete:
             banking=nil; bankTransferUntil=0
             if let activity=travelActivity { ProcessInfo.processInfo.endActivity(activity); travelActivity=nil }
-            onInventoryMessage?("Gathered goods banked. Existing belongings were kept.")
-            Telemetry.shared.record("gathered_banking_completed"); return false
+            onInventoryMessage?(runner.confirmedTransfers==0
+                ? "No gathered goods to deposit. Existing belongings were kept."
+                : "Banked \(runner.depositedAmount) gathered items. Confirmed transfers: \(runner.confirmedTransfers). Existing belongings were kept.")
+            Telemetry.shared.record("gathered_banking_completed",["transfers":runner.confirmedTransfers,"amount":runner.depositedAmount]); return false
         case .stopped(let reason):
             banking=nil
             if let activity=travelActivity { ProcessInfo.processInfo.endActivity(activity); travelActivity=nil }
             onInventoryMessage?(reason)
-            Telemetry.shared.record("gathered_banking_stopped"); return false
+            Telemetry.shared.record("gathered_banking_stopped",["transfers":runner.confirmedTransfers,"amount":runner.depositedAmount]); return false
         default: break
         }
         if case .deposit(let item,let amount,let bank)=command {

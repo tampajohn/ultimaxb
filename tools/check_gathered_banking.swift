@@ -55,7 +55,14 @@ import UOCore
         precondition(messages.filter { $0=="Banking gathered goods…" }.count==2,"Retry explicit busy rejection after cooldown")
         send(contents(2,0x40000003))
         login.tickMovement(); Thread.sleep(forTimeInterval:1.05); login.tickMovement()
-        precondition(messages.contains("Gathered goods banked. Existing belongings were kept."))
+        precondition(messages.contains("Banked 2 gathered items. Confirmed transfers: 1. Existing belongings were kept."))
+        // An empty subsequent arrival must not claim another successful deposit.
+        login.followRoute([],action:nil,running:false,resolver:{ _,_ in [] })
+        login.bankGatheredOnArrival=true
+        login.tickMovement(); login.tickMovement()
+        send(Data([0x24,0x40,0,0,3,0,0x49])); send(Data([0x3C,0,5,0,0]))
+        login.tickMovement(); Thread.sleep(forTimeInterval:1.05); login.tickMovement()
+        precondition(messages.contains("No gathered goods to deposit. Existing belongings were kept."))
         print("Offline bank arrival, unrelated container rejection, single deposit and authoritative completion passed")
     }
 }

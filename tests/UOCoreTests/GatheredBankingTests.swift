@@ -21,6 +21,31 @@ final class GatheredBankingTests:XCTestCase {
         runner.contentsReceived(for:3)
         return runner
     }
+    func testTotalsRequireBothSidesAndResetForNextRun() {
+        var runner=ready()
+        XCTAssertNotNil(poll(&runner,[item(amount:14)]))
+        XCTAssertEqual(runner.depositedAmount,0)
+        XCTAssertNil(poll(&runner,[item(amount:10)],time:2))
+        XCTAssertEqual(runner.confirmedTransfers,0)
+        let after=[item(amount:10),item(9,amount:4,bag:3)]
+        XCTAssertNil(poll(&runner,after,time:3))
+        XCTAssertEqual(runner.depositedAmount,4)
+        XCTAssertEqual(runner.confirmedTransfers,1)
+        XCTAssertNil(poll(&runner,after,time:4))
+        XCTAssertNil(poll(&runner,after,time:5))
+        XCTAssertEqual(runner.state,.complete)
+        XCTAssertEqual(runner.depositedAmount,4,"Repeated updates must not count the deposit again")
+        _=runner.begin(player:1,at:point,time:6)
+        XCTAssertEqual(runner.depositedAmount,0)
+        XCTAssertEqual(runner.confirmedTransfers,0)
+    }
+    func testEmptyRunReportsZeroDeposits() {
+        var runner=ready()
+        XCTAssertNil(poll(&runner,[],time:1))
+        XCTAssertEqual(runner.state,.complete)
+        XCTAssertEqual(runner.depositedAmount,0)
+        XCTAssertEqual(runner.confirmedTransfers,0)
+    }
     func testRequiresOwnBankAndFullContents() {
         var runner=GatheredBanking()
         _=runner.begin(player:1,at:point,time:0)

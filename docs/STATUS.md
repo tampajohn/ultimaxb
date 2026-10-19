@@ -11,6 +11,11 @@ experimental and is not at parity yet.
 - Added per-pass strategy/outcome/expanded/popped telemetry and distinct messages for disconnected terrain, budget exhaustion and map-loading failure.
 - The local-asset intercity regression revalidates every returned step from the actual Britain position to Minoc, Vesper, Yew and Trinsic inns plus Minoc/Vesper bank approaches; all six pass in roughly 0.7–1.9 seconds each. Core regression: 277 tests, five skips, zero failures. All sixteen offline UI fixtures passed. Live travel still depends on server movement, dynamic obstacles and door responses.
 
+### 2026-10-19 — Confirmed banking totals and live travel evidence
+- The active session recorded two completed banking workflows with seven deposit requests each, and subsequent automatic pickup confirmations during travel. This is live evidence for those runs, not a guarantee for every banker, door or route.
+- Banking now counts units and transfers only when both source reduction and destination increase are confirmed. Completion reports those totals; an empty run explicitly says there were no gathered goods to deposit. Per-transfer confirmation, completion and stop telemetry include totals without item names or private payloads.
+- Eight banking core tests pass, including partial updates, repeat updates and resetting totals. All sixteen offline UI fixtures pass in both runner passes; the banking packet-adapter fixture covers a confirmed two-item deposit followed by an empty bank arrival. The current running session is preserved; the new reporting takes effect on the next launch.
+
 ## Implemented, with live shard testing still ongoing
 
 - Login, shard/character selection, reconnect, creation stats/skills/appearance.
