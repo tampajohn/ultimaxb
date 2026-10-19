@@ -71,13 +71,17 @@ play for routine tests.
 
 ### Banking implementation evidence (2026-10-19)
 
-`GatheredBanking` implements the deposit state machine, not yet wired to Travel
-or the live adapter. It requires an equipment entry owned by the player on layer
+`GatheredBanking` implements the deposit state machine, now wired to Travel
+and the game packet adapter. It requires an equipment entry owned by the player on layer
 29, a matching open-container event and a full contents response before choosing
 goods. Each transfer waits for both source reduction and destination increase;
 moving, losing bank identity, refusal and timeout stop execution. It never sends
 the next deposit from the same confirmation call. Thirteen focused gathering,
-overload and banking tests pass. Live opening/deposit behavior remains unverified.
+overload and banking tests pass. An additional offline adapter fixture verifies
+arrival, bank identity/contents, deposit serialization and inventory confirmation.
+Travel settings persist bank points independently of town coordinates, with map
+editing and a separate default-off banking switch. Live opening/deposit behavior
+and landmark approach tiles remain unverified.
 
 The local OUO reference `build/ouo/mobile.c`, `CMobile_OpenBankGump`, sends the
 bank entity, open-gump packet and contents in that order. `build/ouo/packet_handler.c`

@@ -26,8 +26,7 @@ experimental and is not at parity yet.
 
 ## Remaining parity work
 
-- Remaining Travel journal options: independently enable nearby chest looting
-  without lockpicking/stealing and bank arrival/opening/deposit of gathered goods.
+- Remaining Travel journal options: nearby chest looting without lockpicking/stealing.
   Track server-confirmed gathered quantities separately from existing inventory,
   including merged stacks. Preserve gold on overload. Do not infer ownership or
   permission to loot merely because a container opens. Bank destinations must be
@@ -43,8 +42,17 @@ experimental and is not at parity yet.
   operations wait for the outstanding transfer. Dropped stacks are skipped by
   gathering while still observed. Existing items are never candidates. Reconnect
   clears credits and pending recovery. Nine focused tests and offline UI fixtures
-  pass; live overload recovery remains unverified. Chest eligibility and bank
-  arrival/deposits remain pending.
+  pass; live overload recovery remains unverified.
+  "Bank gathered goods" is now a separate saved option. Its X/Y and map picker
+  edit bank destinations independently of town coordinates. Five sourced bank
+  landmarks are seeded; other destinations require a user-saved bank point.
+  Confirmed route completion requests the bank, verifies player-owned layer 29
+  plus a full contents response, and transfers gathered quantities one at a time.
+  Unrelated containers, movement, manual Stop, refusal and timeout stop deposits.
+  An offline packet-adapter fixture covers arrival, unrelated container rejection,
+  a single outstanding deposit and authoritative completion. Live banker reach,
+  approach tiles, bank capacity/refusal and old-era landmark fidelity remain
+  unverified. Chest eligibility remains pending.
 - Validate every interaction against live UO1998, particularly long travel,
   spellcasting, death/resurrection and general server dialogs.
 - Full original menu layouts, fonts and hue fidelity; more general gump commands

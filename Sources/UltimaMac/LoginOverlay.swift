@@ -138,7 +138,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         }
     }
     func cancelRoute() {
-        dropGatheredDuringTravel=false
+        dropGatheredDuringTravel=false; bankGatheredOnArrival=false; bankingRequested=false
+        bankingCancelled=true
         onRouteCancelled?()
         if let activity=travelActivity { ProcessInfo.processInfo.endActivity(activity); travelActivity=nil }
         waitingDoor = nil
@@ -159,9 +160,15 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     var itemWeight:((Int)->Int)?
     private var autoPickup = AutoPickup()
     var dropGatheredDuringTravel=false
+    var bankGatheredOnArrival=false
+    private var bankingRequested=false
+    private var banking:GatheredBanking?
+    private var bankingCancelled=false
+    private var bankContentsContext:UInt32?
+    private var bankTransferUntil:TimeInterval=0
     private var gatheredDrop:GatheredDrop?
     private var awaitingDropWeight:TimeInterval?
-    private var inventoryRecoveryBusy:Bool { gatheredDrop != nil || awaitingDropWeight != nil }
+    private var inventoryRecoveryBusy:Bool { gatheredDrop != nil || awaitingDropWeight != nil || banking != nil || bankingRequested || ProcessInfo.processInfo.systemUptime<bankTransferUntil }
     private var manualInventoryAt:TimeInterval = -.infinity
     var onAutoPickupMode:((Int)->Void)?
     func setAutoPickup(_ value:Int) {
@@ -200,6 +207,56 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             packets.forEach { connection.send($0) }
             Telemetry.shared.record("auto_pickup_started",["serial":item.serial,"graphic":item.graphic,"amount":item.amount])
         } catch { autoPickup.stop("Auto-pickup stopped: item cannot be moved."); onAutoPickupMode?(0) }
+    }
+    /// Called even with the window hidden, like the travel movement timer.
+    private func tickGatheredBanking()->Bool {
+        guard loginComplete,let serial=playerSerial,let player=world.mobiles[serial] else { return false }
+        if bankingRequested {
+            guard autoPickup.pending==nil,movement.pendingCount==0,!movement.awaitingPosition else { return true }
+            bankingRequested=false
+            guard !player.isGhost,trade==nil,targetRequest==nil,combatTarget.serial==nil else {
+                cancelRoute(); onInventoryMessage?("Banking stopped for your current interaction."); return false
+            }
+            var runner=GatheredBanking()
+            _=runner.begin(player:serial,at:WalkPoint(x:player.x,y:player.y,z:player.z),time:ProcessInfo.processInfo.systemUptime)
+            banking=runner; bankingCancelled=false; bankContentsContext=nil
+            _=say("bank")
+            onInventoryMessage?("Requesting your bank box…")
+            Telemetry.shared.record("gathered_bank_open_requested")
+        }
+        guard var runner=banking else { return false }
+        if trade != nil || targetRequest != nil || combatTarget.serial != nil || player.isGhost { bankingCancelled=true }
+        if bankingCancelled && runner.state != .transferring { runner.stop("Banking cancelled.") }
+        guard let bag=world.equipment.values.first(where:{$0.owner==serial && $0.layer==21}) else {
+            banking=nil; cancelRoute(); onInventoryMessage?("Banking stopped: backpack unavailable."); return false
+        }
+        let command=runner.next(position:WalkPoint(x:player.x,y:player.y,z:player.z),backpack:bag.serial,
+                                equipment:Array(world.equipment.values),contents:Array(world.containerItems.values),
+                                gathered:autoPickup.gathered,time:ProcessInfo.processInfo.systemUptime)
+        banking=runner
+        switch runner.state {
+        case .complete:
+            banking=nil; bankTransferUntil=0
+            if let activity=travelActivity { ProcessInfo.processInfo.endActivity(activity); travelActivity=nil }
+            onInventoryMessage?("Gathered goods banked. Existing belongings were kept.")
+            Telemetry.shared.record("gathered_banking_completed"); return false
+        case .stopped(let reason):
+            banking=nil
+            if let activity=travelActivity { ProcessInfo.processInfo.endActivity(activity); travelActivity=nil }
+            onInventoryMessage?(reason)
+            Telemetry.shared.record("gathered_banking_stopped"); return false
+        default: break
+        }
+        if case .deposit(let item,let amount,let bank)=command {
+            do {
+                let packets=try world.movePackets(serial:item,amount:amount,player:serial,x:0xFFFF,y:0xFFFF,target:bank,z:0)
+                bankTransferUntil=ProcessInfo.processInfo.systemUptime+5
+                packets.forEach { connection.send($0) }
+                onInventoryMessage?("Banking gathered goods…")
+                Telemetry.shared.record("gathered_bank_deposit",["serial":item,"amount":amount,"bank":bank])
+            } catch { banking?.stop("Gathered item is no longer available.") }
+        }
+        return true
     }
     /// Returns true while movement must wait for an outstanding transfer.
     private func tickGatheredRecovery()->Bool {
@@ -272,6 +329,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         } else if !movement.positionSyncTimedOut { reportedMovementSyncTimeout=false }
         tickAutoPickup(allowed:allowRoute || walkRoute != nil)
         if tickGatheredRecovery() { return }
+        if tickGatheredBanking() { return }
         // Focus gates opportunistic gathering and direct input, not an explicit route.
         // Stop/manual input/disconnect still cancel travel through cancelRoute().
         if let waiting = waitingDoor {
@@ -320,7 +378,10 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                 }
                 let action = routeAction; walkRoute = nil; routeAction = nil; onWalkRoute?([])
                 dropGatheredDuringTravel=false
-                if let activity=travelActivity { ProcessInfo.processInfo.endActivity(activity); travelActivity=nil }
+                if bankGatheredOnArrival {
+                    bankGatheredOnArrival=false; bankingRequested=true; bankingCancelled=false
+                }
+                if !bankingRequested,let activity=travelActivity { ProcessInfo.processInfo.endActivity(activity); travelActivity=nil }
                 if let action { performArrival(action, player: player) }
                 Telemetry.shared.record("walk_route_completed")
             }
@@ -1045,7 +1106,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         statusRefreshTask?.cancel(); statusRefreshTask = nil
         world = WorldState()
         servers=[]; characters=[]; cities=[]; choices.removeAllItems(); cityChoice.removeAllItems()
-        autoPickup = AutoPickup(); gatheredDrop=nil; awaitingDropWeight=nil; dropGatheredDuringTravel=false; onAutoPickupMode?(0)
+        autoPickup = AutoPickup(); gatheredDrop=nil; awaitingDropWeight=nil; dropGatheredDuringTravel=false; banking=nil; bankingRequested=false; bankGatheredOnArrival=false; bankContentsContext=nil; bankTransferUntil=0; onAutoPickupMode?(0)
         hoverInspection = HoverInspection()
         lastContainerContents = []; stagedVendorOffers = []; vendorOffers = []; vendorSerial = nil; onVendorClosed?()
         pendingDeletion = nil; characterCreation.isHidden = true; characterSelection.isHidden = true; card.isHidden = false; artwork.showsForm=true
@@ -1109,6 +1170,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                     let pickupPending=autoPickup.pending != nil
                     autoPickup.receive(packet)
                     gatheredDrop?.receive(packet)
+                    if packet.first==0x27 || packet.first==0x28 { banking?.refuse() }
                     if pickupPending && autoPickup.pending == nil {
                         onAutoPickupMode?(autoPickup.mode.rawValue)
                         onInventoryMessage?(autoPickup.stoppedReason ?? "Auto-pickup stopped.")
@@ -1295,6 +1357,10 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                     case 0x25, 0x3C:
                         if packet.first == 0x3C {
                             lastContainerContents = try ContainerItem.decode(packet)
+                            let parents=Set(lastContainerContents.map(\.container))
+                            if let root=bankContentsContext,
+                               parents.isEmpty || parents == Set([root]) { banking?.contentsReceived(for:root) }
+                            bankContentsContext=nil
                             if awaitingSpellbook {
                                 awaitingSpellbook = false
                                 if let serial = availableSpellbook() { use(serial:serial) }
@@ -1304,6 +1370,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         onInventoryMessage?("Inventory updated. Drag to move; drag a stack to split it.")
                     case 0x24:
                         if let container = world.openContainer {
+                            bankContentsContext=container.serial
+                            banking?.opened(container.serial,equipment:Array(world.equipment.values),time:ProcessInfo.processInfo.systemUptime)
                             if container.graphic != 0x30 { openObjectWindows.register(container.serial,world:world,player:playerSerial) }
                             if container.graphic == 0xFFFF {
                                 onSpellbookOpened?(container.serial,Array(world.containerItems.values))

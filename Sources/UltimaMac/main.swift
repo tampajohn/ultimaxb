@@ -1150,7 +1150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         travelPanel?.removeFromSuperview()
         let panel=TravelPanel(assets:assets,scope:login.assistantScope); travelPanel=panel
         panel.onGo = { [weak self,weak panel] x,y in
-            self?.travelOnMap(x:x,y:y,dropGathered:panel?.dropGatheredWhenOverloaded ?? false); self?.window?.makeFirstResponder(self?.worldView)
+            self?.travelOnMap(x:x,y:y,dropGathered:panel?.dropGatheredWhenOverloaded ?? false,bankGathered:panel?.bankGatheredOnArrival ?? false); self?.window?.makeFirstResponder(self?.worldView)
         }
         panel.onStop = { [weak self] in self?.loginOverlay?.cancelRoute() }
         panel.onPick = { [weak self,weak panel] in
@@ -1165,7 +1165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     private var travelPlanning:Task<Void,Never>?
     private var travelWorker:Task<[WalkPoint]?,Never>?
-    private func travelOnMap(x:Int,y:Int,dropGathered:Bool=false) {
+    private func travelOnMap(x:Int,y:Int,dropGathered:Bool=false,bankGathered:Bool=false) {
         guard let view = worldView, let player = view.player, let panel = loginOverlay else { return }
         panel.cancelRoute()
         travelPlanning?.cancel(); travelWorker?.cancel()
@@ -1189,6 +1189,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let route else { self.chatPanel.append("No complete walking route found within the search budget. Try a nearer waypoint."); return }
             self.beginWorldTravel(route,start:start,x:x,y:y,panel:panel,view:view)
             panel.dropGatheredDuringTravel=dropGathered
+            panel.bankGatheredOnArrival=bankGathered
         }
     }
     private func beginWorldTravel(_ itinerary:[WalkPoint],start:WalkPoint,x:Int,y:Int,panel:LoginOverlay,view:WorldView) {

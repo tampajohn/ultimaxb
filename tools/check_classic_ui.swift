@@ -78,16 +78,35 @@ import UOCore
         packet += Data([0,25,0,30,0,1,0, 0,30,0,15,0,16, 0,12,0,15,0,9,0,16, 0,0,1,44, 0,10,0,55])
         try status.apply(packet); sidebar.updateStatus(status)
         try capture(sidebar,"classic-sidebar")
-        let travel=TravelPanel(assets:assets,scope:"ui-check")
+        let travelScope="ui-check-\(UUID().uuidString)"
+        let travel=TravelPanel(assets:assets,scope:travelScope)
         let recovery=descendants(travel).compactMap { $0 as? ClassicButton }.first {
             $0.action == NSSelectorFromString("toggleRecovery:")
         }!
         let previous=travel.dropGatheredWhenOverloaded
         recovery.performClick(nil)
         precondition(travel.dropGatheredWhenOverloaded != previous)
-        let reopened=TravelPanel(assets:assets,scope:"ui-check")
+        let reopened=TravelPanel(assets:assets,scope:travelScope)
         precondition(reopened.dropGatheredWhenOverloaded == travel.dropGatheredWhenOverloaded)
         recovery.performClick(nil)
+        let banking=descendants(travel).compactMap { $0 as? ClassicButton }.first {
+            $0.action == NSSelectorFromString("toggleBanking:")
+        }!
+        let coordinate=descendants(travel).compactMap { $0 as? NSTextField }.first { $0.accessibilityLabel()=="X" }!
+        let townX=coordinate.stringValue
+        banking.performClick(nil)
+        precondition(travel.bankGatheredOnArrival && coordinate.stringValue=="2503")
+        travel.picked(x:2504,y:554)
+        descendants(travel).compactMap { $0 as? ClassicButton }.first { $0.action==NSSelectorFromString("save") }!.performClick(nil)
+        banking.performClick(nil)
+        precondition(coordinate.stringValue==townX,"Editing bank points must preserve town destinations")
+        banking.performClick(nil)
+        precondition(coordinate.stringValue=="2504")
+        let restored=TravelPanel(assets:assets,scope:travelScope)
+        precondition(restored.bankGatheredOnArrival)
+        precondition(descendants(restored).compactMap { $0 as? NSTextField }.first { $0.accessibilityLabel()=="X" }!.stringValue=="2504")
+        let preferences=UserDefaults(suiteName:"com.ultimaxb.UltimaMac")!
+        for suffix in ["",".banks",".bankGathered",".dropGathered"] { preferences.removeObject(forKey:"travel.v1.\(travelScope)"+suffix) }
         try capture(travel,"travel-journal")
         print("Login, sidebar, and travel journal rendered from installed assets; no credentials loaded or network requests sent")
     }
