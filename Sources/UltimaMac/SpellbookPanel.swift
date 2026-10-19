@@ -5,6 +5,7 @@ import UOCore
 final class SpellbookPanel:NSView {
     let serial:UInt32
     private let assets:ClientAssets
+    private let bitmap:ClassicText
     private var known:Set<Int> = []
     private var pair = 0
     private var detailPair:Int?
@@ -18,6 +19,7 @@ final class SpellbookPanel:NSView {
     override var isFlipped:Bool { true }
     init(serial:UInt32,assets:ClientAssets) {
         self.serial = serial; self.assets = assets
+        bitmap=ClassicText(assets.fonts,color:(45,30,15),outlined:false)
         super.init(frame:NSRect(x:310,y:70,width:406,height:229))
         toolTip = "Spellbook · Double-click a known spell to cast · Click a name for details · Circle tabs return to the index · Right-click closes · Drag blank paper to move"
         setAccessibilityLabel("Spellbook")
@@ -27,13 +29,22 @@ final class SpellbookPanel:NSView {
         let updated = ClassicSpells.contents(book:serial,items:items)
         guard updated != known else { return }
         pendingSelection?.cancel()
+        let visibleIDs=detailPair.map { Array(ordered.dropFirst($0*2).prefix(2)) } ?? []
         known = updated
-        if let detailPair, detailPair*2 >= known.count { self.detailPair = nil }
+        if detailPair != nil {
+            // Inventory packets can insert lower-numbered spells ahead of the
+            // current page. Preserve a visible spell, not its old array offset.
+            self.detailPair=visibleIDs.compactMap { ordered.firstIndex(of:$0) }.first.map { $0/2 }
+        }
         needsDisplay = true
     }
     private func label(_ text:String,x:Int,y:Int,width:Int = 140,height:Int = 22,size:CGFloat = 13) {
-        (text as NSString).draw(in:NSRect(x:x,y:y,width:width,height:height),
-            withAttributes:[.font:NSFont(name:"Times",size:size) ?? NSFont.systemFont(ofSize:size),.foregroundColor:NSColor.black])
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect:NSRect(x:x,y:y,width:width,height:height)).addClip()
+        for (index,line) in bitmap.lines(text,width:CGFloat(width)).enumerated() where index*14<height {
+            bitmap.draw(line,at:NSPoint(x:x,y:y+index*14))
+        }
+        NSGraphicsContext.restoreGraphicsState()
     }
     private func turn(_ delta:Int) {
         pendingSelection?.cancel()
@@ -60,11 +71,11 @@ final class SpellbookPanel:NSView {
                 guard index<ids.count,let detail = ClassicSpells.detail(id:ids[index]) else { continue }
                 let id = ids[index], x = side == 0 ? 56 : 224
                 label("Circle \((id-1)/8+1)",x:x+28,y:10)
-                sprite(detail.icon,at:NSPoint(x:x,y:40))
-                label(ClassicSpells.names[id-1],x:x+48,y:32,width:94,height:34)
-                label(detail.words,x:x+48,y:66,width:94,height:30,size:11)
+                sprite(detail.icon,at:NSPoint(x:x,y:57))
+                label(ClassicSpells.names[id-1],x:x+48,y:38,width:94,height:28)
+                label(detail.words,x:x+48,y:70,width:94,height:28,size:11)
                 label("Reagents:",x:x,y:101)
-                label(detail.reagents.joined(separator:"\n"),x:x,y:121,height:52,size:11)
+                label(detail.reagents.joined(separator:"\n"),x:x,y:116,height:56,size:11)
             }
         } else {
             for page in 0..<2 {
@@ -72,7 +83,7 @@ final class SpellbookPanel:NSView {
                 label("Circle \(circle+1)",x:x,y:23,size:14)
                 for row in 0..<8 {
                     let id = circle*8+row+1
-                    let text = known.contains(id) ? ClassicSpells.names[id-1] : "—"
+                    let text = known.contains(id) ? ClassicSpells.names[id-1] : "-"
                     label(text,x:x,y:48+row*15)
                 }
             }

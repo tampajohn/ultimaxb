@@ -29,9 +29,12 @@ import UOCore
   click(15,x:330,count:1)
   click(50)
   precondition(casts == [4,4,7])
+  panel.update([1,2,3,4,7,9,16].map { ContainerItem(serial:UInt32($0),graphic:0x1F2D,amount:$0,x:0,y:0,container:100,hue:0) })
+  click(50)
+  precondition(casts == [4,4,7,7])
   click(180,x:60,count:1)
   click(95)
-  precondition(casts == [4,4,7,4])
+  precondition(casts == [4,4,7,7,4])
   var shortcuts:[Int] = []
   panel.onShortcut = { id,_ in shortcuts.append(id) }
   click(95,count:1)
@@ -41,7 +44,7 @@ import UOCore
   }
   drag(72,95); precondition(shortcuts.isEmpty)
   drag(300,200); precondition(shortcuts == [4])
-  precondition(casts == [4,4,7,4])
+  precondition(casts == [4,4,7,7,4])
   let shortcut = SpellShortcut(spell:4,assets:assets)
   panel.addSubview(shortcut)
   shortcut.place(at:NSPoint(x:1000,y:-100),in:panel)
