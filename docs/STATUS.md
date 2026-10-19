@@ -1058,3 +1058,14 @@ Validation: release build passed; `tools/check_login_flow.swift` injects offline
 - The client waits one second after entering the world before applying an optional region track. Any server music event (including silence and death music) suppresses fallback for that connection. Disconnect resets the decision; movement does not repeatedly replace server music.
 - Load original region data with `--regions PATH`, or place regions.txt in the installed client directory. The workspace launcher uses the existing local demo regions.txt when available, without copying or committing it. Demo boundaries can differ from UO1998; live server tracks remain authoritative.
 - Six region/spawn policy tests passed; release build and launcher syntax check passed. Live audible reconnect validation remains pending. Missing/unknown regional assignments remain silent rather than choosing an arbitrary song.
+
+### 2026-10-19 — Live harvesting recovery verified
+- Current-client metadata records depletion at 23:16:41 UTC, travel at 23:16:42 and a successful gain at 23:16:57; further depletion/travel/gain sequences followed. This verifies changing work sites in live UO1998. Several runs now stop at the carrying-weight reserve rather than unreachable routing.
+- Fixed the actual panel's repeated Start path: it previously invoked Preview (which cancels the active run) before reaching the adapter's duplicate-start guard. The panel now checks active harvesting before preview or callbacks.
+- Weight-reserve, exhausted-route and repeated-failure messages now describe recovery actions. Automatic smelting/hauling remains pending; no server resource-bank dimensions are assumed for skipping neighboring depleted targets.
+- All eighteen pre-menu UI fixtures passed, including a repeated Start assertion proving it neither previews nor cancels an active workflow. User's subsequent report was correlated with depletion, advancement to the next target, then cancellation followed immediately by zone preview; the running build predated this panel fix.
+
+### 2026-10-19 — Server menu first-paint layout
+- Server icon menus now initialize game fonts and classic scrollbars before first display and composite as a clipped layer. Previously fonts/scrollers could change during a later window update. Icon buttons preserve native proportions instead of stretching to their entire cells; the footer fits its frame and uses a tooltip for cancellation instructions.
+- Scrollbars are created only when the options exceed the visible area. Added an offline fixture comparing initial and moved renders byte-for-byte and verifying game fonts and option selection. Screenshot inspected.
+- All nineteen offline UI fixtures passed in both passes, including server-menu initial/moved rendering and harvesting controls. Live menu redraw behavior remains for user verification.

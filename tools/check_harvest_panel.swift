@@ -34,6 +34,11 @@ import UOCore
         panel.onStart={zone,_ in started=zone.minX==2592 && zone.maxX==2608 }
         panel.onStop={stopped=true}
         panel.startHarvesting(); precondition(started)
+        stopped=false; started=false
+        let beforeRepeat=previews
+        panel.isHarvesting={true}
+        panel.startHarvesting()
+        precondition(!stopped && !started && previews==beforeRepeat,"Repeated Start must not preview/cancel an active workflow")
         panel.stopHarvesting(); precondition(stopped)
         panel.showResult("23 reachable work sites. Gold lines mark the zone; dots mark targets. Start runs up to 100 successes; Stop cancels.")
         let window=NSWindow(contentRect:NSRect(x:0,y:0,width:420,height:430),styleMask:[.borderless],backing:.buffered,defer:false)

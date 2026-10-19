@@ -15,6 +15,7 @@ import UOCore
     var onPlayerPosition:(()->WalkPoint?)?
     var onStart:((HarvestWorkflow.Zone,HarvestOutcome.Kind)->Void)?
     var onStop:(()->Void)?
+    var isHarvesting:(()->Bool)?
     private var validatedZone:HarvestWorkflow.Zone?
     init(assets:ClientAssets,scope:String,position:WalkPoint,defaults:UserDefaults = UserDefaults(suiteName:"com.ultimaxb.UltimaMac")!) {
         self.assets=assets; self.defaults=defaults; key="harvest.preview.v1.\(scope)"
@@ -65,6 +66,9 @@ import UOCore
         preview()
     }
     @objc func startHarvesting() {
+        guard isHarvesting?() != true else {
+            showResult("Harvesting is already running. Choose Stop before starting another run."); return
+        }
         preview()
         if let zone=validatedZone { onStart?(zone,kind) }
     }

@@ -1216,6 +1216,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let panel=HarvestPanel(assets:assets,scope:login.assistantScope,position:.init(x:player.x,y:player.y,z:player.z)); harvestPanel=panel
         panel.onPlayerPosition={ [weak view] in view?.player.map { WalkPoint(x:$0.x,y:$0.y,z:$0.z) } }
         panel.onStop={ [weak login] in login?.stopHarvest() }
+        panel.isHarvesting={ [weak login] in login?.harvestActive ?? false }
         login.onHarvestStatus={ [weak panel] text in panel?.showResult(text) }
         panel.onStart={ [weak self,weak view,weak login,weak panel] zone,kind in
             guard let self,let view,let login,let player=view.player,

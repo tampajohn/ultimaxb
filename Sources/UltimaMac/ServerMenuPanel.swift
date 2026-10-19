@@ -11,18 +11,22 @@ final class ServerMenuPanel:NSView {
     init(menu:ServerMenu,assets:ClientAssets) {
         self.definition = menu; self.assets = assets
         super.init(frame:NSRect(x:320,y:120,width:menu.usesIcons ? 296 : 400,height:menu.usesIcons ? 136 : 360))
+        // Composite the parchment and scroll contents together on first paint.
+        // Otherwise the live world can invalidate only part of this unlayered panel.
+        wantsLayer=true; layer?.masksToBounds=true
         let title = NSTextField(labelWithString:menu.title)
+        title.font=ClassicNativeFont.uiFont
         title.frame = menu.usesIcons ? NSRect(x:39,y:15,width:218,height:24) : NSRect(x:20,y:16,width:360,height:42)
         title.textColor = menu.usesIcons ? .white : .black; title.lineBreakMode = .byTruncatingTail
         title.toolTip = menu.title; addSubview(title)
         let scroll = NSScrollView(frame:menu.usesIcons ? NSRect(x:40,y:42,width:217,height:49) : NSRect(x:20,y:65,width:360,height:240))
-        scroll.drawsBackground = false; scroll.hasHorizontalScroller = menu.usesIcons; scroll.hasVerticalScroller = !menu.usesIcons
+        scroll.drawsBackground = false; scroll.hasHorizontalScroller = menu.usesIcons && menu.options.count*62>217; scroll.hasVerticalScroller = !menu.usesIcons && menu.options.count*30>240
         let content = MenuContent(frame:NSRect(x:0,y:0,width:menu.usesIcons ? max(217,menu.options.count*62) : 340,height:menu.usesIcons ? 49 : max(240,menu.options.count*30)))
         for option in menu.options {
             let button = MenuOptionButton(option.title.isEmpty ? "Choice \(option.index)" : option.title,fonts:assets.fonts,target:self,action:#selector(choose(_:)))
             button.tag = option.index; button.toolTip = option.title
             button.onHover = { [weak self] inside in
-                self?.detail.stringValue = inside ? option.title : "Choose an item · Right-click cancels"
+                self?.detail.stringValue = inside ? option.title : "Choose an item"
             }
             button.frame = menu.usesIcons ? NSRect(x:(option.index-1)*62,y:0,width:60,height:38) : NSRect(x:0,y:(option.index-1)*30,width:335,height:28)
             if menu.usesIcons, let sprite = try? assets.sprite(option.graphic+0x4000) {
@@ -31,8 +35,13 @@ final class ServerMenuPanel:NSView {
             }
             button.setAccessibilityLabel(option.title); content.addSubview(button)
         }
-        scroll.documentView = content; addSubview(scroll)
-        detail.stringValue = menu.usesIcons ? "Choose an item · Right-click cancels" : "Right-click cancels"
+        scroll.documentView = content
+        ClassicControlArt.apply(to:scroll)
+        scroll.tile()
+        addSubview(scroll)
+        detail.stringValue = menu.usesIcons ? "Choose an item" : "Right-click cancels"
+        detail.lineBreakMode = .byTruncatingTail
+        detail.toolTip = "Right-click to cancel"
         detail.font = ClassicNativeFont.uiFont; detail.textColor = menu.usesIcons ? .white : .black
         detail.frame = NSRect(x:menu.usesIcons ? 40 : 20,y:menu.usesIcons ? 105 : 320,width:menu.usesIcons ? 217 : 360,height:20); addSubview(detail)
     }
@@ -79,6 +88,14 @@ final class ServerMenuPanel:NSView {
         if let tracking { removeTrackingArea(tracking) }
         let area = NSTrackingArea(rect:bounds,options:[.mouseEnteredAndExited,.activeInKeyWindow,.inVisibleRect],owner:self,userInfo:nil)
         tracking = area; addTrackingArea(area); super.updateTrackingAreas()
+    }
+    override func draw(_ dirtyRect:NSRect) {
+        guard imagePosition == .imageOnly,let image else { super.draw(dirtyRect); return }
+        let scale=min(1,min(bounds.width/image.size.width,bounds.height/image.size.height))
+        let size=NSSize(width:image.size.width*scale,height:image.size.height*scale)
+        let rect=NSRect(x:(bounds.width-size.width)/2,y:(bounds.height-size.height)/2,width:size.width,height:size.height)
+        NSGraphicsContext.current?.imageInterpolation = .none
+        image.draw(in:rect,from:.zero,operation:.sourceOver,fraction:cell?.isHighlighted == true ? 0.6:1,respectFlipped:true,hints:nil)
     }
     override func mouseEntered(with event:NSEvent) { onHover?(true) }
     override func mouseExited(with event:NSEvent) { onHover?(false) }

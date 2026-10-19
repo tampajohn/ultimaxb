@@ -273,6 +273,9 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         case .working: text="Using tool; waiting for the server."
         case .paused: text="Harvesting paused."
         case .completed: text="Harvesting finished: \(harvest.successfulActions) successful attempts."
+        case .stopped(.overweight): text="Harvesting stopped to leave carrying room. Bank or smelt your resources, then Start again."
+        case .stopped(.unreachable): text="No reachable work sites remain in this zone. Move or choose another area."
+        case .stopped(.noProgress): text="Harvesting stopped after repeated failed attempts. Try another site or improve the relevant skill."
         case .stopped(let reason): text="Harvesting stopped: \(reason)."
         }
         onHarvestStatus?(text)
