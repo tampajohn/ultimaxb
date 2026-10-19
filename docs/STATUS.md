@@ -57,6 +57,11 @@ experimental and is not at parity yet.
 - Pause drains the current route/action; Stop immediately stops the state machine and cancels late target requests. A future adapter must cancel its movement on Stop. Eight scheduler tests plus five existing tool-action tests pass. These are deterministic core tests, not live harvesting evidence.
 - This is not enabled in the client yet. Work-zone UI/overlays, resource discovery, tool selection/equip, enemy checks, result correlation, persistence and telemetry integration remain required; see [assistant scope](ASSISTANT.md). The running client was left intact.
 
+### 2026-10-19 — Reference-derived harvesting outcomes and empty-attempt retries
+- Added `HarvestOutcome`, using local era mining/bladed script messages and OUO system-speech framing. A successful attempt requires expected system text plus matching resource growth in the backpack or at the player tile. It supports either update order, expires after ten seconds, retains no speech text and reports only one result.
+- Empty skill checks are now distinct from permanent refusal. The scheduler retries after cooldown, stops after a configurable consecutive-empty limit (default five), and does not increase successful-action counts for failed checks.
+- Nineteen focused tests pass, covering core scheduling, outcome ordering, unrelated chat/resources/containers, ground positions, depletion/refusal, stale inventory and timeout, plus bounded empty-attempt retries. No live actions were sent. Profiles still require UO1998 verification and UI/adapter integration; they cannot provide transaction-ID correlation absent from the protocol.
+
 ## Implemented, with live shard testing still ongoing
 
 - Login, shard/character selection, reconnect, creation stats/skills/appearance.

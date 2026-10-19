@@ -77,6 +77,19 @@ final class HarvestWorkflowTests:XCTestCase {
         w=try runner([site(11)]); _=next(&w,0); _=next(&w,11)
         XCTAssertEqual(w.state,.stopped(.timeout))
     }
+    func testEmptyAttemptsRetryWithCooldownButStopAtBound()throws {
+        var w=try runner()
+        for attempt in 0..<5 {
+            let time=Double(attempt*3)
+            XCTAssertEqual(next(&w,time),.tool(.useItem(22)))
+            _=w.receive(cursor(),time:time+0.5)
+            w.receive(.noYield,time:time+1)
+            XCTAssertEqual(w.successfulActions,0)
+            XCTAssertNil(next(&w,time+1.5))
+        }
+        XCTAssertEqual(w.state,.stopped(.noProgress))
+        XCTAssertNil(next(&w,100))
+    }
     func testInvalidConfigurationAndLeavingZone()throws {
         XCTAssertThrowsError(try HarvestWorkflow.Zone(x1:0,y1:0,x2:200,y2:0))
         XCTAssertThrowsError(try runner([site(14)]))

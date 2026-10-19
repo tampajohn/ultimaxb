@@ -82,6 +82,30 @@ The classic target protocol does not identify which tool produced a cursor: the
 adapter must isolate manual actions and stop on ambiguous/late responses. A test
 that supplies a correlated result does not establish live resource detection.
 
+## Harvest outcome profile, pending live integration
+
+`HarvestOutcome` recognizes the local era `scripts.wombat/mining.m` and
+`bladed.m` system-message forms. It accepts only system speech (type 6, serial
+0xFFFFFFFF), consistent with the local OUO `CPlayer_SystemMessage` and
+`PacketManager_MakePacket_TEXT` implementations. It retains no message text.
+Success requires the expected message plus increased ore/log quantity in the
+specified backpack or at the attempt's player tile. Either arrival order works;
+pre-existing quantities, wrong resources/containers and ordinary chat do not
+confirm success. The observation window expires after ten seconds.
+
+A failed skill check produces `noYield`, separate from refusal/depletion. The
+scheduler retries those attempts after its cooldown, up to a configurable
+consecutive-empty limit (default five); success or moving to a depleted site's
+successor resets the count. Hitting the limit stops with `noProgress`.
+
+These profiles are reference-derived, not validated against live UO1998 text.
+Construct the observer only after the active target response, cancel it on manual
+interference, and isolate concurrent item transfers. Matching system text plus
+inventory changes is evidence, not a protocol transaction ID; unrelated resource
+changes can still be ambiguous. UI/live wiring and metadata-only lifecycle events
+remain unfinished. Ground yield recognition does not implement ground recovery
+or ore hauling.
+
 ## Verification and current test boundaries
 
 Test state transitions with deterministic packet fixtures: normal completion,

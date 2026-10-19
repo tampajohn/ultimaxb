@@ -8,13 +8,14 @@ public struct AssistantAction {
         case waitingForTarget(Int)
         case waitingForResult
         case completed
+        case completedWithoutYield
         case stopped(StopReason)
     }
     public enum StopReason:Equatable {
         case cancelled, disconnected, timeout, unexpectedTarget, serverCancelled
-        case invalidSelection, refused, depleted, overweight, missingTool, unreachable
+        case invalidSelection, refused, depleted, overweight, missingTool, unreachable, noProgress
     }
-    public enum Result:Equatable { case success, refused, depleted }
+    public enum Result:Equatable { case success, noYield, refused, depleted }
     public enum Command:Equatable {
         case useItem(UInt32)
         case target(TargetRequest,TargetSelection)
@@ -68,7 +69,7 @@ public struct AssistantAction {
             state = .stopped(.unexpectedTarget); return .cancelTarget(request)
         case .stopped:
             return request.flags == 3 ? nil : .cancelTarget(request)
-        case .idle,.completed: return nil
+        case .idle,.completed,.completedWithoutYield: return nil
         }
     }
     /// Results must be correlated by the adapter to this tool attempt. Arbitrary
@@ -78,6 +79,7 @@ public struct AssistantAction {
         guard state == .waitingForResult else { return }
         switch result {
         case .success: state = .completed
+        case .noYield: state = .completedWithoutYield
         case .refused: state = .stopped(.refused)
         case .depleted: state = .stopped(.depleted)
         }

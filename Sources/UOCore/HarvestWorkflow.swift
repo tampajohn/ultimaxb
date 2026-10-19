@@ -32,20 +32,22 @@ public struct HarvestWorkflow {
     private var index=0
     private var tool:UInt32=0
     private var limit=0
+    private var emptyAttempts=0
+    private var emptyLimit=5
     private var action=AssistantAction()
     private var readyAt:TimeInterval=0
     private var travelDeadline:TimeInterval=0
     private var pauseRequested=false
     public init() {}
-    public mutating func start(zone:Zone,sites:[Site],tool:UInt32,successfulActions:Int) throws {
+    public mutating func start(zone:Zone,sites:[Site],tool:UInt32,successfulActions:Int,maxConsecutiveEmptyAttempts:Int=5) throws {
         guard state == .idle,tool != 0,tool != .max,(1...256).contains(sites.count),
-              (1...10000).contains(successfulActions),sites.allSatisfy({ site in
+              (1...10000).contains(successfulActions),(1...100).contains(maxConsecutiveEmptyAttempts),sites.allSatisfy({ site in
                   zone.contains(x:site.target.x,y:site.target.y) && zone.contains(x:site.standing.x,y:site.standing.y) &&
                   !ToolReach.needsApproach(playerX:site.standing.x,playerY:site.standing.y,target:site.target) &&
                   (-128...127).contains(site.standing.z) && (-128...127).contains(site.target.z) &&
                   (0...65535).contains(site.target.graphic) && site.target.serial != .max
               }) else { throw AssetError("Invalid harvest workflow") }
-        self.zone=zone; self.sites=sites; self.tool=tool; limit=successfulActions
+        self.zone=zone; self.sites=sites; self.tool=tool; limit=successfulActions; emptyLimit=maxConsecutiveEmptyAttempts
         state = .ready; currentSite=sites[0]
     }
     /// A pause drains the current action; Stop is the immediate interruption.
@@ -128,10 +130,13 @@ public struct HarvestWorkflow {
         action.receive(result,at:time)
         switch action.state {
         case .completed:
-            successfulActions += 1
+            successfulActions += 1; emptyAttempts=0
             if successfulActions>=limit { state = .completed; return }
+        case .completedWithoutYield:
+            emptyAttempts += 1
+            if emptyAttempts>=emptyLimit { stop(.noProgress); return }
         case .stopped(.depleted):
-            index += 1
+            emptyAttempts=0; index += 1
             if index>=sites.count { state = .completed; currentSite=nil; return }
             currentSite=sites[index]
         case .stopped(let reason): stop(reason); return
