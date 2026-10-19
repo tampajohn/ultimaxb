@@ -15,6 +15,11 @@ mining and herding are additional requested UltimaXB workflows.
 
 ## Required capabilities
 
+- Travel options, independently saved per server/character: loot eligible nearby
+  chests without lockpicking/stealing; drop newly gathered non-gold goods when
+  overloaded; visit a town bank and unload gathered goods. Bank points must be
+  editable through the world map. Opening a chest does not establish permission
+  to take its contents. Preserve pre-existing belongings when stacks merge.
 - Named, editable action sequences and hotkeys, with record/play support for
   supported game actions. Capture game actions, never raw keyboard input,
   passwords or unrelated UI activity.
@@ -63,6 +68,33 @@ play for routine tests.
 3. Zone selection, route display and bounded mining traversal.
 4. Herding workflow using the same runner.
 5. Macro editing/recording, reusable profiles and additional skills.
+
+### Banking implementation evidence (2026-10-19)
+
+`GatheredBanking` implements the deposit state machine, not yet wired to Travel
+or the live adapter. It requires an equipment entry owned by the player on layer
+29, a matching open-container event and a full contents response before choosing
+goods. Each transfer waits for both source reduction and destination increase;
+moving, losing bank identity, refusal and timeout stop execution. It never sends
+the next deposit from the same confirmation call. Thirteen focused gathering,
+overload and banking tests pass. Live opening/deposit behavior remains unverified.
+
+The local OUO reference `build/ouo/mobile.c`, `CMobile_OpenBankGump`, sends the
+bank entity, open-gump packet and contents in that order. `build/ouo/packet_handler.c`
+checks `bankOpenLoc` on deposits and revokes access if the player's location
+changed. Preserve that exact-position constraint in the client adapter.
+
+Official town pages provide initial bank landmarks, not verified reachable
+standing tiles for this older asset/server combination:
+
+- [Minoc bank](https://uo.com/wiki/ultima-online-wiki/world/cities-and-towns/cities-and-towns-minoc/): 2503, 554.
+- [Britain west bank](https://uo.com/wiki/ultima-online-wiki/world/cities-and-towns/cities-and-towns-britain/): 1427, 1685; east bank: 1653, 1605.
+- [Vesper mint](https://uo.com/wiki/ultima-online-wiki/world/cities-and-towns/cities-and-towns-vesper/): 2880, 683.
+- [Jhelom bank](https://uo.com/wiki/ultima-online-wiki/world/cities-and-towns/cities-and-towns-jhelom/): 1319, 3775.
+- [Skara Brae bank](https://uo.com/wiki/ultima-online-wiki/world/cities-and-towns/cities-and-towns-skara-brae/): 591, 2142.
+
+Validate approach tiles against installed collision data and banker reach. Do not
+substitute town inn coordinates for bank arrival or infer bank identity from art.
 
 The first tool-action state machine is implemented and locally tested. It emits one
 use-item command, waits for one or two target requests, validates target compatibility,
