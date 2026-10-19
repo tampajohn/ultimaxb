@@ -39,10 +39,12 @@ final class OUOIntegrationTests: XCTestCase {
             throw XCTSkip("Requires isolated wilderness-spawn Test Center; see docs/LOCAL_SERVER.md")
         }
         try await exerciseWorld(verifySkillTarget: false, verifySpells: true, verifyDeath: true,
-                                verifyCorpseRecovery: ProcessInfo.processInfo.environment["UO_VERIFY_CORPSE_LOOT"] == "1")
+                                verifyCorpseRecovery: ProcessInfo.processInfo.environment["UO_VERIFY_CORPSE_LOOT"] == "1",
+                                verifyGhost: ProcessInfo.processInfo.environment["UO_VERIFY_GHOST"] == "1")
     }
     @MainActor
-    private func exerciseWorld(verifySkillTarget: Bool, verifySpells: Bool = false, verifyHiding: Bool = false, verifyDeath: Bool = false, verifyCorpseRecovery: Bool = false) async throws {
+    private func exerciseWorld(verifySkillTarget: Bool, verifySpells: Bool = false, verifyHiding: Bool = false, verifyDeath: Bool = false, verifyCorpseRecovery: Bool = false, verifyGhost: Bool = false) async throws {
+        guard !(verifyGhost && verifyCorpseRecovery) else { throw XCTSkip("Ghost movement and resurrected loot recovery require separate fixture runs") }
         guard let value = ProcessInfo.processInfo.environment["UO_LOCAL_TEST_PORT"],
               let port = UInt16(value) else { throw XCTSkip("Set UO_LOCAL_TEST_PORT for a local OUO integration run") }
         let connection = GameConnection()
@@ -147,7 +149,7 @@ final class OUOIntegrationTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(50))
         }
         if verifyDeath {
-            let spawn = try XCTUnwrap(entry)
+            let spawn = try XCTUnwrap(entry, "Death fixture did not enter the world: \(failure ?? "world-entry timeout")")
             guard spawn.x == 2603 && spawn.y == 309 else {
                 XCTFail("Death test requires the isolated wilderness spawn; refusing to run at a normal town spawn")
                 return
@@ -367,6 +369,35 @@ final class OUOIntegrationTests: XCTestCase {
                 $0.graphic == 0x2006 && !priorCorpses.contains($0.serial) &&
                 $0.x == mobile.x && $0.y == mobile.y && $0.z == mobile.z
             }, "This death must create a new corpse at the player's position")
+            if verifyGhost {
+                connection.send(try death.response(resurrect: false))
+                // OUO processes the decline without a 0x2C reply. The following
+                // accepted move and authoritative ghost position prove progress.
+                XCTAssertEqual(death.phase, .ghost)
+                let ghost = try XCTUnwrap(world.mobiles[player.serial])
+                XCTAssertTrue([402, 403].contains(ghost.body))
+                movement = PlayerMovement()
+                moveReply = false; positionReply = false; moveSent = true
+                let accepted = counts[0x22, default: 0]
+                let rejected = counts[0x21, default: 0]
+                let request = try XCTUnwrap(movement.request(direction: ghost.direction & 7, player: ghost,
+                                                            at: ProcessInfo.processInfo.systemUptime))
+                connection.send(request)
+                for _ in 0..<100 {
+                    if moveReply && positionReply { break }
+                    try await Task.sleep(for: .milliseconds(50))
+                }
+                XCTAssertGreaterThan(counts[0x22, default: 0], accepted)
+                XCTAssertEqual(counts[0x21, default: 0], rejected)
+                XCTAssertTrue(positionReply, "Check authoritative position after movement acknowledgement")
+                let moved = try XCTUnwrap(world.mobiles[player.serial])
+                let delta = WalkPath.directions[Int(ghost.direction & 7)]
+                XCTAssertEqual(moved.x, ghost.x + delta.0)
+                XCTAssertEqual(moved.y, ghost.y + delta.1)
+                XCTAssertTrue([402, 403].contains(moved.body))
+                XCTAssertEqual(death.phase, .ghost)
+                return
+            }
             connection.send(try death.response(resurrect: true))
             for _ in 0..<200 {
                 if death.phase == .alive, let body = world.mobiles[player.serial]?.body, [400, 401].contains(body) { break }

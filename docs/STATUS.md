@@ -35,6 +35,8 @@ experimental and is not at parity yet.
 - More reliable global path planning, dynamic obstacles and elevation/occlusion
   edge cases. Large barriers can stop segmented routes.
 - Full equipment coverage, mounts, corpse/death animations and spell effects.
+- Ghost-specific route collision rules for doors and passable objects; current
+  route planning still uses living-character collision rules.
 - Complete combat, spell, skill, crafting, healer and housing workflows.
 - Live two-party secure-trade validation, live text-prompt validation and remaining
   server packet handlers.
@@ -686,3 +688,13 @@ server was stopped after verification and its executable restored to the normal
 build. The user's running client and port-2593 server were left uninterrupted.
 Live UO1998 corpse recovery, healer resurrection and denial workflows remain
 unverified; this result covers the local fixture only.
+
+Declined resurrection and ghost movement (2026-10-18): added the opt-in
+`UO_VERIFY_GHOST=1` variant of the isolated wilderness death test. After declining
+resurrection it requires a movement acknowledgement, no denial, and an explicit
+server position refresh one tile away with body 402/403 and ghost state intact.
+Verified in 22.2 seconds. OUO sends no death-dialog reply when resurrection is
+declined; source and the integration agree, so movement/position confirmation
+provides the evidence instead. Connection failure diagnostics now identify
+failure before world entry rather than reporting only a missing entry object.
+This does not verify ghost door traversal, healer interactions or ghost reconnect.

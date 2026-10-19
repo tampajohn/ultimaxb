@@ -126,3 +126,10 @@ from death loss. The test also verifies that nearby empty corpse broadcasts do
 not erase the retained spellbook contents. It logs bounded item-count/parent-serial
 metadata for diagnosis, not raw packets or user payloads. This local check does
 not establish live UO1998 corpse recovery or healer resurrection parity.
+
+Alternatively, add `UO_VERIFY_GHOST=1` (without `UO_VERIFY_CORPSE_LOOT`) to
+decline resurrection and test movement while dead. The server does not reply
+with 0x2C to that choice. The fixture requires an accepted movement request,
+no movement denial, and a subsequent authoritative position one tile away with
+the ghost body retained. This checks open-ground movement, not passage through
+doors, healer resurrection or reconnecting as a ghost.
