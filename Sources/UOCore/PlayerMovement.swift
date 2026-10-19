@@ -58,7 +58,11 @@ public struct PlayerMovement {
         steps.removeFirst()
         needsPosition = true
         // An older acknowledgement must never roll the display back over later predictions.
-        return steps.last?.predicted ?? first.predicted
+        let position = steps.last?.predicted ?? first.predicted
+        // A movement acknowledgement confirms position only. Appearance updates
+        // may have arrived since this step was queued (hide/reveal, poison, etc.).
+        return WorldMobile(serial: player.serial, body: player.body, x: position.x, y: position.y,
+                           z: position.z, direction: position.direction, hue: player.hue, flags: player.flags)
     }
     public mutating func poll(at time: TimeInterval) -> Data? {
         if let oldest = steps.first, time - oldest.sentAt >= 2, !recoverySent {

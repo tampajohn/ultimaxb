@@ -3,6 +3,24 @@ import XCTest
 @testable import UOCore
 
 final class EquipmentMovementTests: XCTestCase {
+    func testMovementAcknowledgementsPreserveNewServerAppearance() throws {
+        for flags: UInt8 in [0, 0x80, 0x40, 0x04] {
+            var movement = PlayerMovement()
+            let start = WorldMobile(serial: 1, body: 400, x: 100, y: 100, z: 0, direction: 2, flags: flags ^ 0x80)
+            XCTAssertNotNil(movement.request(direction: 2, player: start, at: 0))
+            let first = try XCTUnwrap(movement.predictedPosition)
+            XCTAssertNotNil(movement.request(direction: 2, player: first, at: 0.5))
+            // An appearance update arrives while both movement requests are pending.
+            let updated = WorldMobile(serial: 1, body: 401, x: 101, y: 100, z: 0, direction: 2, hue: 1002, flags: flags)
+            for sequence: UInt8 in [0, 1] {
+                let result = try XCTUnwrap(movement.receive(Data([0x22, sequence, 1]), player: updated))
+                XCTAssertEqual(result.x, 102, "Acknowledging an older step must not rewind newer prediction")
+                XCTAssertEqual(result.body, updated.body)
+                XCTAssertEqual(result.hue, updated.hue)
+                XCTAssertEqual(result.flags, updated.flags, "Movement must not restore stale hiding, war or poison flags")
+            }
+        }
+    }
     func testRejectedStepIdentifiesOriginalRequestNotLatestPrediction() throws {
         var movement = PlayerMovement()
         let player = WorldMobile(serial:1,body:400,x:10,y:10,z:0,direction:2)

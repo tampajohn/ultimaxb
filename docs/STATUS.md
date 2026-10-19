@@ -575,3 +575,17 @@ server build (20.2 seconds). Release suite: 204 tests, 3 opt-in skips, zero
 failures. This verifies two representative spells, not all 64 spell behaviors,
 reagent/mana failure cases, or live UO1998 spell compatibility. The user's app
 and port-2593 server were left running throughout.
+
+Hidden-state reconciliation (2026-10-18): added an opt-in isolated Test Center
+Hiding test (`UO_VERIFY_HIDING=1`, `UO_LOCAL_TEST_CENTER=1`). It uses the actual
+Hiding skill, verifies the local mobile remains present with flag 0x80, and
+checks a confirmed movement step clears the flag. The initial server test
+passed. Inspection also exposed a separate client race: queued movement ACKs
+returned an entire old mobile snapshot, overwriting newer server appearance.
+The new regression test failed 24 assertions before the fix. ACKs now use the
+predicted position/direction with the latest server body, hue and flags, so
+hiding/revealing, war and poison state cannot be rolled back by an older step.
+Release suite: 206 tests, 4 opt-in skips, zero failures. This does not establish
+all skill behaviors or reproduce the exact timing of the user's original report.
+The server-backed hiding/reveal test also passes after the reconciliation fix
+(12.0 seconds), with the user's port-2593 server untouched.

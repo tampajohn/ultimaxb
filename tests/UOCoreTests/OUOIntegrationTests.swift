@@ -23,7 +23,15 @@ final class OUOIntegrationTests: XCTestCase {
         try await exerciseWorld(verifySkillTarget: false, verifySpells: true)
     }
     @MainActor
-    private func exerciseWorld(verifySkillTarget: Bool, verifySpells: Bool = false) async throws {
+    func testHidingAndRevealing() async throws {
+        guard ProcessInfo.processInfo.environment["UO_VERIFY_HIDING"] == "1",
+              ProcessInfo.processInfo.environment["UO_LOCAL_TEST_CENTER"] == "1" else {
+            throw XCTSkip("Requires an isolated complete-script Test Center and UO_VERIFY_HIDING=1")
+        }
+        try await exerciseWorld(verifySkillTarget: false, verifyHiding: true)
+    }
+    @MainActor
+    private func exerciseWorld(verifySkillTarget: Bool, verifySpells: Bool = false, verifyHiding: Bool = false) async throws {
         guard let value = ProcessInfo.processInfo.environment["UO_LOCAL_TEST_PORT"],
               let port = UInt16(value) else { throw XCTSkip("Set UO_LOCAL_TEST_PORT for a local OUO integration run") }
         let connection = GameConnection()
@@ -227,6 +235,28 @@ final class OUOIntegrationTests: XCTestCase {
             for id in 0..<46 {
                 XCTAssertEqual(skills.values[id], 1000, "Test Center skill \(id) did not become 100.0")
             }
+        }
+        if verifyHiding {
+            let player = try XCTUnwrap(entry)
+            try await Task.sleep(for: .seconds(2))
+            connection.send(try SkillState.use(id: 21))
+            for _ in 0..<200 {
+                if let mobile = world.mobiles[player.serial], mobile.flags & 0x80 != 0 { break }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            let hidden = try XCTUnwrap(world.mobiles[player.serial], "The local player must remain present while hidden")
+            XCTAssertNotEqual(hidden.flags & 0x80, 0, "Server did not confirm hiding; fixture messages: \(fixtureMessages)")
+            let request = try XCTUnwrap(movement.request(direction: hidden.direction & 7, player: hidden,
+                                                        at: ProcessInfo.processInfo.systemUptime))
+            connection.send(request)
+            for _ in 0..<200 {
+                if let mobile = world.mobiles[player.serial], mobile.flags & 0x80 == 0,
+                   mobile.x != hidden.x || mobile.y != hidden.y { break }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            let revealed = try XCTUnwrap(world.mobiles[player.serial])
+            XCTAssertEqual(revealed.flags & 0x80, 0, "Moving did not reveal the player")
+            XCTAssertTrue(revealed.x != hidden.x || revealed.y != hidden.y, "Reveal check requires a confirmed step")
         }
         if verifySpells {
             let player = try XCTUnwrap(entry)
