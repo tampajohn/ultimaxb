@@ -2,6 +2,30 @@ import XCTest
 @testable import UOCore
 
 final class RouteRecoveryTests:XCTestCase {
+    func testUnlocatedRejectionsHaveBoundedRetriesWithoutInventingWalls() {
+        var recovery=RouteRecovery()
+        let origin=WalkPoint(x:10,y:10,z:0)
+        for index in 0..<3 {
+            XCTAssertTrue(recovery.rejectWithoutStep(from:origin,at:Double(index)))
+            XCTAssertEqual(recovery.retryAt,Double(index)+0.25)
+            XCTAssertTrue(recovery.blocked.isEmpty)
+        }
+        XCTAssertFalse(recovery.rejectWithoutStep(from:origin,at:4))
+        recovery.progress(WalkPoint(x:18,y:10,z:0))
+        XCTAssertTrue(recovery.rejectWithoutStep(from:origin,at:5))
+    }
+    func testDeniedTurnAndUnknownSequenceDoNotIdentifyAnObstacle() throws {
+        let player=WorldMobile(serial:1,body:400,x:10,y:10,z:0,direction:0)
+        for sequence:UInt8 in [0,99] {
+            var movement=PlayerMovement()
+            XCTAssertNotNil(movement.request(direction:2,player:player,at:0))
+            let correction=try movement.receive(Data([0x21,sequence,0,10,0,10,2,0]),player:player)
+            XCTAssertEqual(correction?.x,10)
+            XCTAssertNil(movement.rejectedStep)
+            XCTAssertTrue(movement.awaitingPosition)
+            XCTAssertNil(movement.request(direction:2,player:player,at:1))
+        }
+    }
     func testAnimalsExpireWithoutSpendingWallRetryBudget() {
         var recovery=RouteRecovery()
         let origin=WalkPoint(x:10,y:10,z:0), animal=WalkPoint(x:11,y:10,z:0)

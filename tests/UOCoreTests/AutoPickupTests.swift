@@ -4,6 +4,16 @@ final class AutoPickupTests:XCTestCase {
     func item(_ serial:UInt32=0x40000001,graphic:Int=0xF7A,x:Int=10,flags:UInt8=0)->GroundItem {
         GroundItem(serial:serial,graphic:graphic,amount:2,x:x,y:10,z:0,direction:0,hue:0,flags:flags)
     }
+    func testDetourRadiusRespectsEligibilityAndNearestFirst() {
+        let player=WorldMobile(serial:1,body:400,x:10,y:10,z:0)
+        var gather=AutoPickup(); gather.mode = .reagents
+        let far=item(1,x:16),near=item(9,x:12)
+        XCTAssertNil(gather.select(items:[far,near],player:player,at:0))
+        XCTAssertEqual(gather.select(items:[far,near,item(2,graphic:0xF5E,x:11)],player:player,at:0,radius:6)?.serial,9)
+        gather.skip(9)
+        XCTAssertEqual(gather.select(items:[far,near],player:player,at:0,radius:6)?.serial,1)
+        XCTAssertNil(gather.select(items:[item(x:17)],player:player,at:0,radius:100))
+    }
     func testEligibilityAndConfirmation() {
         let player=WorldMobile(serial:1,body:400,x:10,y:10,z:0)
         var gather=AutoPickup(); gather.mode = .reagents

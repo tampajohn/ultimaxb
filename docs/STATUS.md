@@ -17,6 +17,13 @@ experimental and is not at parity yet.
   targeting, skill requests and war mode.
 - Skills/status sidebar, equipped tool use, action animations, sound and music.
 - Original radar frame, local/world view, Shift-click travel in local sections.
+- Long-distance travel opens blocking doors and waits for authoritative geometry
+  changes before crossing; locked/unresponsive doors stop travel. Banking and
+  overload options survive door handling. With Gather enabled, travel considers
+  new visible eligible ground items within six tiles, takes collision-checked
+  detours of at most twelve steps, and resumes its destination. Nearby enemies
+  suppress or cancel detours. These additions have offline packet coverage;
+  the live Minoc bank entrance/deposit still needs retesting.
 - Spellbook, legacy choice menus, original-art hue picker and death/resurrection prompt.
 - General 0xB0 dialogs: original gump images/resizable backgrounds, labels,
   buttons, pages, checkboxes, radio groups and editable fields; 0xB1 replies.

@@ -17,6 +17,16 @@ public struct RouteRecovery {
     private var failureOrigin:WalkPoint?
     public init() {}
 
+    /// A denied turn (or unmatched sequence) gives no evidence of a blocked
+    /// tile. Resynchronize and replan without inventing an obstacle, but spend
+    /// the same bounded retry budget as other unexplained local failures.
+    public mutating func rejectWithoutStep(from position:WalkPoint,at time:TimeInterval)->Bool {
+        guard attempts<3 else { return false }
+        if failureOrigin == nil { failureOrigin=position }
+        attempts += 1; retryAt=time+0.25
+        return true
+    }
+
     public mutating func reject(_ destination:WalkPoint,from position:WalkPoint,temporary:Bool=false,at time:TimeInterval=0)->Bool {
         if temporary {
             guard mobileAttempts<12 else { return false }

@@ -857,6 +857,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             panel.onVendorClosed = { [weak self] in self?.vendorPanel?.removeFromSuperview(); self?.vendorPanel = nil }
             panel.itemWeight = { [weak self] graphic in (try? self?.assets.itemWeight(graphic:graphic)) ?? 255 }
+            panel.blockingTravelDoor = { [weak self] start,next in
+                guard let self,let view=self.worldView,!((view.player?.isGhost) ?? false),
+                      let direction=WalkPath.direction(from:start,to:next) else { return nil }
+                let doors=self.loginOverlay?.routeItems.filter {
+                    max(abs($0.x-start.x),abs($0.y-start.y))<=1 && abs($0.z-start.z)<=16 &&
+                    (try? self.assets.isDoor(graphic:$0.graphic)) == true
+                } ?? []
+                guard !doors.isEmpty,
+                      let map=try? NavigationMap(assets:self.assets,center:start,additional:view.groundItems,radius:3),
+                      map.step(from:start,direction:direction) == nil,
+                      map.step(from:start,direction:direction,ignoringDoors:true) != nil else { return nil }
+                return doors.sorted { a,b in
+                    let da=abs(a.x-next.x)+abs(a.y-next.y), db=abs(b.x-next.x)+abs(b.y-next.y)
+                    return da == db ? a.serial<b.serial : da<db
+                }.first
+            }
+            panel.pickupDetour = { [weak self] start,item in
+                guard let self,let view=self.worldView,
+                      let map=try? NavigationMap(assets:self.assets,center:start,additional:view.groundItems,radius:16) else { return nil }
+                return WalkPath.find(from:start,x:item.x,y:item.y,adjacent:true,goalZ:item.z,limit:512) {
+                    map.step(from:$0,direction:$1)
+                }
+            }
             panel.onAutoPickupMode = { [weak self] in self?.worldView?.sidebar?.updatePickupMode($0) }
             panel.onSkills = { [weak self] in self?.skillsPanel?.update($0) }
             panel.onCombatTarget = { [weak self] target in
@@ -1206,10 +1229,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let goal=candidates.last,
                   let map=try? NavigationMap(assets:self.assets,center:start,additional:view.groundItems,radius:48,ghost:view.player?.isGhost == true) else { return nil }
             let enemies=view.mobiles.filter { $0.serial != view.player?.serial && ($0.isEnemy || $0.serial == view.combatTarget) }
-            return TravelSafety.route(from:start,to:goal,enemies:enemies,cost:map.travelCost) { point,direction in
-                guard let next=map.step(from:point,direction:direction),!blocked.contains(next) else { return nil }
-                return next
+            func route(ignoringDoors:Bool)->[WalkPoint]? {
+                TravelSafety.route(from:start,to:goal,enemies:enemies,cost:map.travelCost) { point,direction in
+                    guard let next=map.step(from:point,direction:direction,ignoringDoors:ignoringDoors),!blocked.contains(next) else { return nil }
+                    return next
+                }
             }
+            // Relax doors only when the ordinary collision route fails. Execution
+            // opens the actual door and waits for its server update before crossing.
+            return route(ignoringDoors:false) ?? route(ignoringDoors:true)
         }
         guard let route=planner(start,[]) else { chatPanel.append("The route is planned, but a nearby obstacle blocks the first section."); return }
         view.followPlayer=true

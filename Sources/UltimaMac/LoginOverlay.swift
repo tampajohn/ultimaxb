@@ -112,6 +112,13 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     var onDoorOpenedRoute: ((TargetSelection,Int,Bool)->Void)?
     private var waitingDoor: (item:GroundItem,destination:TargetSelection,remaining:Int,running:Bool,wait:DoorOpeningWait)?
     var assistantScope:String { "\(host.stringValue):\(port.stringValue):\(playerSerial ?? 0)" }
+    var blockingTravelDoor:((WalkPoint,WalkPoint)->GroundItem?)?
+    var pickupDetour:((WalkPoint,GroundItem)->[WalkPoint]?)?
+    private var travelDoor:(item:GroundItem,wait:DoorOpeningWait)?
+    private var detourItem:UInt32?
+    private var detourArrivedAt:TimeInterval?
+    private var detourAttempts:Set<UInt32>=[]
+    private var nextDetourAt:TimeInterval=0
     private var routeRunning = false
     private var routeResolver: ((WalkPoint,Set<WalkPoint>)->[WalkPoint]?)?
     private var routeRecovery=RouteRecovery()
@@ -142,7 +149,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         bankingCancelled=true
         onRouteCancelled?()
         if let activity=travelActivity { ProcessInfo.processInfo.endActivity(activity); travelActivity=nil }
-        waitingDoor = nil
+        waitingDoor = nil; travelDoor=nil; detourItem=nil; detourArrivedAt=nil; detourAttempts=[]
         if walkRoute != nil { Telemetry.shared.record("walk_route_cancelled") }
         walkRoute = nil; routeAction = nil; onWalkRoute?([])
         routeResolver = nil; routeRecovery=RouteRecovery(); needsRouteRetry = false; routeContinues = false; routeSegments = 0
@@ -153,6 +160,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             travelActivity=ProcessInfo.processInfo.beginActivity(options:.userInitiatedAllowingIdleSystemSleep,reason:"Completing requested Ultima Online travel")
         }
         routeRecovery=RouteRecovery(); needsRouteRetry=false
+        travelDoor=nil; detourItem=nil; detourArrivedAt=nil; detourAttempts=[]
         routeResolver = resolver; routeContinues = continuing
         walkRoute = route; routeAction = action; routeRunning = running; onWalkRoute?(route)
         Telemetry.shared.record("walk_route_started",["steps":route.count,"target":action?.serial as Any? ?? NSNull(),"running":running])
@@ -189,7 +197,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         if wasPending && autoPickup.pending == nil && autoPickup.mode == .off {
             onInventoryMessage?(autoPickup.stoppedReason ?? "Auto-pickup stopped."); onAutoPickupMode?(0)
         }
-        guard !inventoryRecoveryBusy,allowed,loginComplete,trade == nil,combatTarget.serial == nil,targetRequest == nil,now-manualInventoryAt>2,
+        guard !inventoryRecoveryBusy,(detourItem == nil || movement.pendingCount == 0),allowed,loginComplete,trade == nil,combatTarget.serial == nil,targetRequest == nil,now-manualInventoryAt>2,
               let serial=playerSerial,let player=world.mobiles[serial],
               let weight=characterStatus?.weight,let strength=characterStatus?.strength,
               weight < 40+strength*7/2-10,
@@ -330,6 +338,19 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         tickAutoPickup(allowed:allowRoute || walkRoute != nil)
         if tickGatheredRecovery() { return }
         if tickGatheredBanking() { return }
+        if let waiting=travelDoor {
+            switch waiting.wait.result(door:world.items[waiting.item.serial],at:ProcessInfo.processInfo.systemUptime) {
+            case .waiting: return
+            case .changed:
+                travelDoor=nil; needsRouteRetry=true
+                Telemetry.shared.record("travel_door_opened",["serial":waiting.item.serial])
+            case .timedOut:
+                cancelRoute()
+                onInventoryMessage?("Travel stopped: the door did not open; it may be locked.")
+                Telemetry.shared.record("travel_door_timeout",["serial":waiting.item.serial])
+                return
+            }
+        }
         // Focus gates opportunistic gathering and direct input, not an explicit route.
         // Stop/manual input/disconnect still cancel travel through cancelRoute().
         if let waiting = waitingDoor {
@@ -347,7 +368,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         let routeNow=ProcessInfo.processInfo.systemUptime
         routeRecovery.expire(at:routeNow)
         if needsRouteRetry, routeNow>=routeRecovery.retryAt, !movement.awaitingPosition, let serial = playerSerial, let player = world.mobiles[serial] {
-            needsRouteRetry = false
+            needsRouteRetry = false; detourItem=nil; detourArrivedAt=nil
             let start = WalkPoint(x:player.x,y:player.y,z:player.z)
             if let route = routeResolver?(start,routeRecovery.blocked) {
                 walkRoute = route; onWalkRoute?(route)
@@ -359,14 +380,55 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         }
         if !needsRouteRetry, !movement.awaitingPosition, let serial = playerSerial, let player = world.mobiles[serial], var route = walkRoute {
             let current = WalkPoint(x:player.x,y:player.y,z:player.z)
+            let enemiesNearby=world.mobiles.values.contains {
+                $0.serial != serial && $0.isEnemy && max(abs($0.x-player.x),abs($0.y-player.y))<=12
+            }
+            if detourItem != nil && (enemiesNearby || autoPickup.mode == .off) {
+                detourItem=nil; needsRouteRetry=true; return
+            }
+            if routeContinues,routeAction == nil,detourItem == nil,!enemiesNearby,
+               movement.pendingCount == 0,autoPickup.pending == nil,!inventoryRecoveryBusy,
+               trade == nil,targetRequest == nil,combatTarget.serial == nil,
+               routeNow >= nextDetourAt,routeNow-manualInventoryAt>2,
+               let weight=characterStatus?.weight,let strength=characterStatus?.strength,
+               weight<40+strength*7/2-10 {
+                nextDetourAt=routeNow+1
+                let candidates=world.items.values
+                if let item=autoPickup.select(items:Array(candidates),player:player,at:routeNow,radius:6,portable:{
+                    let unit=self.itemWeight?($0.graphic) ?? 255
+                    return !self.detourAttempts.contains($0.serial) && unit<255 && weight+unit*max(1,$0.amount)<40+strength*7/2-10
+                }),max(abs(item.x-player.x),abs(item.y-player.y))>1 {
+                    detourAttempts.insert(item.serial)
+                    if let path=pickupDetour?(current,item),!path.isEmpty,path.count<=12 {
+                        detourItem=item.serial; detourArrivedAt=nil; route=path; walkRoute=path; onWalkRoute?(path)
+                        Telemetry.shared.record("travel_pickup_detour",["serial":item.serial,"steps":path.count])
+                    }
+                }
+            }
             while route.first == current { route.removeFirst() }
             if walkRoute != route { onWalkRoute?(route) }
             walkRoute = route
             if let next = route.first {
+                if routeContinues,let door=blockingTravelDoor?(current,next) {
+                    guard movement.pendingCount == 0 else { return }
+                    connection.send(InteractionPackets.use(serial:door.serial))
+                    travelDoor=(door,DoorOpeningWait(door:door,at:routeNow))
+                    Telemetry.shared.record("travel_door_requested",["serial":door.serial])
+                    return
+                }
                 if let direction = WalkPath.direction(from:current,to:next) {
                     move(direction:direction | (routeRunning ? 0x80 : 0),routeStep:next)
                 } else { cancelRoute() }
             } else if movement.pendingCount == 0 && !movement.awaitingPosition {
+                if let item=detourItem {
+                    if autoPickup.pending != nil { return }
+                    // A previous confirmed pickup may still be in its short cooldown.
+                    if detourArrivedAt == nil { detourArrivedAt=routeNow }
+                    if world.items[item] != nil,routeNow-(detourArrivedAt ?? routeNow)<1 { return }
+                    detourItem=nil; detourArrivedAt=nil; needsRouteRetry=true
+                    Telemetry.shared.record("travel_pickup_resume",["serial":item])
+                    return
+                }
                 if routeContinues {
                     guard routeSegments < 256, let next = routeResolver?(current,routeRecovery.blocked) else {
                         cancelRoute(); onInventoryMessage?("Unable to continue toward the map destination."); return
@@ -1242,11 +1304,16 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                                     world.mobiles.values.contains { $0.serial != serial && !$0.isGhost &&
                                         $0.x == point.x && $0.y == point.y && abs($0.z-point.z)<16 }
                                 } ?? false
-                                if walkRoute != nil, let blocked = movement.rejectedStep,
-                                   routeRecovery.reject(blocked,from:WalkPoint(x:moved.x,y:moved.y,z:moved.z),temporary:mobileBlock,at:ProcessInfo.processInfo.systemUptime) {
+                                let origin=WalkPoint(x:moved.x,y:moved.y,z:moved.z)
+                                let now=ProcessInfo.processInfo.systemUptime
+                                let doorBlocked = routeContinues && rejected.flatMap { blockingTravelDoor?(origin,$0) } != nil
+                                let canRetry=walkRoute != nil && (doorBlocked ? routeRecovery.rejectWithoutStep(from:origin,at:now) : rejected.map {
+                                    routeRecovery.reject($0,from:origin,temporary:mobileBlock,at:now)
+                                } ?? routeRecovery.rejectWithoutStep(from:origin,at:now))
+                                if canRetry {
                                     needsRouteRetry = true
                                     onWalkRoute?([])
-                                    Telemetry.shared.record("walk_route_retry_pending",["attempt":routeRecovery.attempts,"mobile_attempt":routeRecovery.mobileAttempts,"temporary":mobileBlock,"x":blocked.x,"y":blocked.y,"z":blocked.z])
+                                    Telemetry.shared.record("walk_route_retry_pending",["attempt":routeRecovery.attempts,"mobile_attempt":routeRecovery.mobileAttempts,"temporary":mobileBlock,"has_rejected_step":rejected != nil,"x":rejected?.x as Any? ?? NSNull(),"y":rejected?.y as Any? ?? NSNull(),"z":rejected?.z as Any? ?? NSNull()])
                                 } else { cancelRoute(); onInventoryMessage?("Movement was blocked; route stopped.") }
                                 connection.send(movement.resynchronize(at:ProcessInfo.processInfo.systemUptime))
                             }
