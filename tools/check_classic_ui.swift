@@ -79,6 +79,15 @@ import UOCore
         try status.apply(packet); sidebar.updateStatus(status)
         try capture(sidebar,"classic-sidebar")
         let travel=TravelPanel(assets:assets,scope:"ui-check")
+        let recovery=descendants(travel).compactMap { $0 as? ClassicButton }.first {
+            $0.action == NSSelectorFromString("toggleRecovery:")
+        }!
+        let previous=travel.dropGatheredWhenOverloaded
+        recovery.performClick(nil)
+        precondition(travel.dropGatheredWhenOverloaded != previous)
+        let reopened=TravelPanel(assets:assets,scope:"ui-check")
+        precondition(reopened.dropGatheredWhenOverloaded == travel.dropGatheredWhenOverloaded)
+        recovery.performClick(nil)
         try capture(travel,"travel-journal")
         print("Login, sidebar, and travel journal rendered from installed assets; no credentials loaded or network requests sent")
     }

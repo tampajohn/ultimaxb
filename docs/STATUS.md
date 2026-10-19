@@ -26,9 +26,8 @@ experimental and is not at parity yet.
 
 ## Remaining parity work
 
-- Travel journal options (requested, not implemented): independently enable nearby
-  chest looting without lockpicking/stealing, overload recovery that drops only
-  newly gathered non-gold goods, and bank arrival/opening/deposit of gathered goods.
+- Remaining Travel journal options: independently enable nearby chest looting
+  without lockpicking/stealing and bank arrival/opening/deposit of gathered goods.
   Track server-confirmed gathered quantities separately from existing inventory,
   including merged stacks. Preserve gold on overload. Do not infer ownership or
   permission to loot merely because a container opens. Bank destinations must be
@@ -36,8 +35,16 @@ experimental and is not at parity yet.
   The gathered-inventory ledger is now implemented: confirmed auto-pickups credit
   only observed added quantities, including merges; reductions, disappearance,
   ownership changes and manual interaction relinquish credit. Gold is excluded
-  from overload candidates. This is bookkeeping only: travel option controls,
-  chest eligibility, automatic drops and bank arrival/deposits remain pending.
+  from overload candidates. Travel journal now saves a default-off "Drop gathered
+  excess" option per server/character. Go/resume applies it to that route, waits
+  for movement/pickup completion, then drops only credited non-gold quantities at
+  the player tile. Source reduction and ground increase must both be confirmed,
+  followed by refreshed weight. Refusal/timeout stops the route; manual inventory
+  operations wait for the outstanding transfer. Dropped stacks are skipped by
+  gathering while still observed. Existing items are never candidates. Reconnect
+  clears credits and pending recovery. Nine focused tests and offline UI fixtures
+  pass; live overload recovery remains unverified. Chest eligibility and bank
+  arrival/deposits remain pending.
 - Validate every interaction against live UO1998, particularly long travel,
   spellcasting, death/resurrection and general server dialogs.
 - Full original menu layouts, fonts and hue fidelity; more general gump commands

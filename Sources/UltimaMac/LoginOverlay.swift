@@ -138,6 +138,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         }
     }
     func cancelRoute() {
+        dropGatheredDuringTravel=false
         onRouteCancelled?()
         if let activity=travelActivity { ProcessInfo.processInfo.endActivity(activity); travelActivity=nil }
         waitingDoor = nil
@@ -157,6 +158,10 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     }
     var itemWeight:((Int)->Int)?
     private var autoPickup = AutoPickup()
+    var dropGatheredDuringTravel=false
+    private var gatheredDrop:GatheredDrop?
+    private var awaitingDropWeight:TimeInterval?
+    private var inventoryRecoveryBusy:Bool { gatheredDrop != nil || awaitingDropWeight != nil }
     private var manualInventoryAt:TimeInterval = -.infinity
     var onAutoPickupMode:((Int)->Void)?
     func setAutoPickup(_ value:Int) {
@@ -177,7 +182,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         if wasPending && autoPickup.pending == nil && autoPickup.mode == .off {
             onInventoryMessage?(autoPickup.stoppedReason ?? "Auto-pickup stopped."); onAutoPickupMode?(0)
         }
-        guard allowed,loginComplete,trade == nil,combatTarget.serial == nil,targetRequest == nil,now-manualInventoryAt>2,
+        guard !inventoryRecoveryBusy,allowed,loginComplete,trade == nil,combatTarget.serial == nil,targetRequest == nil,now-manualInventoryAt>2,
               let serial=playerSerial,let player=world.mobiles[serial],
               let weight=characterStatus?.weight,let strength=characterStatus?.strength,
               weight < 40+strength*7/2-10,
@@ -196,8 +201,77 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             Telemetry.shared.record("auto_pickup_started",["serial":item.serial,"graphic":item.graphic,"amount":item.amount])
         } catch { autoPickup.stop("Auto-pickup stopped: item cannot be moved."); onAutoPickupMode?(0) }
     }
+    /// Returns true while movement must wait for an outstanding transfer.
+    private func tickGatheredRecovery()->Bool {
+        let now=ProcessInfo.processInfo.systemUptime
+        if let drop=gatheredDrop {
+            switch drop.result(contents:Array(world.containerItems.values),ground:Array(world.items.values),at:now) {
+            case .waiting: return true
+            case .confirmed:
+                for item in drop.droppedItems(Array(world.items.values)) { autoPickup.skip(item.serial) }
+                gatheredDrop=nil; awaitingDropWeight=now
+                requestStatus()
+                onInventoryMessage?("Gathered goods dropped. Waiting for updated carrying weight…")
+                Telemetry.shared.record("gathered_drop_confirmed",["serial":drop.serial,"amount":drop.amount])
+                return true
+            case .refused,.timedOut:
+                gatheredDrop=nil; cancelRoute()
+                autoPickup.stop("Travel stopped: gathered-item drop was not confirmed. Check your backpack and the ground.")
+                onAutoPickupMode?(0); onInventoryMessage?(autoPickup.stoppedReason!)
+                Telemetry.shared.record("gathered_drop_stopped",["serial":drop.serial])
+                return true
+            }
+        }
+        if let since=awaitingDropWeight {
+            if now-since>=5 {
+                awaitingDropWeight=nil; cancelRoute()
+                autoPickup.stop("No updated carrying weight."); onAutoPickupMode?(0)
+                onInventoryMessage?("Travel stopped: no updated carrying weight after dropping goods.")
+            }
+            return true
+        }
+        guard dropGatheredDuringTravel,walkRoute != nil,loginComplete,
+              let serial=playerSerial,let player=world.mobiles[serial],!player.isGhost,
+              let weight=characterStatus?.weight,let strength=characterStatus?.strength,
+              weight>40+strength*7/2 else { return false }
+        // Finish any predicted steps and outstanding pickup before changing inventory.
+        guard movement.pendingCount==0,!movement.awaitingPosition else { return true }
+        guard autoPickup.pending==nil,now-manualInventoryAt>2 else { return true }
+        guard trade==nil,targetRequest==nil,combatTarget.serial==nil else {
+            cancelRoute(); onInventoryMessage?("Overload recovery stopped for your active interaction."); return true
+        }
+        guard let bag=world.equipment.values.first(where:{$0.owner==serial && $0.layer==21}),
+              let credit=autoPickup.gathered.transferable(in:bag.serial,includeGold:false).first(where:{
+                  let w=itemWeight?($0.graphic) ?? 255; return w>0 && w<255
+              }),let unit=itemWeight?(credit.graphic) else {
+            cancelRoute(); onInventoryMessage?("Overloaded: no confirmed gathered goods can be dropped. Your gold and existing items were kept.")
+            return true
+        }
+        let excess=weight-(40+strength*7/2)+1
+        let amount=min(credit.amount,(excess+unit-1)/unit)
+        let point=WalkPoint(x:player.x,y:player.y,z:player.z)
+        do {
+            let packets=try world.movePackets(serial:credit.serial,amount:amount,player:serial,x:point.x,y:point.y,target:0xFFFFFFFF,z:point.z)
+            gatheredDrop=GatheredDrop(credit:credit,amount:amount,point:point,contents:Array(world.containerItems.values),ground:Array(world.items.values),at:now)
+            packets.forEach { connection.send($0) }
+            onInventoryMessage?("Dropping newly gathered goods to recover carrying capacity…")
+            Telemetry.shared.record("gathered_drop_started",["serial":credit.serial,"amount":amount,"x":point.x,"y":point.y])
+        } catch { cancelRoute(); onInventoryMessage?("Travel stopped: gathered item is no longer available.") }
+        return true
+    }
     func tickMovement(allowRoute:Bool = true) {
+        if loginComplete, let packet = movement.poll(at: ProcessInfo.processInfo.systemUptime) {
+            Telemetry.shared.record("movement_position_sync", ["pending": movement.pendingCount])
+            connection.send(packet)
+        }
+        if movement.positionSyncTimedOut && !reportedMovementSyncTimeout {
+            reportedMovementSyncTimeout=true
+            cancelRoute()
+            onInventoryMessage?("Waiting for the server to confirm your position. If this persists, reconnect.")
+            Telemetry.shared.record("movement_position_sync_timeout")
+        } else if !movement.positionSyncTimedOut { reportedMovementSyncTimeout=false }
         tickAutoPickup(allowed:allowRoute || walkRoute != nil)
+        if tickGatheredRecovery() { return }
         // Focus gates opportunistic gathering and direct input, not an explicit route.
         // Stop/manual input/disconnect still cancel travel through cancelRoute().
         if let waiting = waitingDoor {
@@ -245,21 +319,13 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                     }
                 }
                 let action = routeAction; walkRoute = nil; routeAction = nil; onWalkRoute?([])
+                dropGatheredDuringTravel=false
                 if let activity=travelActivity { ProcessInfo.processInfo.endActivity(activity); travelActivity=nil }
                 if let action { performArrival(action, player: player) }
                 Telemetry.shared.record("walk_route_completed")
             }
         }
-        if loginComplete, let packet = movement.poll(at: ProcessInfo.processInfo.systemUptime) {
-            Telemetry.shared.record("movement_position_sync", ["pending": movement.pendingCount])
-            connection.send(packet)
-        }
-        if movement.positionSyncTimedOut && !reportedMovementSyncTimeout {
-            reportedMovementSyncTimeout=true
-            cancelRoute()
-            onInventoryMessage?("Waiting for the server to confirm your position. If this persists, reconnect.")
-            Telemetry.shared.record("movement_position_sync_timeout")
-        } else if !movement.positionSyncTimedOut { reportedMovementSyncTimeout=false }
+
     }
     private func performArrival(_ action:ArrivalAction, player:WorldMobile) {
         if case .openDoor(let planned,let destination,let remaining) = action {
@@ -476,7 +542,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         connection.send(InteractionPackets.inspect(serial: serial))
     }
     func use(serial: UInt32) {
-        guard loginComplete else { return }
+        guard loginComplete,!inventoryRecoveryBusy else { return }
         autoPickup.relinquish(serial)
         if waitingDoor != nil { cancelRoute() }
         if case .toolTarget = routeAction { cancelRoute() }
@@ -565,7 +631,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         moveItem(serial: serial, amount: amount, x: 0xFFFF, y: 0xFFFF, target: backpack.serial)
     }
     func moveItem(serial: UInt32, amount: Int, x: Int, y: Int, target: UInt32, z: Int = 0) {
-        guard autoPickup.pending == nil else { onInventoryMessage?("Waiting for auto-pickup to finish."); return }
+        guard autoPickup.pending == nil,!inventoryRecoveryBusy else { onInventoryMessage?("Waiting for automatic inventory transfer to finish."); return }
         autoPickup.relinquish(serial)
         manualInventoryAt=ProcessInfo.processInfo.systemUptime
         guard loginComplete, let playerSerial else { return }
@@ -593,7 +659,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         equipItem(serial: serial, layer: layer)
     }
     func equipItem(serial: UInt32, layer: UInt8) {
-        guard autoPickup.pending == nil else { return }
+        guard autoPickup.pending == nil,!inventoryRecoveryBusy else { return }
         autoPickup.relinquish(serial)
         manualInventoryAt=ProcessInfo.processInfo.systemUptime
         guard trade?.isOwnOffer(serial) != false else { return }
@@ -618,7 +684,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         } catch { onInventoryMessage?("That item cannot be equipped.") }
     }
     func removeEquipment(serial: UInt32) {
-        guard autoPickup.pending == nil else { return }
+        guard autoPickup.pending == nil,!inventoryRecoveryBusy else { return }
         manualInventoryAt=ProcessInfo.processInfo.systemUptime
         guard loginComplete, let owner = playerSerial, let item = world.equipment[serial], item.owner == owner,
               EquipmentRules.isWearable(item.layer),
@@ -979,7 +1045,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         statusRefreshTask?.cancel(); statusRefreshTask = nil
         world = WorldState()
         servers=[]; characters=[]; cities=[]; choices.removeAllItems(); cityChoice.removeAllItems()
-        autoPickup = AutoPickup(); onAutoPickupMode?(0)
+        autoPickup = AutoPickup(); gatheredDrop=nil; awaitingDropWeight=nil; dropGatheredDuringTravel=false; onAutoPickupMode?(0)
         hoverInspection = HoverInspection()
         lastContainerContents = []; stagedVendorOffers = []; vendorOffers = []; vendorSerial = nil; onVendorClosed?()
         pendingDeletion = nil; characterCreation.isHidden = true; characterSelection.isHidden = true; card.isHidden = false; artwork.showsForm=true
@@ -1042,6 +1108,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                     packetContext = GamePacketDiagnostics.summary(packet)
                     let pickupPending=autoPickup.pending != nil
                     autoPickup.receive(packet)
+                    gatheredDrop?.receive(packet)
                     if pickupPending && autoPickup.pending == nil {
                         onAutoPickupMode?(autoPickup.mode.rawValue)
                         onInventoryMessage?(autoPickup.stoppedReason ?? "Auto-pickup stopped.")
@@ -1053,6 +1120,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         if try stats.apply(packet) {
                             if stats.needsDetailRefresh(after: previous, opcode: packet[0]) { scheduleStatusRefresh() }
                             characterStatus = stats; onCharacterStatus?(stats)
+                            if packet[0]==0x11 { awaitingDropWeight=nil }
                             Telemetry.shared.record("player_status_updated", ["opcode": packet[0]])
                         }
                     }

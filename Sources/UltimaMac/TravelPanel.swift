@@ -12,6 +12,7 @@ import UOCore
     private let y=ClassicEntry(string:"")
     private let message:ClassicLabel
     private let list=TravelRows()
+    private(set) var dropGatheredWhenOverloaded=false
     var onGo:((Int,Int)->Void)?
     var onStop:(()->Void)?
     var onPick:(()->Void)?
@@ -22,7 +23,8 @@ import UOCore
             destinations=Array(saved.filter { $0.valid(width:assets.width,height:assets.height) }.prefix(16))
         } else { destinations=TravelDestination.cities.filter { $0.valid(width:assets.width,height:assets.height) } }
         if destinations.isEmpty { destinations=TravelDestination.cities }
-        super.init(assets:assets); frame=NSRect(x:310,y:45,width:420,height:535)
+        super.init(assets:assets); frame=NSRect(x:310,y:20,width:420,height:575)
+        dropGatheredWhenOverloaded=defaults.bool(forKey:key+".dropGathered")
         let title=ClassicLabel("Travel journal",fonts:assets.fonts); title.frame=NSRect(x:24,y:16,width:340,height:24); addSubview(title)
         let close=ClassicButton("X",fonts:assets.fonts,target:self,action:#selector(close)); close.frame=NSRect(x:380,y:12,width:26,height:26); addSubview(close)
         list.frame=NSRect(x:20,y:48,width:380,height:216); addSubview(list)
@@ -39,10 +41,24 @@ import UOCore
             ("Stop",#selector(stop),NSRect(x:215,y:400,width:185,height:30))] {
             let button=ClassicButton(title,fonts:assets.fonts,target:self,action:selector); button.frame=rect; addSubview(button)
         }
-        message.frame=NSRect(x:20,y:448,width:380,height:70); addSubview(message)
+        let recovery=ClassicButton("",fonts:assets.fonts,target:self,action:#selector(toggleRecovery(_:)))
+        recovery.frame=NSRect(x:20,y:440,width:380,height:30)
+        updateRecoveryTitle(recovery); addSubview(recovery)
+        message.frame=NSRect(x:20,y:482,width:380,height:80); addSubview(message)
         reload()
     }
     required init?(coder:NSCoder) { fatalError() }
+    private func updateRecoveryTitle(_ button:NSButton) {
+        button.title="Drop gathered excess: "+(dropGatheredWhenOverloaded ? "on" : "off")
+        button.setAccessibilityLabel("Drop newly gathered non-gold goods when overloaded")
+        button.needsDisplay=true
+    }
+    @objc private func toggleRecovery(_ button:NSButton) {
+        dropGatheredWhenOverloaded.toggle()
+        defaults.set(dropGatheredWhenOverloaded,forKey:key+".dropGathered")
+        updateRecoveryTitle(button)
+        message.stringValue="Applies on Go / resume. Drops only newly gathered goods; keeps gold and existing belongings."
+    }
     private func reload() {
         selected=max(0,min(selected,destinations.count-1))
         list.subviews.forEach { $0.removeFromSuperview() }
