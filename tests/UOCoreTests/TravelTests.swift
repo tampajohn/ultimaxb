@@ -1,6 +1,19 @@
 import XCTest
 @testable import UOCore
 final class TravelTests:XCTestCase {
+    func testAdjacentBankLandmarkDoesNotRelaxOrdinaryTravel() {
+        let start=WalkPoint(x:0,y:0,z:0)
+        let step:(WalkPoint,UInt8)->WalkPoint? = { point,direction in
+            let delta=WalkPath.directions[Int(direction)]
+            let x=point.x+delta.0,y=point.y+delta.1
+            guard (0...4).contains(x),(0...4).contains(y),!(x==4 && y==4) else { return nil }
+            return WalkPoint(x:x,y:y,z:0)
+        }
+        XCTAssertNil(WalkPath.find(from:start,x:4,y:4,step:step))
+        let approach=WalkPath.find(from:start,x:4,y:4,adjacent:true,step:step)
+        XCTAssertEqual(approach?.last,WalkPoint(x:3,y:3,z:0))
+        XCTAssertEqual(WalkPath.find(from:start,x:0,y:0,adjacent:true,step:step),[])
+    }
     func testWeightedPathPrefersRoadWithoutIgnoringCollision() throws {
         let start=WalkPoint(x:0,y:0,z:0)
         let route=WalkPath.find(from:start,x:10,y:0,travelCost:{ $0.y==2 ? 1 : 5 }) { p,d in

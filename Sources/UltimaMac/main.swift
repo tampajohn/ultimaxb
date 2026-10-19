@@ -1175,7 +1175,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let worker=Task.detached(priority:.userInitiated) { ()->[WalkPoint]? in
             do {
                 let assets=try ClientAssets(directory:directory)
-                return try WorldTravelPlanner(assets:assets,ghost:ghost).find(from:start,x:x,y:y,cancelled:{ Task.isCancelled })
+                return try WorldTravelPlanner(assets:assets,ghost:ghost).find(from:start,x:x,y:y,adjacent:bankGathered,cancelled:{ Task.isCancelled })
             } catch { return nil }
         }
         travelWorker=worker
@@ -1187,7 +1187,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.chatPanel.append("Travel planning cancelled because your position changed. Choose Go again."); return
             }
             guard let route else { self.chatPanel.append("No complete walking route found within the search budget. Try a nearer waypoint."); return }
-            self.beginWorldTravel(route,start:start,x:x,y:y,panel:panel,view:view)
+            // The reachable bank approach may be beside a wall/sign landmark.
+            // Local replanning must follow that actual endpoint, not repeatedly
+            // attempt the blocked landmark after the global route finishes.
+            let endpoint=bankGathered ? (route.last ?? start) : WalkPoint(x:x,y:y,z:start.z)
+            self.beginWorldTravel(route,start:start,x:endpoint.x,y:endpoint.y,panel:panel,view:view)
             panel.dropGatheredDuringTravel=dropGathered
             panel.bankGatheredOnArrival=bankGathered
         }

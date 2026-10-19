@@ -51,8 +51,13 @@ experimental and is not at parity yet.
   Unrelated containers, movement, manual Stop, refusal and timeout stop deposits.
   An offline packet-adapter fixture covers arrival, unrelated container rejection,
   a single outstanding deposit and authoritative completion. Live banker reach,
-  approach tiles, bank capacity/refusal and old-era landmark fidelity remain
-  unverified. Chest eligibility remains pending.
+  bank capacity/refusal and old-era banker placement remain unverified. Bank
+  planning now accepts reachable adjacent tiles and carries the actual endpoint
+  into local replanning. The five seeded inn-to-bank routes pass full static
+  collision verification; Jhelom and Skara Brae's exact landmarks are blocked.
+  Ordinary map travel retains exact goals. Chest eligibility remains pending:
+  local OUO inspection shows theft/lock rules rely on private server tags that
+  classic container packets do not expose; opening is not proof of free loot.
 - Validate every interaction against live UO1998, particularly long travel,
   spellcasting, death/resurrection and general server dialogs.
 - Full original menu layouts, fonts and hue fidelity; more general gump commands

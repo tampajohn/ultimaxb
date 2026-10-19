@@ -14,11 +14,11 @@ public final class WorldTravelPlanner {
         if order.count>=128 { maps.removeValue(forKey:order.removeFirst()) }
         maps[key]=map; order.append(key); return map
     }
-    public func find(from:WalkPoint,x:Int,y:Int,cancelled:()->Bool = { false })throws->[WalkPoint]? {
+    public func find(from:WalkPoint,x:Int,y:Int,adjacent:Bool = false,cancelled:()->Bool = { false })throws->[WalkPoint]? {
         guard (0..<assets.width).contains(x),(0..<assets.height).contains(y) else { return nil }
         // Weighted heuristic avoids exploring every side road on long journeys;
         // all returned individual steps still satisfy real collision checks.
-        return try WalkPath.find(from:from,x:x,y:y,limit:400_000,heuristicWeight:3,travelCost:{ point in
+        return try WalkPath.find(from:from,x:x,y:y,adjacent:adjacent,limit:400_000,heuristicWeight:3,travelCost:{ point in
             (try? self.map(point).travelCost(point)) ?? 3
         }) { point,direction in
             if cancelled() { throw CancellationError() }

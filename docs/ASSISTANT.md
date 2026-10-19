@@ -100,6 +100,27 @@ standing tiles for this older asset/server combination:
 Validate approach tiles against installed collision data and banker reach. Do not
 substitute town inn coordinates for bank arrival or infer bank identity from art.
 
+`tools/check_bank_routes.swift` now verifies full collision-valid static routes
+from all five seeded town inns to reachable bank-adjacent tiles in the installed
+1.25.32 map. Jhelom and Skara Brae's exact published landmarks are blocked, so
+bank travel uses adjacent-goal planning and carries the chosen endpoint through
+local replanning. Normal map travel still requires its exact destination. This
+does not verify live banker range, access, dynamic doors or island crossings.
+
+### Chest eligibility findings (2026-10-19)
+
+The local OUO reference prevents reliable theft-free inference from ordinary
+container packets. `CContainer_HasAccessibleContents_VT` in `container.c` checks
+the private `isLocked` tag. Independently, `HandlePacket_REQ_GETOBJ` in
+`packet_handler.c` classifies pickup as stealing when either the item or parent
+is at home, when the top container belongs to another mobile, or when the private
+`overloadStealing` tag overrides the decision. `CEntity_IsAtHome` in `item.c`
+depends on private home-location and city/justice-region data. Packet builders
+for 0x25/0x3C send item art, quantity, coordinates, container serial and hue; they
+do not expose those theft rules. An unlocked/opened/movable chest is therefore
+insufficient evidence. Automatic chest looting remains unimplemented pending a
+reliable ownership/loot-permission source; do not probe by attempting a theft.
+
 The first tool-action state machine is implemented and locally tested. It emits one
 use-item command, waits for one or two target requests, validates target compatibility,
 then waits for an explicitly correlated result. Refusal, depletion, manual stop,
