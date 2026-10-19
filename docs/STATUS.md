@@ -858,3 +858,8 @@ Validation: release build passed; `tools/check_login_flow.swift` injects offline
 - Movement denials at a visible mobile's position now use a separate bounded retry budget, a short pause, and two-second obstacle expiry. They no longer exhaust the three static-obstruction retries.
 - If no detour exists while a mobile tile is blocked, retain the destination and wait until that temporary block expires before resolving again. No route steps are sent while recovery is pending.
 - Four route-recovery tests passed, covering temporary expiry, budget renewal, permanent obstruction limits and authoritative progress. Live animal encounters still require gameplay validation.
+
+### 2026-10-19 — Mobile obstruction integration regression
+- Added an offline AppKit fixture that feeds world entry, animal appearance, movement denial, authoritative position correction and animal removal through LoginOverlay's actual packet adapter.
+- Verifies immediate prediction, correction, retry pause, retention of the destination when no detour exists, no repeated planning during the wait, and resumed movement after the temporary obstacle expires.
+- All thirteen offline UI fixtures passed in both runner passes. This is packet-level local evidence, not proof of every live server obstruction scenario. No client restart was needed for this test-only change.
