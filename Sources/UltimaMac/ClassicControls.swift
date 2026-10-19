@@ -76,3 +76,37 @@ import UOCore
         NSBezierPath(rect:bounds.insetBy(dx:1,dy:1)).stroke()
     }
 }
+
+/// Keep native menu navigation/accessibility while drawing the closed selection
+/// with the same bitmap lettering as the surrounding classic panels.
+@MainActor final class ClassicChoice:NSPopUpButton {
+    private let bitmap:ClassicText
+    override var isFlipped:Bool { true }
+    init(fonts:ClassicFonts?) {
+        bitmap=ClassicText(fonts)
+        super.init(frame:.zero,pullsDown:false)
+        isBordered=false
+    }
+    required init?(coder:NSCoder) { fatalError() }
+    override func draw(_ rect:NSRect) {
+        NSColor(calibratedRed:0.18,green:0.16,blue:0.12,alpha:0.9).setFill(); bounds.fill()
+        NSColor(calibratedRed:0.5,green:0.42,blue:0.25,alpha:1).setStroke()
+        NSBezierPath(rect:bounds.insetBy(dx:0.5,dy:0.5)).stroke()
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect:NSRect(x:5,y:0,width:max(0,bounds.width-24),height:bounds.height)).addClip()
+        let value=selectedItem?.title ?? ""
+        var textX:CGFloat=5
+        if let swatch=selectedItem?.image {
+            swatch.draw(in:NSRect(x:5,y:(bounds.height-14)/2,width:20,height:14),from:.zero,operation:.sourceOver,fraction:1,respectFlipped:true,hints:nil)
+            textX=30
+        }
+        bitmap.draw(value,at:NSPoint(x:textX,y:max(0,(bounds.height-bitmap.size(value).height)/2)))
+        NSGraphicsContext.restoreGraphicsState()
+        NSColor(calibratedRed:0.8,green:0.7,blue:0.45,alpha:1).setFill()
+        let arrow=NSBezierPath()
+        arrow.move(to:NSPoint(x:bounds.maxX-15,y:bounds.midY-2))
+        arrow.line(to:NSPoint(x:bounds.maxX-5,y:bounds.midY-2))
+        arrow.line(to:NSPoint(x:bounds.maxX-10,y:bounds.midY+4)); arrow.close(); arrow.fill()
+        if !isEnabled { NSColor.black.withAlphaComponent(0.35).setFill(); bounds.fill() }
+    }
+}

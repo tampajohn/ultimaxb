@@ -13,11 +13,24 @@ import UOCore
   let bitmap = panel.bitmapImageRepForCachingDisplay(in:panel.bounds)!
   panel.cacheDisplay(in:panel.bounds,to:bitmap)
   try bitmap.representation(using:.png,properties:[:])!.write(to:URL(fileURLWithPath:"build/character-creation.png"))
+  func checkFocusLoop() {
+   let start=panel.subviews.compactMap { $0 as? NSTextField }.first!
+   var current:NSView=start
+   var visited=Set<ObjectIdentifier>()
+   while visited.insert(ObjectIdentifier(current)).inserted {
+    precondition(!current.isHiddenOrHasHiddenAncestor)
+    if let control=current as? NSControl { precondition(control.isEnabled) }
+    current=current.nextKeyView!
+   }
+   precondition(current === start)
+  }
+  checkFocusLoop()
   var submitted = false
   panel.onCreate = { _,_,_,a,appearance in precondition(appearance.isValid(female:false)); precondition(a.validationMessage == nil); submitted = true }
   panel.subviews.compactMap { $0 as? NSButton }.first { $0.title == "Create Character" }!.performClick(nil)
   precondition(submitted)
-  panel.subviews.compactMap { $0 as? NSButton }.first { $0.title == "Appearance…" }!.performClick(nil)
+  panel.subviews.compactMap { $0 as? NSButton }.first { $0.title == "Appearance" }!.performClick(nil)
+  checkFocusLoop()
   let editor = panel.subviews.compactMap { $0 as? AppearanceEditor }.first!
   let popups = editor.subviews.compactMap { $0 as? NSPopUpButton }
   popups[0].selectItem(withTag:0x410); popups[1].selectItem(withTag:0x203B); popups[3].selectItem(withTag:0x2040)
@@ -25,7 +38,8 @@ import UOCore
   precondition(editor.selection.hairStyle == 0x203B && editor.selection.beardStyle == 0x2040)
   panel.cacheDisplay(in:panel.bounds,to:bitmap)
   try bitmap.representation(using:.png,properties:[:])!.write(to:URL(fileURLWithPath:"build/character-appearance.png"))
-  editor.setFemale(true)
+  panel.subviews.compactMap { $0 as? NSButton }.first { $0.title == "Male" }!.performClick(nil)
+  checkFocusLoop()
   precondition(editor.selection.beardStyle == 0 && !popups[3].isEnabled)
   panel.cacheDisplay(in:panel.bounds,to:bitmap)
   try bitmap.representation(using:.png,properties:[:])!.write(to:URL(fileURLWithPath:"build/character-appearance-female.png"))

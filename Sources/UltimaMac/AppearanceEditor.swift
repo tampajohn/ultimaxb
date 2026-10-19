@@ -4,7 +4,7 @@ import UOCore
 @MainActor
 final class AppearanceEditor: NSView {
     private let assets: ClientAssets
-    private let skin = NSPopUpButton(), hair = NSPopUpButton(), hairColor = NSPopUpButton(), beard = NSPopUpButton(), beardColor = NSPopUpButton()
+    private let skin:ClassicChoice, hair:ClassicChoice, hairColor:ClassicChoice, beard:ClassicChoice, beardColor:ClassicChoice
     private var layers: [(width:Int,height:Int,rgba:[UInt8])] = []
     private let creationGumps: GumpAssets?
     // Use the installed client's art first. This workspace's optional 1.26 pack
@@ -32,10 +32,12 @@ final class AppearanceEditor: NSView {
     var controls: [NSView] { [skin,hair,hairColor,beard,beardColor] }
     init(assets:ClientAssets) {
         self.assets = assets
+        skin=ClassicChoice(fonts:assets.fonts); hair=ClassicChoice(fonts:assets.fonts)
+        hairColor=ClassicChoice(fonts:assets.fonts); beard=ClassicChoice(fonts:assets.fonts); beardColor=ClassicChoice(fonts:assets.fonts)
         creationGumps = Self.creationArtwork(assets)
         super.init(frame:NSRect(x:30,y:110,width:540,height:270))
         for (i,entry) in [("Skin tone",skin),("Hair style",hair),("Hair color",hairColor),("Facial hair",beard),("Facial hair color",beardColor)].enumerated() {
-            let label = NSTextField(labelWithString:entry.0); label.textColor = .white; label.frame = NSRect(x:[375,0,375,0,375][i],y:[20,40,95,110,170][i],width:160,height:20); addSubview(label)
+            let label = ClassicLabel(entry.0,fonts:assets.fonts); label.frame = NSRect(x:[375,0,375,0,375][i],y:[20,40,95,110,170][i],width:160,height:20); addSubview(label)
             entry.1.frame = NSRect(x:[375,0,375,0,375][i],y:[41,61,116,131,191][i],width:160,height:26); entry.1.target = self; entry.1.action = #selector(changed); entry.1.setAccessibilityLabel(entry.0); addSubview(entry.1)
         }
         populateColors(skin,range:0x3EA...0x422)
