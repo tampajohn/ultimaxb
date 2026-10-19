@@ -59,6 +59,29 @@ mining and herding are additional requested UltimaXB workflows.
 - Metadata-only telemetry for workflow state, action type, target IDs, counts,
   timings and stop reasons. No speech text, credentials or private packet payloads.
 
+## Work-zone scheduler implemented, not yet connected to gameplay
+
+`HarvestWorkflow` now schedules bounded tool attempts over caller-supplied work
+sites. Both targets and standing positions must lie within a selected rectangular
+zone (at most 128 by 128 tiles). A collision resolver supplies routes; the scheduler
+rejects paths that leave the zone, skip tiles or miss the selected standing point.
+It waits for authoritative arrival, then uses `AssistantAction` to wait for the
+cursor and correlated result. Success counts toward a requested action limit;
+depletion advances to the next site. A one-second minimum pause separates attempts.
+Unreachable sites are tried once; exhaustion of reachable work stops explicitly.
+
+Pause drains an outstanding tool action or route before entering the paused state;
+Stop is immediate and the adapter must cancel movement. Missing tool, overweight,
+leaving the zone, refusal, timeout and disconnect stop execution. Stopped workflows
+cancel late cursors rather than targeting them. No automatic restart occurs.
+
+This is core scheduling only. Zone selection/overlays, owned-tool discovery/equip,
+resource-site discovery, enemy checks, server-result correlation, persistent UI
+controls and gameplay/telemetry adapters are still required before enabling it.
+The classic target protocol does not identify which tool produced a cursor: the
+adapter must isolate manual actions and stop on ambiguous/late responses. A test
+that supplies a correlated result does not establish live resource detection.
+
 ## Verification and current test boundaries
 
 Test state transitions with deterministic packet fixtures: normal completion,

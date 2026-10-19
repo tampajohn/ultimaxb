@@ -52,6 +52,11 @@ experimental and is not at parity yet.
 - A pending door-open wait now owns that removal: no movement resumes until replacement geometry changes; a permanently absent door reaches the existing bounded timeout. Doors removed while still approaching and unrelated target/tool invalidations retain their previous cancellation behavior. Door waits are only created when local item-use validation accepts the request.
 - Offline adapter checks cover separate removal/replacement reads with a tick between, one local destination continuation, permanent disappearance timeout, approach-time cancellation and long-distance wait preservation. Nine door core tests and all sixteen UI fixtures pass. Live confirmation remains pending next launch; the active client is preserved.
 
+### 2026-10-19 — Harvest work-zone scheduler groundwork
+- Added `HarvestWorkflow` over the existing tool-action runner. It validates bounded work zones and supplied sites/routes, waits for authoritative arrival and correlated tool results, enforces inter-attempt cooldown, advances on depletion, counts successful actions and stops on refusal, missing tool, overweight, timeout or leaving the zone. Unreachable sites cannot loop indefinitely; no reachable remaining site reports an explicit stop.
+- Pause drains the current route/action; Stop immediately stops the state machine and cancels late target requests. A future adapter must cancel its movement on Stop. Eight scheduler tests plus five existing tool-action tests pass. These are deterministic core tests, not live harvesting evidence.
+- This is not enabled in the client yet. Work-zone UI/overlays, resource discovery, tool selection/equip, enemy checks, result correlation, persistence and telemetry integration remain required; see [assistant scope](ASSISTANT.md). The running client was left intact.
+
 ## Implemented, with live shard testing still ongoing
 
 - Login, shard/character selection, reconnect, creation stats/skills/appearance.

@@ -12,7 +12,7 @@ public struct AssistantAction {
     }
     public enum StopReason:Equatable {
         case cancelled, disconnected, timeout, unexpectedTarget, serverCancelled
-        case invalidSelection, refused, depleted, overweight, missingTool
+        case invalidSelection, refused, depleted, overweight, missingTool, unreachable
     }
     public enum Result:Equatable { case success, refused, depleted }
     public enum Command:Equatable {
