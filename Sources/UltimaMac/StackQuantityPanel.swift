@@ -4,7 +4,7 @@ import UOCore
 /// Classic quantity artwork with keyboard-accessible amount and slider controls.
 @MainActor
 final class StackQuantityPanel: NSView, NSTextFieldDelegate {
-    private let amount = NSTextField(string: "1")
+    private let amount = ClassicEntry(string: "1")
     private let slider: NSSlider
     private let maximum: Int
     private let background: NSImage?
@@ -22,9 +22,9 @@ final class StackQuantityPanel: NSView, NSTextFieldDelegate {
         amount.cell?.sendsActionOnEndEditing = false
         slider.frame = NSRect(x: 55, y: 28, width: 215, height: 30)
         slider.target = self; slider.action = #selector(slide)
-        let button = NSButton(title: "OK", target: self, action: #selector(confirm))
+        let button = ClassicButton("OK",fonts:assets.fonts,target: self, action: #selector(confirm))
         button.frame = NSRect(x: 202, y: 75, width: 68, height: 34)
-        let cancel = NSButton(title: "Cancel", target: self, action: #selector(cancelled))
+        let cancel = ClassicButton("Cancel",fonts:assets.fonts,target: self, action: #selector(cancelled))
         cancel.frame = NSRect(x: 105, y: 130, width: 90, height: 26)
         let title = NSTextField(labelWithString: "Split stack — choose quantity")
         title.frame = NSRect(x: 8, y: 0, width: 300, height: 22)

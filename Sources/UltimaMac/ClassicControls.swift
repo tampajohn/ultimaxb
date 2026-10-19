@@ -25,7 +25,7 @@ import UOCore
     }
 }
 
-@MainActor final class ClassicButton:NSButton {
+@MainActor class ClassicButton:NSButton {
     var gemBackground: NSImage?
     static let sapphireGem: NSImage? = {
         #if SWIFT_PACKAGE

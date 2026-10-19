@@ -870,3 +870,10 @@ Validation: release build passed; `tools/check_login_flow.swift` injects offline
 - Removed hard-coded Georgia, Times and system-font declarations from login, character selection/paperdoll, travel fields, quantity and server dialogs. Trade annotations, missing-art markers, journal fallback and formatted gump text now use the shared asset-backed font.
 - Added a source-policy gate to the UI runner. The classic UI fixture verifies every Latin-1 advance against fonts.mul, account/password font selection, active account editing and Tab order. Login preview inspected locally; thirteen offline fixtures passed.
 - Limitations: the installed font has Latin-1 coverage only. OS fallback can remain for unsupported Unicode, including secure-entry mask glyphs; missing font assets also retain a centralized usability fallback. This pass establishes asset typography across controls, not exact original layout parity for every screen.
+
+### 2026-10-19 — Centered entries and classic saved-server panel
+- Shared regular/secure entry cells center the visible glyph line and use consistent field-editor geometry. Fields retain full-height backgrounds, with parchment defaults instead of native rounded bezels.
+- Saved-server settings now use an opaque classic stone panel, parchment entries and generated gem actions. Opening settings raises it above the shard selector and constrains its Tab loop; closing restores the underlying flow.
+- Converted text-only paperdoll detail, selection, quantity, prompt and server-choice buttons to ClassicButton; original image buttons remain original sprites. Login dropdowns use ClassicChoice. Original container artwork remains intact.
+- Added the project-wide controls/panels style rule. Login and saved-settings previews inspected; all thirteen offline UI fixtures passed, including the layering/close-flow assertion, active font editing and inventory interaction checks.
+- Exact original layout parity and custom scrollbars/sliders remain follow-up work; this does not claim the entire UI is an exact original-client clone.

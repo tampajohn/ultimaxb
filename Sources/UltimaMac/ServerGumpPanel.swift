@@ -108,7 +108,7 @@ import UOCore
                 choices.append((button,UInt32(a[5]),command.name == "radio" ? group : nil)); add(button)
             case "textentry":
                 guard valid(7), (0...65535).contains(a[5]), definition.texts.indices.contains(a[6]) else { continue }
-                let field = NSTextField(string:definition.texts[a[6]])
+                let field = ClassicEntry(string:definition.texts[a[6]])
                 field.frame = rect(a[0],a[1],a[2],a[3]); field.isBordered = false; field.drawsBackground = false
                 field.textColor = textColor(a[4],increment:false); entries.append((field,UInt16(a[5]))); add(field)
             default: unsupported += 1

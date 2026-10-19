@@ -3,7 +3,7 @@ import UOCore
 
 @MainActor
 final class ChatPanel: NSView, NSTextFieldDelegate {
-    private let entry = NSTextField(string: "")
+    private let entry = ClassicEntry(string: "")
     private let modeLabel:ClassicLabel
     private let journal:ChatHistoryPreview
     private let historyButton:ClassicButton

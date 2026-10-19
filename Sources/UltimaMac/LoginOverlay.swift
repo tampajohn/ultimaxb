@@ -6,27 +6,27 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private let connection:GameConnection
     private var savedLogin:SavedLogin
     private let loginDefaults:UserDefaults
-    private let localLoginButton = NSButton(title:"Local Test Center",target:nil,action:nil)
-    private let primaryLoginButton = NSButton(title:"Saved Server",target:nil,action:nil)
+    private let localLoginButton:ClassicButton
+    private let primaryLoginButton:ClassicButton
     private let characterSelection: CharacterSelectionPanel
     private let characterCreation: CharacterCreationPanel
     private let card:NSView = FlippedLoginControls()
     private let artwork:LoginArtwork
-    private let settings = NSView()
+    private let settings:ClassicPanel
     private let introControls:NSView = FlippedLoginControls()
     private(set) var characterDisplayName = ""
     private var creationSlot: UInt32 = 0
     private var pendingDeletion: UInt32?
-    private let host = NSTextField(string: "login.uo1998.com")
-    private let port = NSTextField(string: "5000")
-    private let account = NSTextField(string: "")
-    private let password = NSSecureTextField(string: "")
+    private let host = ClassicEntry(string: "login.uo1998.com")
+    private let port = ClassicEntry(string: "5000")
+    private let account = ClassicEntry(string: "")
+    private let password = ClassicSecureEntry(string: "")
     private let rememberPassword = NSButton(checkboxWithTitle: "Remember password in macOS Keychain", target: nil, action: nil)
     private let status = NSTextField(wrappingLabelWithString: "Connect using the 1.25.32 protocol.")
-    private let choices = NSPopUpButton()
-    private let cityChoice = NSPopUpButton()
+    private let choices:ClassicChoice
+    private let cityChoice:ClassicChoice
     private var cities: [StartingCity] = []
-    private let characterName = NSTextField(string: "Avatar")
+    private let characterName = ClassicEntry(string: "Avatar")
     private let female = NSButton(checkboxWithTitle: "Female character", target: nil, action: nil)
     private var secondaryButtons: [NSButton] = []
     private let action: ClassicButton
@@ -644,6 +644,10 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     init(assets: ClientAssets, loginDefaults:UserDefaults = UserDefaults(suiteName:"com.ultimaxb.UltimaMac")!, connection:GameConnection? = nil) {
         self.connection=connection ?? GameConnection()
         ClassicNativeFont.install(assets.fonts)
+        choices=ClassicChoice(fonts:assets.fonts); cityChoice=ClassicChoice(fonts:assets.fonts)
+        settings=ClassicPanel(assets:assets)
+        localLoginButton=ClassicButton("Local Test Center",fonts:assets.fonts,target:nil,action:nil)
+        primaryLoginButton=ClassicButton("Saved Server",fonts:assets.fonts,target:nil,action:nil)
         artwork = LoginArtwork(assets:assets)
         action = ClassicButton("Connect", fonts:assets.fonts, target:nil, action:nil)
         self.loginDefaults = loginDefaults
@@ -683,22 +687,28 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         rememberPassword.font=ClassicNativeFont.uiFont; card.addSubview(rememberPassword)
         let settingsButton=ClassicButton("Server & saved login",fonts:assets.fonts,target:self,action:#selector(toggleSettings))
         settingsButton.frame=NSRect(x:225,y:385,width:190,height:26); card.addSubview(settingsButton)
-        settings.frame=NSRect(x:105,y:60,width:430,height:205); settings.wantsLayer=true
-        settings.layer?.backgroundColor=NSColor(calibratedWhite:0.13,alpha:0.97).cgColor
+        settings.frame=NSRect(x:105,y:100,width:430,height:250)
         settings.isHidden=true; card.addSubview(settings)
         localLoginButton.target=self; localLoginButton.action=#selector(quickLocalLogin)
         primaryLoginButton.target=self; primaryLoginButton.action=#selector(selectPrimaryLogin)
-        primaryLoginButton.frame=NSRect(x:12,y:165,width:180,height:25)
-        localLoginButton.frame=NSRect(x:210,y:165,width:205,height:25)
+        primaryLoginButton.frame=NSRect(x:12,y:12,width:180,height:44)
+        localLoginButton.frame=NSRect(x:210,y:12,width:205,height:44)
+        primaryLoginButton.gemBackground=ClassicButton.sapphireGem
+        localLoginButton.gemBackground=ClassicButton.sapphireGem
         settings.addSubview(primaryLoginButton); settings.addSubview(localLoginButton)
-        for (label,field,y) in [("Server",host,115),("Port",port,75)] {
-            let title=NSTextField(labelWithString:label); title.frame=NSRect(x:12,y:y,width:65,height:24); settings.addSubview(title)
-            field.frame=NSRect(x:80,y:y,width:335,height:24); settings.addSubview(field)
+        for (label,field,y) in [("Server",host,80),("Port",port,125)] {
+            let title=ClassicLabel(label,fonts:assets.fonts); title.frame=NSRect(x:16,y:y+6,width:65,height:24); settings.addSubview(title)
+            field.frame=NSRect(x:80,y:y,width:335,height:30)
+            field.isBezeled=false; field.isBordered=false; field.drawsBackground=true
+            field.backgroundColor=NSColor(calibratedRed:0.76,green:0.71,blue:0.57,alpha:1); field.textColor = .black
+            settings.addSubview(field)
         }
-        let forget=NSButton(title:"Forget saved password",target:self,action:#selector(forgetPassword))
-        forget.frame=NSRect(x:12,y:25,width:210,height:26); settings.addSubview(forget)
-        let done=NSButton(title:"Done",target:self,action:#selector(toggleSettings))
-        done.frame=NSRect(x:310,y:25,width:105,height:26); settings.addSubview(done)
+        let forget=ClassicButton("Forget saved password",fonts:assets.fonts,target:self,action:#selector(forgetPassword))
+        forget.gemBackground=ClassicButton.sapphireGem
+        forget.frame=NSRect(x:12,y:188,width:260,height:44); settings.addSubview(forget)
+        let done=ClassicButton("Done",fonts:assets.fonts,target:self,action:#selector(toggleSettings))
+        done.gemBackground=ClassicButton.sapphireGem
+        done.frame=NSRect(x:295,y:188,width:120,height:44); settings.addSubview(done)
         choices.isHidden=true; choices.frame=NSRect(x:155,y:170,width:330,height:30); card.addSubview(choices)
         for control in [characterName,female,cityChoice] as [NSView] { control.isHidden=true; card.addSubview(control) }
         status.frame=NSRect(x:115,y:418,width:420,height:45); status.font=ClassicNativeFont.uiFont
@@ -821,10 +831,15 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         introControls.isHidden=true; artwork.mainMenu=false; card.isHidden=false; artwork.showsForm=true
         updateTabOrder(); view.window?.makeFirstResponder(account)
     }
-    @objc private func introSettings() { enterLogin(); settings.isHidden=false; updateTabOrder() }
+    @objc private func introSettings() { enterLogin(); showSettings(true) }
     @objc private func introInformation() { enterLogin(); status.stringValue="UltimaXB · Classic client assets · Swift macOS client" }
     @objc private func quitClient() { NSApplication.shared.terminate(nil) }
-    @objc private func toggleSettings() { settings.isHidden.toggle(); updateTabOrder() }
+    private func showSettings(_ visible:Bool) {
+        settings.isHidden = !visible
+        if visible { card.addSubview(settings,positioned:.above,relativeTo:nil) }
+        updateTabOrder(); focusVisibleControl()
+    }
+    @objc private func toggleSettings() { showSettings(settings.isHidden) }
     @objc private func performAction() {
         Telemetry.shared.record("login_action", ["phase": String(describing: phase)])
         do {
@@ -905,7 +920,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         // A manually inserted overlay does not automatically join the window's
         // original key-view loop. Keep its traversal separate from the world view.
         view.window?.autorecalculatesKeyViewLoop = false
-        let controls=focusableControls(in:view)
+        let controls=focusableControls(in:settings.isHidden ? view : settings)
         for index in controls.indices { controls[index].nextKeyView = controls[(index+1)%controls.count] }
     }
     private func focusableControls(in parent:NSView)->[NSView] {
@@ -915,7 +930,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         return parent.subviews.flatMap { focusableControls(in:$0) }
     }
     private func focusVisibleControl() {
-        view.window?.makeFirstResponder(focusableControls(in:view).first)
+        view.window?.makeFirstResponder(focusableControls(in:settings.isHidden ? view : settings).first)
     }
     func show(in parent: NSView) {
         if view.superview !== parent {

@@ -4,7 +4,7 @@ import UOCore
 @MainActor final class TextPromptPanel:NSView,NSTextFieldDelegate {
     let request:TextPrompt
     private let assets:ClientAssets
-    private let entry = NSTextField(string:"")
+    private let entry = ClassicEntry(string:"")
     private let errorLabel = NSTextField(wrappingLabelWithString:"")
     var onReply:((String,Bool)->Void)?
     override var isFlipped:Bool { true }
@@ -21,7 +21,7 @@ import UOCore
         entry.delegate = self; entry.target = self; entry.action = #selector(submit); entry.isEditable = request.variant != 0; addSubview(entry)
         for (id,x,title,selector) in [(0x47B,117,"Submit",#selector(submit)),(0x478,204,"Cancel",#selector(cancel))] {
             if title == "Cancel" && !request.allowsCancel { continue }
-            let button = NSButton(title:title,target:self,action:selector)
+            let button = ClassicButton(title,fonts:assets.fonts,target:self,action:selector)
             button.image = image(id); button.alternateImage = image(id+1); button.imagePosition = .imageOnly; button.isBordered = false
             button.frame = NSRect(x:x,y:190,width:Int(button.image?.size.width ?? 70),height:Int(button.image?.size.height ?? 24))
             button.setAccessibilityLabel(title); addSubview(button)

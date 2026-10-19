@@ -36,6 +36,18 @@ import UOCore
             overlay.view.cacheDisplay(in:overlay.view.bounds,to:rep)
             try rep.representation(using:.png,properties:[:])!.write(to:URL(fileURLWithPath:"build/gem-shard-selection.png"))
         }
+        click("toggleSettings")
+        let done=all(overlay.view).compactMap { $0 as? ClassicButton }.first { $0.title == "Done" }!
+        let settings=done.superview!
+        precondition(settings.superview?.subviews.last === settings,"Settings must cover the shard chooser")
+        precondition(done.gemBackground != nil)
+        ClassicNativeFont.apply(to:overlay.view)
+        if let rep=overlay.view.bitmapImageRepForCachingDisplay(in:overlay.view.bounds) {
+            overlay.view.cacheDisplay(in:overlay.view.bounds,to:rep)
+            try rep.representation(using:.png,properties:[:])!.write(to:URL(fileURLWithPath:"build/classic-saved-settings.png"))
+        }
+        done.performClick(nil)
+        precondition(settings.isHidden)
         click("dismissOverlay")
         click("enterLogin")
         precondition(accountVisible())

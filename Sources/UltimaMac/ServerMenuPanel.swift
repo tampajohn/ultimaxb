@@ -19,7 +19,7 @@ final class ServerMenuPanel:NSView {
         scroll.drawsBackground = false; scroll.hasHorizontalScroller = menu.usesIcons; scroll.hasVerticalScroller = !menu.usesIcons
         let content = MenuContent(frame:NSRect(x:0,y:0,width:menu.usesIcons ? max(217,menu.options.count*62) : 340,height:menu.usesIcons ? 49 : max(240,menu.options.count*30)))
         for option in menu.options {
-            let button = MenuOptionButton(title:option.title.isEmpty ? "Choice \(option.index)" : option.title,target:self,action:#selector(choose(_:)))
+            let button = MenuOptionButton(option.title.isEmpty ? "Choice \(option.index)" : option.title,fonts:assets.fonts,target:self,action:#selector(choose(_:)))
             button.tag = option.index; button.toolTip = option.title
             button.onHover = { [weak self] inside in
                 self?.detail.stringValue = inside ? option.title : "Choose an item · Right-click cancels"
@@ -72,7 +72,7 @@ final class ServerMenuPanel:NSView {
 }
 @MainActor private final class MenuContent:NSView { override var isFlipped:Bool { true } }
 
-@MainActor private final class MenuOptionButton:NSButton {
+@MainActor private final class MenuOptionButton:ClassicButton {
     var onHover: ((Bool)->Void)?
     private var tracking:NSTrackingArea?
     override func updateTrackingAreas() {

@@ -22,3 +22,14 @@ chat/journal, overhead names, vendors/trade, maps and server dialogs.
   labels and validation messages; check clipping and text contrast.
 - Do not embed replacement labels over lettering baked into an art sprite.
 - Preserve original assets. Never commit extracted proprietary font data.
+
+## Game controls and panels
+
+All player-facing buttons, fields, dropdowns, panels and containers must use the
+game's visual style. Prefer original gump sprites and layout; use ClassicButton,
+ClassicPanel, ClassicChoice and ClassicEntry/ClassicSecureEntry for new controls.
+Use generated blank gem art only where an appropriate original sprite is absent.
+Do not show stock macOS rounded buttons, translucent sheets or modern container
+frames in the game. Keep OS chrome and the bottom debug bar exceptions above.
+Center editable glyphs vertically and keep focus/editing geometry consistent.
+Modal panels must draw opaquely above siblings and keep keyboard focus inside.

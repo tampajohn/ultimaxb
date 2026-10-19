@@ -52,7 +52,7 @@ final class CharacterPanel: NSView {
         avatar.onBackgroundUp = { [weak self] in self?.mouseUp(with:$0) }
         for (row,id,title) in [(0,0x7EF,"Help"),(1,0x7D6,"Options"),(2,0x7D9,"Log Out"),(3,0x7DC,"Journal"),(4,0x7DF,"Skills"),(5,0x7E2,"Chat"),(6,0x7E5,"Peace / War"),(7,0x7EB,"Status")] {
             guard let image = image(id) else { continue }
-            let button = NSButton(title:title,target:self,action:#selector(classicAction(_:)))
+            let button = ClassicButton(title,fonts:avatar.assets.fonts,target:self,action:#selector(classicAction(_:)))
             button.tag = row; button.image = image; button.alternateImage = self.image(id+1)
             button.imagePosition = .imageOnly; button.isBordered = false
             button.frame = NSRect(x:185,y:44+row*27,width:Int(image.size.width),height:Int(image.size.height))
@@ -67,7 +67,6 @@ final class CharacterPanel: NSView {
         // Status/equipment details are revealed by the original Status button,
         // leaving only the classic paperdoll visible by default.
         details.frame = NSRect(x:10,y:30,width:242,height:280)
-        details.wantsLayer = true; details.layer?.backgroundColor = NSColor(calibratedWhite:0.12,alpha:0.95).cgColor
         details.isHidden = true; addSubview(details)
         statsLabel.font = ClassicNativeFont.uiFont
         statsLabel.frame = NSRect(x:8,y:8,width:226,height:100); details.addSubview(statsLabel)
@@ -76,7 +75,7 @@ final class CharacterPanel: NSView {
         scroll.documentView = equipmentList; equipmentList.translatesAutoresizingMaskIntoConstraints = false
         equipmentList.widthAnchor.constraint(equalTo:scroll.contentView.widthAnchor).isActive = true
         details.addSubview(scroll)
-        let done = NSButton(title:"Back to Paperdoll",target:self,action:#selector(toggleDetails))
+        let done = ClassicButton("Back to Paperdoll",fonts:avatar.assets.fonts,target:self,action:#selector(toggleDetails))
         done.frame = NSRect(x:21,y:240,width:200,height:28); details.addSubview(done)
     }
     private func image(_ id:Int)->NSImage? {
@@ -122,9 +121,9 @@ final class CharacterPanel: NSView {
             let name = (try? avatar.assets.itemName(graphic: item.graphic)) ?? "Item"
             let label = NSTextField(labelWithString: name)
             if EquipmentRules.isWearable(item.layer) {
-                let remove = NSButton(title: "Remove", target: self, action: #selector(removeEquipment(_:)))
+                let remove = ClassicButton("Remove",fonts:avatar.assets.fonts,target: self, action: #selector(removeEquipment(_:)))
                 remove.tag = Int(item.serial)
-                let use = NSButton(title: "Use", target: self, action: #selector(useEquipment(_:))); use.tag = Int(item.serial)
+                let use = ClassicButton("Use",fonts:avatar.assets.fonts,target: self, action: #selector(useEquipment(_:))); use.tag = Int(item.serial)
                 equipmentList.addArrangedSubview(NSStackView(views: (item.layer == 1 || item.layer == 2) ? [label, use, remove] : [label, remove]))
             } else { equipmentList.addArrangedSubview(label) }
         }

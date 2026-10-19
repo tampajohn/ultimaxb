@@ -56,7 +56,7 @@ final class CharacterSelectionPanel: NSView {
         label.alignment = .center; addSubview(label)
     }
     private func button(_ id:Int, x:Int, y:Int, title:String, action:Selector, tag:Int = 0, enabled:Bool = true) {
-        let button = NSButton(title:title,target:self,action:action); button.tag = tag
+        let button = ClassicButton(title,fonts:assets.fonts,target:self,action:action); button.tag = tag
         if let image = image(id) {
             button.image = image; button.alternateImage = self.image(id+1); button.imagePosition = .imageOnly; button.isBordered = false
             button.frame = NSRect(x:CGFloat(x),y:CGFloat(y),width:image.size.width,height:image.size.height)
@@ -73,7 +73,7 @@ final class CharacterSelectionPanel: NSView {
         } else {
             label("Character Selection",rect:NSRect(x:100,y:56,width:250,height:30),size:20)
             for (i,character) in characters.enumerated() {
-                let button = NSButton(title:character.name,target:self,action:#selector(selectCharacter(_:)))
+                let button = ClassicButton(character.name,fonts:assets.fonts,target:self,action:#selector(selectCharacter(_:)))
                 button.frame = NSRect(x:84,y:100+i*40,width:280,height:30); button.tag = Int(character.slot)
                 button.isBordered = false; button.font = ClassicNativeFont.uiFont
                 button.contentTintColor = character.slot == selected ? .systemRed : .white

@@ -7,9 +7,9 @@ import UOCore
     private let assets:ClientAssets
     private var destinations:[TravelDestination]
     private var selected=0
-    private let name=NSTextField(string:"")
-    private let x=NSTextField(string:"")
-    private let y=NSTextField(string:"")
+    private let name=ClassicEntry(string:"")
+    private let x=ClassicEntry(string:"")
+    private let y=ClassicEntry(string:"")
     private let message:ClassicLabel
     private let list=TravelRows()
     var onGo:((Int,Int)->Void)?

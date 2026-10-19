@@ -8,7 +8,7 @@ final class CharacterCreationPanel: NSView {
     private var setupViews: [NSView] = []
     private var showingAppearance = false
     private let appearanceButton:ClassicButton
-    private let name = NSTextField(string:"Avatar")
+    private let name = ClassicEntry(string:"Avatar")
     private let female:ClassicButton
     private let city:ClassicChoice
     private var cities: [StartingCity] = []
@@ -74,7 +74,7 @@ final class CharacterCreationPanel: NSView {
         field.textColor=NSColor(calibratedRed:0.18,green:0.12,blue:0.08,alpha:1)
     }
     private func number(_ value:Int,x:Int,y:Int)->NSTextField {
-        let field = NSTextField(string:String(value)); field.frame = NSRect(x:x,y:y,width:65,height:26)
+        let field = ClassicEntry(string:String(value)); field.frame = NSRect(x:x,y:y,width:65,height:26)
         styleField(field)
         let format = NumberFormatter(); format.numberStyle = .none; format.allowsFloats = false; format.minimum = 0; format.maximum = 100
         field.formatter = format; addSubview(field); return field
