@@ -1,6 +1,6 @@
 import Foundation
 
-public struct WalkPoint: Hashable {
+public struct WalkPoint: Hashable, Sendable {
     public let x:Int, y:Int, z:Int
     public init(x:Int,y:Int,z:Int) { self.x=x; self.y=y; self.z=z }
 }
@@ -8,7 +8,7 @@ public enum WalkPath {
     public static let directions = [(0,-1),(1,-1),(1,0),(1,1),(0,1),(-1,1),(-1,0),(-1,-1)]
     /// Bounded A*. Each step costs one movement request, including diagonals.
     public static func find(from start:WalkPoint, x:Int, y:Int, adjacent:Bool = false, goalZ:Int? = nil,
-                            limit:Int = 4096, segmentLength:Int? = nil, travelCost:(WalkPoint)->Int = { _ in 1 }, step:(WalkPoint,UInt8)throws->WalkPoint?) rethrows -> [WalkPoint]? {
+                            limit:Int = 4096, heuristicWeight:Int = 1, segmentLength:Int? = nil, travelCost:(WalkPoint)->Int = { _ in 1 }, step:(WalkPoint,UInt8)throws->WalkPoint?) rethrows -> [WalkPoint]? {
         func distance(_ p:WalkPoint)->Int { max(0,max(abs(p.x-x),abs(p.y-y))-(adjacent ? 1 : 0)) }
         // Equal-length eight-way routes can otherwise zigzag across open ground.
         // Prefer proximity to the requested line only as a tie-breaker; this
@@ -16,10 +16,12 @@ public enum WalkPath {
         func deviation(_ p:WalkPoint)->Int {
             abs((p.x-start.x)*(y-start.y)-(p.y-start.y)*(x-start.x))
         }
-        var open = [start], costs = [start:0], parents:[WalkPoint:WalkPoint] = [:], closed = Set<WalkPoint>()
+        var open=WalkFrontier(),costs=[start:0],parents:[WalkPoint:WalkPoint]=[:],closed=Set<WalkPoint>()
+        open.push(point:start,cost:0,score:distance(start)*max(1,heuristicWeight),distance:distance(start),deviation:0)
         for _ in 0..<max(0,limit) {
-            guard let index = open.indices.min(by:{ (costs[open[$0]]!+distance(open[$0]),distance(open[$0]),deviation(open[$0])) < (costs[open[$1]]!+distance(open[$1]),distance(open[$1]),deviation(open[$1])) }) else { return nil }
-            let current = open.remove(at:index)
+            guard let entry=open.pop() else { return nil }
+            let current=entry.point
+            if closed.contains(current) || costs[current] != entry.cost { continue }
             let reached = distance(current) == 0 && (goalZ == nil || abs(current.z-goalZ!)<=16)
             let segmentReached = segmentLength.map { $0 > 0 && max(abs(current.x-start.x),abs(current.y-start.y)) >= $0 && distance(current) < distance(start) } ?? false
             if reached || segmentReached {
@@ -32,8 +34,8 @@ public enum WalkPath {
                 guard let next = try step(current,direction), !closed.contains(next) else { continue }
                 let cost = costs[current]!+max(1,travelCost(next))
                 if cost < costs[next,default:Int.max] {
-                    if costs[next] == nil { open.append(next) }
                     costs[next] = cost; parents[next] = current
+                    open.push(point:next,cost:cost,score:cost+distance(next)*max(1,heuristicWeight),distance:distance(next),deviation:deviation(next))
                 }
             }
         }
@@ -157,5 +159,30 @@ public enum WalkDestination {
             if let floor = standing(cell.x,cell.y),floor.z < cell.z { return floor }
         }
         return nil
+    }
+}
+
+private struct WalkFrontier {
+    struct Entry {
+        let point:WalkPoint,cost:Int,score:Int,distance:Int,deviation:Int,order:Int
+        func precedes(_ b:Entry)->Bool { (score,distance,deviation,order)<(b.score,b.distance,b.deviation,b.order) }
+    }
+    private var entries:[Entry]=[]
+    private var order=0
+    mutating func push(point:WalkPoint,cost:Int,score:Int,distance:Int,deviation:Int) {
+        entries.append(Entry(point:point,cost:cost,score:score,distance:distance,deviation:deviation,order:order)); order+=1
+        var i=entries.count-1
+        while i>0 { let parent=(i-1)/2; if !entries[i].precedes(entries[parent]) { break }; entries.swapAt(i,parent); i=parent }
+    }
+    mutating func pop()->Entry? {
+        guard !entries.isEmpty else { return nil }
+        if entries.count == 1 { return entries.removeLast() }
+        let first=entries[0]; entries[0]=entries.removeLast(); var i=0
+        while i*2+1<entries.count {
+            var child=i*2+1
+            if child+1<entries.count && entries[child+1].precedes(entries[child]) { child+=1 }
+            if !entries[child].precedes(entries[i]) { break }; entries.swapAt(i,child); i=child
+        }
+        return first
     }
 }

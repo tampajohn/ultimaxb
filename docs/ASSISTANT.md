@@ -101,8 +101,6 @@ Stop or manual movement ends travel. Destinations are scoped to server/character
 Source city positions and limitations are recorded in STATUS.md. No travel resumes
 on reconnect, and tests have not moved the user's character outside Minoc.
 
-Gather is a session-only sidebar toggle: reagents, or reagents plus items explicitly
-marked movable by the server. It does not loot corpses or open containers, detour,
-sell, or drop belongings. Transfer confirmation, bounded timeout and failure stop
-are implemented. Full zone mining/herding and the broader macro runner remain
+Gather is a session-only sidebar toggle: reagents, or all portable ground items (asset weight below the immovable sentinel). It does not loot corpses or open containers, detour,
+sell, or drop belongings. Transfer confirmation and bounded timeout prevent overlapping moves. Server refusals skip the current item without disabling gathering; weight guards pause or skip oversized stacks. Timeout and disconnect still stop gathering. Full zone mining/herding and the broader macro runner remain
 separate unfinished requirements. The UI overhaul remains active for other dialogs.

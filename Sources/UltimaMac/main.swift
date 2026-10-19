@@ -296,9 +296,10 @@ final class WorldView: NSView {
         }
         equipment = options.sampleEquipment
         setAccessibilityLabel("Ultima Online world viewer")
-        animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+        animationTimer = Timer(timeInterval:1.0/30.0,repeats:true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.animate() }
         }
+        if let animationTimer { RunLoop.main.add(animationTimer,forMode:.common) }
         refresh()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -789,6 +790,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 if self.containerPanels.count >= 8,
                    let oldest = view.subviews.compactMap({ $0 as? ContainerPanel }).first {
+                    panel?.dismissObjectWindow(oldest.serial)
                     oldest.removeFromSuperview(); self.containerPanels.removeValue(forKey: oldest.serial)
                 }
                 let bag = ContainerPanel(container: container, assets: self.assets)
@@ -814,7 +816,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 bag.onQuickPickup = { [weak panel] serial, amount in panel?.pickupToBackpack(serial: serial, amount: amount) }
                 bag.onUse = { [weak panel] in panel?.use(serial: $0) }
-                bag.onClose = { [weak self] in
+                bag.onClose = { [weak self,weak panel] in
+                    panel?.dismissObjectWindow(container.serial)
                     self?.containerPanels.removeValue(forKey: container.serial)?.removeFromSuperview()
                     if let view = self?.worldView { view.window?.makeFirstResponder(view) }
                 }
@@ -883,6 +886,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             worldView?.onChat = { [weak self] in self?.chatPanel.begin() }
             panel.onInventoryMessage = { [weak self] message in self?.containerPanels.values.forEach { $0.showMessage(message) }; if !["Moving item…", "Equipping item…", "Moving equipment to backpack…", "Inventory updated. Drag to move; drag a stack to split it."].contains(message) { self?.chatPanel.append(message) } }
+            panel.onObjectWindowsClosed = { [weak self] serials in
+                for serial in serials {
+                    self?.containerPanels.removeValue(forKey:serial)?.removeFromSuperview()
+                    self?.spellbooks.removeValue(forKey:serial)?.removeFromSuperview()
+                }
+            }
             panel.onContainerItems = { [weak self] items in
                 self?.containerPanels.values.forEach { $0.update(items) }
                 self?.spellbooks.values.forEach { $0.update(items) }
@@ -968,6 +977,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self, let view = self.worldView else { return }
                 let book = self.spellbooks[serial] ?? SpellbookPanel(serial:serial,assets:self.assets)
                 self.spellbooks[serial] = book
+                book.onClose = { [weak self,weak panel] in
+                    panel?.dismissObjectWindow(serial)
+                    self?.spellbooks.removeValue(forKey:serial)
+                }
                 book.update(items)
                 book.onCast = { [weak self, weak panel] id in
                     panel?.castSpell(id,book:serial)
@@ -1130,30 +1143,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         view.addSubview(panel)
     }
+    private var travelPlanning:Task<Void,Never>?
+    private var travelWorker:Task<[WalkPoint]?,Never>?
     private func travelOnMap(x:Int,y:Int) {
         guard let view = worldView, let player = view.player, let panel = loginOverlay else { return }
         panel.cancelRoute()
+        travelPlanning?.cancel(); travelWorker?.cancel()
+        let start=WalkPoint(x:player.x,y:player.y,z:player.z)
+        let directory=URL(fileURLWithPath:options.client),ghost=player.isGhost
+        chatPanel.append("Planning the complete route, including bridges...")
+        let worker=Task.detached(priority:.userInitiated) { ()->[WalkPoint]? in
+            do {
+                let assets=try ClientAssets(directory:directory)
+                return try WorldTravelPlanner(assets:assets,ghost:ghost).find(from:start,x:x,y:y,cancelled:{ Task.isCancelled })
+            } catch { return nil }
+        }
+        travelWorker=worker
+        panel.onRouteCancelled = { [weak self] in self?.travelPlanning?.cancel(); self?.travelWorker?.cancel() }
+        travelPlanning=Task { [weak self,weak panel] in
+            let route=await worker.value
+            guard !Task.isCancelled,let self,let panel,let view=self.worldView,let current=view.player else { return }
+            guard current.serial == player.serial,current.x == start.x,current.y == start.y,current.z == start.z else {
+                self.chatPanel.append("Travel planning cancelled because your position changed. Choose Go again."); return
+            }
+            guard let route else { self.chatPanel.append("No complete walking route found within the search budget. Try a nearer waypoint."); return }
+            self.beginWorldTravel(route,start:start,x:x,y:y,panel:panel,view:view)
+        }
+    }
+    private func beginWorldTravel(_ itinerary:[WalkPoint],start:WalkPoint,x:Int,y:Int,panel:LoginOverlay,view:WorldView) {
+        var progress=0
         let planner: (WalkPoint,Set<WalkPoint>)->[WalkPoint]? = { [weak self] start,blocked in
-            guard let self, let view = self.worldView,
-                  let map = try? NavigationMap(assets:self.assets,center:start,additional:view.groundItems,radius:48,ghost:view.player?.isGhost == true) else { return nil }
+            guard let self,let view=self.worldView else { return nil }
+            if start.x == x && start.y == y { return [] }
+            if let reached=itinerary.indices.dropFirst(progress).prefix(96).first(where:{ itinerary[$0].x == start.x && itinerary[$0].y == start.y && abs(itinerary[$0].z-start.z)<=16 }) { progress=reached+1 }
+            let candidates=itinerary.dropFirst(progress).prefix(64).filter { max(abs($0.x-start.x),abs($0.y-start.y))<=28 }
+            guard let goal=candidates.last,
+                  let map=try? NavigationMap(assets:self.assets,center:start,additional:view.groundItems,radius:48,ghost:view.player?.isGhost == true) else { return nil }
             let enemies=view.mobiles.filter { $0.serial != view.player?.serial && ($0.isEnemy || $0.serial == view.combatTarget) }
-            return WalkPath.find(from:start,x:x,y:y,segmentLength:32,travelCost:{ point in
-                map.travelCost(point)+TravelSafety.penalty(point,enemies:enemies)
+            return WalkPath.find(from:start,x:goal.x,y:goal.y,goalZ:goal.z,limit:8192,travelCost:{
+                map.travelCost($0)+TravelSafety.penalty($0,enemies:enemies)
             }) { point,direction in
-                guard let next = map.step(from:point,direction:direction), !blocked.contains(next),
-                      TravelSafety.allows(from:point,to:next,enemies:enemies) else { return nil }
+                guard let next=map.step(from:point,direction:direction),!blocked.contains(next),TravelSafety.allows(from:point,to:next,enemies:enemies) else { return nil }
                 return next
             }
         }
-        let start = WalkPoint(x:player.x,y:player.y,z:player.z)
-        guard let route = planner(start,[]) else { chatPanel.append("No clear route toward that map destination."); return }
-        view.followPlayer = true
+        guard let route=planner(start,[]) else { chatPanel.append("The route is planned, but a nearby obstacle blocks the first section."); return }
+        view.followPlayer=true
         panel.travelStepAllowed = { [weak self] next in
             guard let view=self?.worldView,let player=view.player else { return false }
             return TravelSafety.allows(from:WalkPoint(x:player.x,y:player.y,z:player.z),to:next,enemies:view.mobiles.filter { $0.serial != player.serial && ($0.isEnemy || $0.serial == view.combatTarget) })
         }
         panel.followRoute(route,action:nil,running:view.running,continuing:true,resolver:planner)
-        Telemetry.shared.record("map_travel_requested",["x":x,"y":y,"steps":route.count])
+        chatPanel.append("Route planned: \(itinerary.count) steps. Starting travel.")
+        Telemetry.shared.record("map_travel_requested",["x":x,"y":y,"steps":itinerary.count])
     }
     /// Door-free planning is only used to find the first gate. Actual walking
     /// always uses the ordinary collision map, then waits for a server update.

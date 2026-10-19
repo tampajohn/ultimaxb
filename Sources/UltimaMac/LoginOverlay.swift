@@ -34,6 +34,9 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private var characters: [GameCharacter] = []
     private var framer = GamePacketFramer()
     private var world = WorldState()
+    private var openObjectWindows=OpenObjectWindows()
+    var onObjectWindowsClosed:((Set<UInt32>)->Void)?
+    func dismissObjectWindow(_ serial:UInt32) { openObjectWindows.dismiss(serial) }
     private var playerSerial: UInt32?
     private var loginComplete = false
     private(set) var characterStatus: CharacterStatus?
@@ -116,7 +119,11 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private var routeRetries = 0
     private var routeContinues = false
     private var routeSegments = 0
+    private var travelActivity:NSObjectProtocol?
+    var onRouteCancelled:(()->Void)?
     func cancelRoute() {
+        onRouteCancelled?()
+        if let activity=travelActivity { ProcessInfo.processInfo.endActivity(activity); travelActivity=nil }
         waitingDoor = nil
         if walkRoute != nil { Telemetry.shared.record("walk_route_cancelled") }
         walkRoute = nil; routeAction = nil; onWalkRoute?([])
@@ -124,6 +131,9 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     }
     func followRoute(_ route:[WalkPoint], action:ArrivalAction?, running:Bool, continuing:Bool = false, resolver: @escaping (WalkPoint,Set<WalkPoint>)->[WalkPoint]?) {
         guard loginComplete else { return }
+        if travelActivity == nil {
+            travelActivity=ProcessInfo.processInfo.beginActivity(options:.userInitiatedAllowingIdleSystemSleep,reason:"Completing requested Ultima Online travel")
+        }
         routeResolver = resolver; routeContinues = continuing
         walkRoute = route; routeAction = action; routeRunning = running; onWalkRoute?(route)
         Telemetry.shared.record("walk_route_started",["steps":route.count,"target":action?.serial as Any? ?? NSNull(),"running":running])
@@ -144,21 +154,17 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         if wasPending && autoPickup.pending == nil && autoPickup.mode == .off {
             onInventoryMessage?(autoPickup.stoppedReason ?? "Auto-pickup stopped."); onAutoPickupMode?(0)
         }
-        if autoPickup.mode != .off,let weight=characterStatus?.weight,let strength=characterStatus?.strength,
-           weight >= 40+strength*7/2-10,autoPickup.pending == nil {
-            autoPickup.stop("Auto-pickup stopped: approaching carrying capacity.")
-            onAutoPickupMode?(0); onInventoryMessage?(autoPickup.stoppedReason!)
-        }
         guard allowed,loginComplete,trade == nil,combatTarget.serial == nil,targetRequest == nil,now-manualInventoryAt>2,
               let serial=playerSerial,let player=world.mobiles[serial],
               let weight=characterStatus?.weight,let strength=characterStatus?.strength,
               weight < 40+strength*7/2-10,
               let bag=world.equipment.values.first(where:{$0.owner==serial && $0.layer==21}),
-              let item=autoPickup.select(items:Array(world.items.values),player:player,at:now) else { return }
+              let item=autoPickup.select(items:Array(world.items.values),player:player,at:now,portable:{ (self.itemWeight?($0.graphic) ?? 255)<255 }) else { return }
         guard let unitWeight=itemWeight?(item.graphic),unitWeight<255,
               weight+unitWeight*max(1,item.amount)<40+strength*7/2-10 else {
-            autoPickup.stop("Auto-pickup stopped: this stack may exceed carrying capacity.")
-            onAutoPickupMode?(0); onInventoryMessage?(autoPickup.stoppedReason!); return
+            autoPickup.skip(item.serial)
+            onInventoryMessage?("Auto-pickup skipped a stack that may exceed carrying capacity.")
+            Telemetry.shared.record("auto_pickup_result",["outcome":"skipped_weight"]); return
         }
         do {
             let packets=try world.movePackets(serial:item.serial,amount:max(1,item.amount),player:serial,x:0xFFFF,y:0xFFFF,target:bag.serial,z:0)
@@ -168,8 +174,9 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         } catch { autoPickup.stop("Auto-pickup stopped: item cannot be moved."); onAutoPickupMode?(0) }
     }
     func tickMovement(allowRoute:Bool = true) {
-        tickAutoPickup(allowed:allowRoute)
-        if !allowRoute { cancelRoute() }
+        tickAutoPickup(allowed:allowRoute || walkRoute != nil)
+        // Focus gates opportunistic gathering and direct input, not an explicit route.
+        // Stop/manual input/disconnect still cancel travel through cancelRoute().
         if let waiting = waitingDoor {
             let result = waiting.wait.result(door:world.items[waiting.item.serial],at:ProcessInfo.processInfo.systemUptime)
             if result == .changed {
@@ -216,6 +223,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                     }
                 }
                 let action = routeAction; walkRoute = nil; routeAction = nil; onWalkRoute?([])
+                if let activity=travelActivity { ProcessInfo.processInfo.endActivity(activity); travelActivity=nil }
                 if let action { performArrival(action, player: player) }
                 Telemetry.shared.record("walk_route_completed")
             }
@@ -932,6 +940,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         death = DeathState(); onDeath?(death)
         for key in serverGumps.keys { onServerGump?(key,nil) }; serverGumps.removeAll()
         serverMenu = nil; onServerMenu?(nil)
+        openObjectWindows=OpenObjectWindows()
         onContainerItems?([])
         onGroundObjects?([])
         onGroundItems?([])
@@ -972,8 +981,10 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                     packetContext = GamePacketDiagnostics.summary(packet)
                     let pickupPending=autoPickup.pending != nil
                     autoPickup.receive(packet)
-                    if pickupPending && autoPickup.pending == nil && autoPickup.mode == .off {
-                        onAutoPickupMode?(0); onInventoryMessage?(autoPickup.stoppedReason ?? "Auto-pickup stopped.")
+                    if pickupPending && autoPickup.pending == nil {
+                        onAutoPickupMode?(autoPickup.mode.rawValue)
+                        onInventoryMessage?(autoPickup.stoppedReason ?? "Auto-pickup stopped.")
+                        Telemetry.shared.record("auto_pickup_result",["outcome":autoPickup.mode == .off ? "stopped" : "skipped_refusal"])
                     }
                     Telemetry.shared.record("game_packet", ["opcode": String(format: "0x%02X", packet.first ?? 0), "bytes": packet.count])
                     if let previous = characterStatus {
@@ -1005,6 +1016,11 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         }
                         if case .attack(let serial) = routeAction, serial == event.serial { cancelRoute() }
                         Telemetry.shared.record("mobile_death",["serial":event.serial,"corpse":event.corpse,"alternate":event.alternate])
+                    }
+                    if packet.first == 0x1D,packet.count == 5 {
+                        let serial=packet.dropFirst().reduce(UInt32(0)) { ($0<<8)|UInt32($1) }
+                        let closed=openObjectWindows.removed(serial)
+                        if !closed.isEmpty { onObjectWindowsClosed?(closed) }
                     }
                     if try world.apply(packet) { changed = true; updateTradeItems() }
                     else if transferWasPending && tradeTransfer == nil { onTrade?(trade) }
@@ -1153,6 +1169,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         onInventoryMessage?("Inventory updated. Drag to move; drag a stack to split it.")
                     case 0x24:
                         if let container = world.openContainer {
+                            if container.graphic != 0x30 { openObjectWindows.register(container.serial,world:world,player:playerSerial) }
                             if container.graphic == 0xFFFF {
                                 onSpellbookOpened?(container.serial,Array(world.containerItems.values))
                                 Telemetry.shared.record("spellbook_opened",["serial":container.serial])
@@ -1222,6 +1239,11 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         changed = true
                         Telemetry.shared.record("world_cache_pruned", ["removed": evicted, "radius": 32])
                     }
+                }
+                let closedWindows=openObjectWindows.reconcile(world:world,player:playerSerial)
+                if !closedWindows.isEmpty {
+                    onObjectWindowsClosed?(closedWindows)
+                    Telemetry.shared.record("object_windows_closed",["count":closedWindows.count,"reason":"out_of_reach"])
                 }
                 if changed {
                     Telemetry.shared.record("world_update", ["mobiles": world.mobiles.count, "ground_items": world.items.count, "equipment": world.equipment.count])

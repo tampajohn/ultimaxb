@@ -35,7 +35,7 @@ final class PlaySidebar: ClassicPanel {
         addSubview(targetLabel)
         let pickup=ClassicButton("Gather: off",fonts:assets.fonts,target:self,action:#selector(cyclePickup))
         pickup.frame=NSRect(x:12,y:374,width:256,height:28); addSubview(pickup); pickupButton=pickup
-        pickup.toolTip="Cycle: off, nearby reagents, server-marked movable items. Stops on refusal or disconnect."
+        pickup.toolTip="Cycle: off, nearby reagents, all nearby portable ground items. Refused items are skipped. Stops on timeout or disconnect."
         let travel=ClassicButton("Travel journal",fonts:assets.fonts,target:self,action:#selector(command(_:)))
         travel.tag=4; travel.frame=NSRect(x:12,y:408,width:256,height:28); addSubview(travel)
         addSubview(skills)
@@ -46,7 +46,7 @@ final class PlaySidebar: ClassicPanel {
         skills.frame = NSRect(x:0,y:444,width:bounds.width,height:max(80,bounds.height-444))
     }
     func updatePickupMode(_ mode:Int) {
-        pickupMode=mode; pickupButton?.title=["Gather: off","Gather: reagents","Gather: movable items"][max(0,min(2,mode))]
+        pickupMode=mode; pickupButton?.title=["Gather: off","Gather: reagents","Gather: all"][max(0,min(2,mode))]
         pickupButton?.needsDisplay=true
     }
     @objc private func cyclePickup() { updatePickupMode((pickupMode+1)%3); onPickupMode?(pickupMode) }

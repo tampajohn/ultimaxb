@@ -12,6 +12,7 @@ final class SpellbookPanel:NSView {
     private var ordered:[Int] { known.sorted() }
     private var drag:NSPoint?
     private var spellDrag:(id:Int,start:NSPoint)?
+    var onClose:(()->Void)?
     var onShortcut:((Int,NSPoint)->Void)?
     var onCast: ((Int)->Void)?
     override var isFlipped:Bool { true }
@@ -103,7 +104,7 @@ final class SpellbookPanel:NSView {
         spellDrag = nil; drag = nil
         if NSRect(x:50,y:8,width:28,height:16).contains(p) { turn(-1); return }
         if NSRect(x:321,y:8,width:28,height:16).contains(p) { turn(1); return }
-        if NSRect(x:0,y:95,width:25,height:30).contains(p) { removeFromSuperview(); return }
+        if NSRect(x:0,y:95,width:25,height:30).contains(p) { removeFromSuperview(); onClose?(); return }
         if (175..<195).contains(p.y), let tab = [58,93,130,164,227,260,297,332].firstIndex(where: { CGFloat($0)<=p.x && p.x<CGFloat($0+19) }) {
             pair = tab/2; detailPair = nil; needsDisplay = true; return
         }
@@ -138,5 +139,5 @@ final class SpellbookPanel:NSView {
         self.drag = event.locationInWindow
     }
     override func mouseUp(with event:NSEvent) { drag = nil; spellDrag = nil }
-    override func rightMouseDown(with event:NSEvent) { pendingSelection?.cancel(); removeFromSuperview() }
+    override func rightMouseDown(with event:NSEvent) { pendingSelection?.cancel(); removeFromSuperview(); onClose?() }
 }

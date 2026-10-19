@@ -18,13 +18,17 @@ final class AutoPickupTests:XCTestCase {
     }
     func testTimeoutRefusalAndMovableFilter() {
         let player=WorldMobile(serial:1,body:400,x:10,y:10,z:0)
-        var gather=AutoPickup(); gather.mode = .movable
-        XCTAssertNil(gather.select(items:[item(graphic:0xF5E)],player:player,at:0))
+        var gather=AutoPickup(); gather.mode = .all
+        XCTAssertNotNil(gather.select(items:[item(graphic:0xF5E)],player:player,at:0))
+        XCTAssertNil(gather.select(items:[item(graphic:0xF5E)],player:player,at:0,portable:{_ in false}))
         XCTAssertNotNil(gather.select(items:[item(graphic:0xF5E,flags:0x20)],player:player,at:0))
         gather.begin(item(),bag:2,contents:[],at:0); gather.update(contents:[],at:5)
         XCTAssertEqual(gather.mode,.off); XCTAssertNil(gather.pending)
         gather.mode = .reagents; gather.begin(item(),bag:2,contents:[],at:6)
-        gather.receive(Data([0x27,0])); XCTAssertEqual(gather.mode,.off)
+        gather.receive(Data([0x27,0])); XCTAssertEqual(gather.mode,.reagents)
+        XCTAssertNil(gather.pending)
+        XCTAssertNil(gather.select(items:[item()],player:player,at:10))
+        XCTAssertEqual(gather.select(items:[item(99)],player:player,at:10)?.serial,99)
     }
     func testMergedStackNeedsAcknowledgementAndExactQuantity() {
         var gather=AutoPickup(); gather.mode = .reagents
