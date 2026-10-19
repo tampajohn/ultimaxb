@@ -191,6 +191,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     var dropGatheredDuringTravel=false
     var bankGatheredOnArrival=false
     private var bankingRequested=false
+    private var bankStackable:(Int)->Bool = { _ in false }
     private var banking:GatheredBanking?
     private var bankingCancelled=false
     private var bankContentsContext:UInt32?
@@ -266,7 +267,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         let previousTransfers=runner.confirmedTransfers
         let command=runner.next(position:WalkPoint(x:player.x,y:player.y,z:player.z),backpack:bag.serial,
                                 equipment:Array(world.equipment.values),contents:Array(world.containerItems.values),
-                                gathered:autoPickup.gathered,time:ProcessInfo.processInfo.systemUptime)
+                                gathered:autoPickup.gathered,time:ProcessInfo.processInfo.systemUptime,stackable:bankStackable)
         banking=runner
         if runner.confirmedTransfers>previousTransfers {
             Telemetry.shared.record("gathered_bank_confirmed",["transfers":runner.confirmedTransfers,"amount":runner.depositedAmount])
@@ -973,6 +974,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         settings=ClassicPanel(assets:assets)
         localLoginButton=ClassicButton("Local Test Center",fonts:assets.fonts,target:nil,action:nil)
         primaryLoginButton=ClassicButton("Saved Server",fonts:assets.fonts,target:nil,action:nil)
+        bankStackable = { (try? assets.isStackable(graphic:$0)) == true }
         artwork = LoginArtwork(assets:assets)
         action = ClassicButton("Connect", fonts:assets.fonts, target:nil, action:nil)
         self.loginDefaults = loginDefaults

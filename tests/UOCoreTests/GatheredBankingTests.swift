@@ -21,6 +21,36 @@ final class GatheredBankingTests:XCTestCase {
         runner.contentsReceived(for:3)
         return runner
     }
+    func testTargetsKnownNestedStackAndConfirmsItsContainer() {
+        var runner=ready()
+        let pouch=ContainerItem(serial:20,graphic:0xE76,amount:1,x:0,y:0,container:3,hue:0)
+        let before=[item(amount:14),pouch,item(21,amount:20,bag:20)]
+        XCTAssertEqual(runner.next(position:point,backpack:2,equipment:[bank],contents:before,
+            gathered:ledger(),time:1,stackable:{ _ in true }),.deposit(serial:4,amount:4,bank:21))
+        XCTAssertNil(poll(&runner,[item(amount:10),pouch,item(21,amount:20,bag:20)],time:2))
+        XCTAssertEqual(runner.confirmedTransfers,0)
+        XCTAssertNil(poll(&runner,[item(amount:10),pouch,item(21,amount:24,bag:20)],time:3))
+        XCTAssertEqual(runner.confirmedTransfers,1)
+    }
+    func testStackSelectionExcludesUnknownContainersHueAndNonstackables() {
+        let wrongHue=ContainerItem(serial:22,graphic:0xF7A,amount:20,x:0,y:0,container:3,hue:1)
+        let contents=[item(amount:14),item(21,amount:20,bag:99),wrongHue,item(23,amount:65535,bag:3)]
+        var runner=ready()
+        XCTAssertEqual(runner.next(position:point,backpack:2,equipment:[bank],contents:contents,
+            gathered:ledger(),time:1,stackable:{ _ in true }),.deposit(serial:4,amount:4,bank:3))
+        runner=ready()
+        XCTAssertEqual(poll(&runner,[item(amount:14),item(8,amount:20,bag:3)]),.deposit(serial:4,amount:4,bank:3))
+    }
+    func testStackRetryUsesSameTargetAndRemovedBagStops() {
+        var runner=ready()
+        let pouch=ContainerItem(serial:20,graphic:0xE76,amount:1,x:0,y:0,container:3,hue:0)
+        let before=[item(amount:14),pouch,item(21,amount:20,bag:20)]
+        _=runner.next(position:point,backpack:2,equipment:[bank],contents:before,gathered:ledger(),time:1,stackable:{ _ in true })
+        runner.refuse(reason:255,time:2)
+        XCTAssertEqual(poll(&runner,before,time:4),.deposit(serial:4,amount:4,bank:21))
+        XCTAssertNil(poll(&runner,[item(amount:14),item(21,amount:20,bag:20)],time:5))
+        guard case .stopped=runner.state else { return XCTFail("Unknown bank ancestry must stop transfer") }
+    }
     func testTotalsRequireBothSidesAndResetForNextRun() {
         var runner=ready()
         XCTAssertNotNil(poll(&runner,[item(amount:14)]))

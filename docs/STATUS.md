@@ -1016,3 +1016,9 @@ Validation: release build passed; `tools/check_login_flow.swift` injects offline
 - Detours keep conservative enemy checks. Manual inventory exclusion, weight limits, refusal handling and one outstanding lift remain intact.
 - Added packet-adapter regression for an adjacent enemy, pending movement, an actual pickup transaction and continued walking. Four focused core tests and all seventeen offline UI fixtures passed.
 - Harvest planning panel previews bounded mining/lumberjacking zones, reachable sites and map-picked centers, scoped to server/character. Original game fonts; screenshot inspected. Preview only: automatic harvesting is not enabled yet.
+
+### 2026-10-19 — Bank deposits prefer existing stacks
+- Stackable gathered goods target matching graphic/hue stacks in the player's bank, preferring direct stacks and then known nested containers. Unknown ancestry, cycles, hue mismatches and full stacks are excluded; unmatched goods retain main-bank placement.
+- Confirmation watches the selected destination container and source. Busy retries retain their original target and stop if its stack or bank ancestry disappears. Unopened nested contents are not automatically discovered.
+- Eleven banking tests and all seventeen offline UI fixtures passed. Live server merge behavior still needs validation.
+- Route diagnostic: replaying Minoc (2502,547) to Britain bank (1427,1685) found 1,611 independently collision-validated steps in 0.84s. Skara Brae (591,2142) exceeded both existing search budgets; an experimental 1.5-million-node fallback also failed and was removed. That destination remains unresolved; no slow fallback was shipped.

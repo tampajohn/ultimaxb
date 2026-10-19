@@ -18,6 +18,7 @@ public struct GatheredBanking {
     private struct Transfer {
         let source:UInt32, sourceBag:UInt32, graphic:Int, hue:Int, amount:Int
         let beforeSource:Int, beforeDestination:Int
+        let destinationContainer:UInt32, target:UInt32
     }
     public init() {}
     public mutating func begin(player:UInt32,at point:WalkPoint,time:TimeInterval)->Command {
@@ -47,7 +48,8 @@ public struct GatheredBanking {
     }
     public mutating func stop(_ reason:String) { state = .stopped(reason); transfer=nil }
     public mutating func next(position:WalkPoint,backpack:UInt32,equipment:[EquippedItem],
-                              contents:[ContainerItem],gathered:GatheredInventory,time:TimeInterval)->Command? {
+                              contents:[ContainerItem],gathered:GatheredInventory,time:TimeInterval,
+                              stackable:(Int)->Bool = { _ in false })->Command? {
         switch state { case .idle,.complete,.stopped: return nil; default: break }
         guard position==point else { stop("Banking stopped because the player moved."); return nil }
         if state == .opening || state == .waitingContents {
@@ -59,8 +61,16 @@ public struct GatheredBanking {
             stop("Player bank identity is no longer confirmed."); return nil
         }
         if let transfer {
+            var ancestor=transfer.destinationContainer,seen=Set<UInt32>()
+            while ancestor != bank {
+                guard seen.insert(ancestor).inserted,
+                      let parent=contents.first(where:{$0.serial==ancestor}) else {
+                    stop("Bank destination is no longer available."); return nil
+                }
+                ancestor=parent.container
+            }
             let source=contents.first(where:{$0.serial==transfer.source && $0.container==transfer.sourceBag && $0.graphic==transfer.graphic && $0.hue==transfer.hue})?.amount ?? 0
-            let destination=contents.filter { $0.container==bank && $0.graphic==transfer.graphic && $0.hue==transfer.hue }.reduce(0) { $0+$1.amount }
+            let destination=contents.filter { $0.container==transfer.destinationContainer && $0.graphic==transfer.graphic && $0.hue==transfer.hue }.reduce(0) { $0+$1.amount }
             guard source<=transfer.beforeSource-transfer.amount && destination>=transfer.beforeDestination+transfer.amount else {
                 if state == .retrying {
                     guard time>=deadline else { return nil }
@@ -69,8 +79,14 @@ public struct GatheredBanking {
                     guard source==transfer.beforeSource,destination==transfer.beforeDestination else {
                         stop("Bank retry stopped: inventory changed after refusal."); return nil
                     }
+                    if transfer.target != bank {
+                        guard contents.contains(where: {
+                            $0.serial==transfer.target && $0.container==transfer.destinationContainer &&
+                            $0.graphic==transfer.graphic && $0.hue==transfer.hue
+                        }) else { stop("Bank stack is no longer available."); return nil }
+                    }
                     state = .transferring; deadline=time+5
-                    return .deposit(serial:transfer.source,amount:transfer.amount,bank:bank)
+                    return .deposit(serial:transfer.source,amount:transfer.amount,bank:transfer.target)
                 }
                 if time>=deadline { stop("Bank deposit was not confirmed.") }
                 return nil
@@ -88,9 +104,29 @@ public struct GatheredBanking {
             state = .complete; return nil
         }
         guard let source=contents.first(where:{$0.serial==credit.serial && $0.container==backpack}) else { return nil }
+        // Follow only known ancestry rooted at this player's bank. A cycle,
+        // unknown parent or another owner's container never qualifies.
+        let bySerial=Dictionary(contents.map { ($0.serial,$0) },uniquingKeysWith:{ first,_ in first })
+        func depth(_ container:UInt32)->Int? {
+            var current=container,seen=Set<UInt32>(),depth=0
+            while current != bank {
+                guard seen.insert(current).inserted,let parent=bySerial[current] else { return nil }
+                current=parent.container; depth += 1
+            }
+            return depth
+        }
+        let matching=stackable(credit.graphic) ? contents.filter {
+            $0.graphic==credit.graphic && $0.hue==credit.hue &&
+            $0.amount>0 && $0.amount<=65535-credit.amount && depth($0.container) != nil
+        }.sorted {
+            let a=depth($0.container)!,b=depth($1.container)!
+            return a == b ? $0.serial<$1.serial : a<b
+        }.first : nil
+        let destination=matching?.container ?? bank
+        let target=matching?.serial ?? bank
         transfer=Transfer(source:source.serial,sourceBag:backpack,graphic:credit.graphic,hue:credit.hue,amount:credit.amount,
-                          beforeSource:source.amount,beforeDestination:contents.filter { $0.container==bank && $0.graphic==credit.graphic && $0.hue==credit.hue }.reduce(0) { $0+$1.amount })
+                          beforeSource:source.amount,beforeDestination:contents.filter { $0.container==destination && $0.graphic==credit.graphic && $0.hue==credit.hue }.reduce(0) { $0+$1.amount },destinationContainer:destination,target:target)
         deadline=time+5; state = .transferring
-        return .deposit(serial:credit.serial,amount:credit.amount,bank:bank)
+        return .deposit(serial:credit.serial,amount:credit.amount,bank:target)
     }
 }
