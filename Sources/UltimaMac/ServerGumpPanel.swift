@@ -87,7 +87,7 @@ import UOCore
                 let index = a[cropped ? 5 : 3]
                 guard definition.texts.indices.contains(index) else { continue }
                 let label = NSTextField(labelWithString:definition.texts[index])
-                label.font = .systemFont(ofSize:14); label.textColor = textColor(a[cropped ? 4 : 2],increment:true)
+                label.font = ClassicNativeFont.uiFont; label.textColor = textColor(a[cropped ? 4 : 2],increment:true)
                 label.sizeToFit()
                 label.frame = rect(a[0],a[1],cropped ? a[2] : Int(label.frame.width),cropped ? a[3] : 22)
                 add(label)

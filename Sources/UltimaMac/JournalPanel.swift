@@ -88,7 +88,7 @@ import UOCore
     private var cache:[Unicode.Scalar:Letter] = [:]
     private var placements:[(Letter,NSPoint)] = []
     private(set) var string = ""
-    private let fallbackAttributes:[NSAttributedString.Key:Any] = [.font:NSFont.systemFont(ofSize:13),.foregroundColor:NSColor.black]
+    private let fallbackAttributes:[NSAttributedString.Key:Any] = [.font:ClassicNativeFont.uiFont,.foregroundColor:NSColor.black]
     private var lineHeight:CGFloat = 18
     override var isFlipped:Bool { true }
     init(fonts:ClassicFonts?) {

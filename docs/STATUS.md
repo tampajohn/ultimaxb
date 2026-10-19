@@ -863,3 +863,10 @@ Validation: release build passed; `tools/check_login_flow.swift` injects offline
 - Added an offline AppKit fixture that feeds world entry, animal appearance, movement denial, authoritative position correction and animal removal through LoginOverlay's actual packet adapter.
 - Verifies immediate prediction, correction, retry pause, retention of the destination when no detour exists, no repeated planning during the wait, and resumed movement after the temporary obstacle expires.
 - All thirteen offline UI fixtures passed in both runner passes. This is packet-level local evidence, not proof of every live server obstruction scenario. No client restart was needed for this test-only change.
+
+### 2026-10-19 — Project-wide game-font policy and native editing bridge
+- Root AGENTS.md now requires installed game fonts throughout player-facing UI, preserving the approved debug-bar exception and OS-owned chrome.
+- Added an in-memory native font built from font 9's original bitmap contours and advances. Native labels, buttons, dropdowns and field editors are themed on window updates; secure fields retain their native secure-entry behavior. No extracted font file is saved or redistributed.
+- Removed hard-coded Georgia, Times and system-font declarations from login, character selection/paperdoll, travel fields, quantity and server dialogs. Trade annotations, missing-art markers, journal fallback and formatted gump text now use the shared asset-backed font.
+- Added a source-policy gate to the UI runner. The classic UI fixture verifies every Latin-1 advance against fonts.mul, account/password font selection, active account editing and Tab order. Login preview inspected locally; thirteen offline fixtures passed.
+- Limitations: the installed font has Latin-1 coverage only. OS fallback can remain for unsupported Unicode, including secure-entry mask glyphs; missing font assets also retain a centralized usability fallback. This pass establishes asset typography across controls, not exact original layout parity for every screen.

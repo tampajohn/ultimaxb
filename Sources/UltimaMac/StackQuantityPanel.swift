@@ -28,7 +28,7 @@ final class StackQuantityPanel: NSView, NSTextFieldDelegate {
         cancel.frame = NSRect(x: 105, y: 130, width: 90, height: 26)
         let title = NSTextField(labelWithString: "Split stack — choose quantity")
         title.frame = NSRect(x: 8, y: 0, width: 300, height: 22)
-        title.font = .boldSystemFont(ofSize: 14)
+        title.font = ClassicNativeFont.uiFont
         title.textColor = .white; title.drawsBackground = true; title.backgroundColor = .black
         addSubview(title)
         addSubview(slider); addSubview(amount); addSubview(button); addSubview(cancel)

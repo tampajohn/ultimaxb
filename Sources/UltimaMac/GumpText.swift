@@ -11,7 +11,7 @@ import AppKit
             var traits:NSFontTraitMask = []
             if bold > 0 { traits.insert(.boldFontMask) }
             if italic > 0 { traits.insert(.italicFontMask) }
-            let font = NSFontManager.shared.convert(.systemFont(ofSize:14),toHaveTrait:traits)
+            let font = NSFontManager.shared.convert(ClassicNativeFont.uiFont,toHaveTrait:traits)
             let paragraph = NSMutableParagraphStyle(); paragraph.alignment = centered > 0 ? .center : .left
             result.append(NSAttributedString(string:entities(text),attributes:[.font:font,.foregroundColor:colors.last ?? color,.paragraphStyle:paragraph,.underlineStyle:underline > 0 ? NSUnderlineStyle.single.rawValue : 0]))
         }

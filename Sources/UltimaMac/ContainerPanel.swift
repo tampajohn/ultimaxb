@@ -265,7 +265,7 @@ private final class ContainerCanvas: NSView {
             do {
                 guard let sprite = try assets.sprite(item.displayGraphic + 0x4000),
                       stride(from: 3, to: sprite.rgba.count, by: 4).contains(where: { sprite.rgba[$0] != 0 }) else {
-                    ("?" as NSString).draw(at: NSPoint(x: item.x, y: item.y), withAttributes: [.foregroundColor: NSColor.white])
+                    ("?" as NSString).draw(at: NSPoint(x: item.x, y: item.y), withAttributes: [.font:ClassicNativeFont.uiFont,.foregroundColor: NSColor.white])
                     continue
                 }
                 var pixels = sprite.rgba

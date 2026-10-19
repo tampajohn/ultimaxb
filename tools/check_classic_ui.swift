@@ -1,9 +1,11 @@
 import AppKit
+import CoreText
 import UOCore
 @main struct CheckClassicUI {
     @MainActor static func capture(_ view:NSView,_ name:String) throws {
         let window=NSWindow(contentRect:view.frame,styleMask:[.borderless],backing:.buffered,defer:false)
         window.contentView=view; view.layoutSubtreeIfNeeded()
+        ClassicNativeFont.apply(to:view)
         let bitmap=view.bitmapImageRepForCachingDisplay(in:view.bounds)!
         view.cacheDisplay(in:view.bounds,to:bitmap)
         try bitmap.representation(using:.png,properties:[:])!.write(to:URL(fileURLWithPath:"build/\(name).png"))
@@ -18,9 +20,31 @@ import UOCore
         let loginHost=NSView(frame:login.view.frame)
         login.show(in:loginHost)
         func descendants(_ view:NSView)->[NSView] { [view]+view.subviews.flatMap(descendants) }
+        ClassicNativeFont.apply(to:login.view)
+        precondition(ClassicNativeFont.font?.fontName == "UltimaXB-ClassicBitmap")
+        let native=ClassicNativeFont.font!
+        let ct=unsafeBitCast(native,to:CTFont.self)
+        for code in 32...255 {
+            let glyph=try assets.fonts!.glyph(Unicode.Scalar(code)!,font:9)!
+            var character=UniChar(code), mapped=CGGlyph(0), advance=CGSize.zero
+            precondition(CTFontGetGlyphsForCharacters(ct,&character,&mapped,1))
+            CTFontGetAdvancesForGlyphs(ct,.horizontal,&mapped,&advance,1)
+            precondition(abs(advance.width-CGFloat(max(1,glyph.sprite.width)))<0.01,"Game glyph advance changed")
+        }
         let controls=descendants(login.view)
         let account=controls.compactMap { $0 as? NSTextField }.first { $0.accessibilityLabel()=="Account name" }!
         let password=controls.compactMap { $0 as? NSSecureTextField }.first!
+        precondition(account.font?.fontName == "UltimaXB-ClassicBitmap")
+        precondition(password.font?.fontName == "UltimaXB-ClassicBitmap")
+        let editorWindow=NSWindow(contentRect:NSRect(x:0,y:0,width:800,height:600),styleMask:[.titled],backing:.buffered,defer:false)
+        editorWindow.contentView=loginHost
+        account.stringValue="Typography fixture"
+        editorWindow.makeFirstResponder(account)
+        ClassicNativeFont.apply(to:loginHost)
+        precondition((account.currentEditor() as? NSTextView)?.font?.fontName == "UltimaXB-ClassicBitmap")
+        precondition(account.stringValue == "Typography fixture")
+        editorWindow.makeFirstResponder(nil)
+        account.stringValue=""
         precondition(account.nextKeyView === password,"Tab must move from account to password")
         let remember=controls.compactMap { $0 as? NSButton }.first { $0.accessibilityLabel()=="Remember password in Keychain" }!
         precondition(remember.state == .off); remember.performClick(nil); precondition(remember.state == .on)

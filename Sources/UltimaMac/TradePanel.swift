@@ -68,12 +68,12 @@ import UOCore
                 let rect = NSRect(x:x+max(0,min(109,item.x)),y:70+max(0,min(79,item.y)),width:sprite.width,height:sprite.height)
                 image.draw(in:rect,from:.zero,operation:.sourceOver,fraction:1,respectFlipped:true,hints:nil)
                 hits.append((rect.intersection(area),item))
-                if item.amount > 1 { (String(item.amount) as NSString).draw(at:NSPoint(x:rect.minX,y:rect.maxY-12),withAttributes:[.font:NSFont.systemFont(ofSize:10),.foregroundColor:NSColor.white,.backgroundColor:NSColor.black]) }
+                if item.amount > 1 { (String(item.amount) as NSString).draw(at:NSPoint(x:rect.minX,y:rect.maxY-12),withAttributes:[.font:ClassicNativeFont.uiFont,.foregroundColor:NSColor.white,.backgroundColor:NSColor.black]) }
             }
             NSGraphicsContext.restoreGraphicsState()
         }
         if trade.pendingAcceptance != nil || trade.awaitingOfferUpdate || trade.cancelling {
-            ("Waiting for server…" as NSString).draw(at:NSPoint(x:90,y:151),withAttributes:[.font:NSFont.systemFont(ofSize:10),.foregroundColor:NSColor.black])
+            ("Waiting for server…" as NSString).draw(at:NSPoint(x:90,y:151),withAttributes:[.font:ClassicNativeFont.uiFont,.foregroundColor:NSColor.black])
         }
     }
     @objc private func confirm() { onAccept?(!trade.ownAccepted,trade.revision) }

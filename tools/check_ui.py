@@ -17,6 +17,7 @@ FIXTURES = [
 
 
 def main():
+    subprocess.run(["python3", "tools/check_font_policy.py"], cwd=ROOT, check=True)
     subprocess.run([
         "swift", "build", "-c", "release", "--cache-path", "build/swift-cache",
         "--scratch-path", ".build",

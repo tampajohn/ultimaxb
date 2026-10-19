@@ -28,7 +28,7 @@ import UOCore
         list.frame=NSRect(x:20,y:48,width:380,height:216); addSubview(list)
         for (label,field,rect) in [("Name",name,NSRect(x:90,y:282,width:300,height:24)),("X",x,NSRect(x:90,y:316,width:105,height:24)),("Y",y,NSRect(x:280,y:316,width:110,height:24))] {
             let caption=ClassicLabel(label,fonts:assets.fonts); caption.frame=NSRect(x:rect.minX-55,y:rect.minY,width:50,height:24); addSubview(caption)
-            field.frame=rect; field.font=NSFont(name:"Georgia",size:14); field.isBezeled=false; field.backgroundColor=NSColor(calibratedRed:0.76,green:0.71,blue:0.57,alpha:1); field.textColor = .black; field.setAccessibilityLabel(label); addSubview(field)
+            field.frame=rect; field.font=ClassicNativeFont.uiFont; field.isBezeled=false; field.backgroundColor=NSColor(calibratedRed:0.76,green:0.71,blue:0.57,alpha:1); field.textColor = .black; field.setAccessibilityLabel(label); addSubview(field)
         }
         for (title,selector,rect) in [
             ("Save",#selector(save),NSRect(x:20,y:356,width:75,height:28)),

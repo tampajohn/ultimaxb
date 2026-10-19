@@ -51,7 +51,7 @@ final class CharacterSelectionPanel: NSView {
     }
     private func label(_ text:String, rect:NSRect, size:CGFloat = 16, selected:Bool = false) {
         let label = NSTextField(wrappingLabelWithString:text); label.frame = rect
-        label.font = NSFont(name:"Times New Roman",size:size) ?? .systemFont(ofSize:size)
+        label.font = ClassicNativeFont.uiFont
         label.textColor = selected ? .systemRed : NSColor(calibratedWhite:0.94,alpha:1)
         label.alignment = .center; addSubview(label)
     }
@@ -75,7 +75,7 @@ final class CharacterSelectionPanel: NSView {
             for (i,character) in characters.enumerated() {
                 let button = NSButton(title:character.name,target:self,action:#selector(selectCharacter(_:)))
                 button.frame = NSRect(x:84,y:100+i*40,width:280,height:30); button.tag = Int(character.slot)
-                button.isBordered = false; button.font = NSFont(name:"Times New Roman",size:18)
+                button.isBordered = false; button.font = ClassicNativeFont.uiFont
                 button.contentTintColor = character.slot == selected ? .systemRed : .white
                 button.isEnabled = !busy; addSubview(button)
             }

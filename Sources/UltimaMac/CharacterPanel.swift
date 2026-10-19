@@ -62,14 +62,14 @@ final class CharacterPanel: NSView {
             avatar.addSubview(button)
         }
         nameLabel.frame = NSRect(x:30,y:262,width:180,height:36)
-        nameLabel.font = NSFont(name:"Times New Roman",size:13); nameLabel.textColor = .black; nameLabel.alignment = .center
+        nameLabel.font = ClassicNativeFont.uiFont; nameLabel.textColor = .black; nameLabel.alignment = .center
         avatar.addSubview(nameLabel)
         // Status/equipment details are revealed by the original Status button,
         // leaving only the classic paperdoll visible by default.
         details.frame = NSRect(x:10,y:30,width:242,height:280)
         details.wantsLayer = true; details.layer?.backgroundColor = NSColor(calibratedWhite:0.12,alpha:0.95).cgColor
         details.isHidden = true; addSubview(details)
-        statsLabel.font = .systemFont(ofSize:11)
+        statsLabel.font = ClassicNativeFont.uiFont
         statsLabel.frame = NSRect(x:8,y:8,width:226,height:100); details.addSubview(statsLabel)
         equipmentList.orientation = .vertical; equipmentList.alignment = .leading; equipmentList.spacing = 5
         let scroll = NSScrollView(frame:NSRect(x:8,y:112,width:226,height:120)); scroll.hasVerticalScroller = true; scroll.drawsBackground = false

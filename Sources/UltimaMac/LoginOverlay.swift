@@ -643,6 +643,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
 
     init(assets: ClientAssets, loginDefaults:UserDefaults = UserDefaults(suiteName:"com.ultimaxb.UltimaMac")!, connection:GameConnection? = nil) {
         self.connection=connection ?? GameConnection()
+        ClassicNativeFont.install(assets.fonts)
         artwork = LoginArtwork(assets:assets)
         action = ClassicButton("Connect", fonts:assets.fonts, target:nil, action:nil)
         self.loginDefaults = loginDefaults
@@ -669,7 +670,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         for (field,y) in [(account,140),(password,175)] {
             field.frame=NSRect(x:229,y:y,width:184,height:21)
             field.isBordered=false; field.isBezeled=false; field.drawsBackground=false
-            field.font=NSFont(name:"Georgia",size:15); field.textColor=NSColor(calibratedRed:0.28,green:0.08,blue:0.06,alpha:1)
+            field.font=ClassicNativeFont.uiFont; field.textColor=NSColor(calibratedRed:0.28,green:0.08,blue:0.06,alpha:1)
             card.addSubview(field)
         }
         account.setAccessibilityLabel("Account name"); password.setAccessibilityLabel("Password")
@@ -679,7 +680,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         rememberPassword.setButtonType(.toggle); rememberPassword.image=artwork.image(0x41B); rememberPassword.alternateImage=artwork.image(0x41D)
         rememberPassword.imagePosition = .imageOnly; rememberPassword.isBordered=false
         rememberPassword.setAccessibilityLabel("Remember password in Keychain")
-        rememberPassword.font=NSFont(name:"Georgia",size:11); card.addSubview(rememberPassword)
+        rememberPassword.font=ClassicNativeFont.uiFont; card.addSubview(rememberPassword)
         let settingsButton=ClassicButton("Server & saved login",fonts:assets.fonts,target:self,action:#selector(toggleSettings))
         settingsButton.frame=NSRect(x:225,y:385,width:190,height:26); card.addSubview(settingsButton)
         settings.frame=NSRect(x:105,y:60,width:430,height:205); settings.wantsLayer=true
@@ -700,7 +701,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         done.frame=NSRect(x:310,y:25,width:105,height:26); settings.addSubview(done)
         choices.isHidden=true; choices.frame=NSRect(x:155,y:170,width:330,height:30); card.addSubview(choices)
         for control in [characterName,female,cityChoice] as [NSView] { control.isHidden=true; card.addSubview(control) }
-        status.frame=NSRect(x:115,y:418,width:420,height:45); status.font=NSFont(name:"Georgia",size:11)
+        status.frame=NSRect(x:115,y:418,width:420,height:45); status.font=ClassicNativeFont.uiFont
         status.textColor=NSColor(calibratedRed:0.9,green:0.85,blue:0.7,alpha:1); card.addSubview(status)
         action.target=self; action.action=#selector(performAction)
         action.frame=NSRect(x:310,y:290,width:180,height:52)

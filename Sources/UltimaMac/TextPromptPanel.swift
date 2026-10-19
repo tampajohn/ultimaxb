@@ -26,7 +26,7 @@ import UOCore
             button.frame = NSRect(x:x,y:190,width:Int(button.image?.size.width ?? 70),height:Int(button.image?.size.height ?? 24))
             button.setAccessibilityLabel(title); addSubview(button)
         }
-        errorLabel.textColor = .systemRed; errorLabel.font = .systemFont(ofSize:11)
+        errorLabel.textColor = .systemRed; errorLabel.font = ClassicNativeFont.uiFont
         errorLabel.frame = NSRect(x:60,y:163,width:270,height:25); addSubview(errorLabel)
     }
     required init?(coder:NSCoder) { fatalError() }

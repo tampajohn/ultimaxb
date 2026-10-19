@@ -33,7 +33,7 @@ final class ServerMenuPanel:NSView {
         }
         scroll.documentView = content; addSubview(scroll)
         detail.stringValue = menu.usesIcons ? "Choose an item · Right-click cancels" : "Right-click cancels"
-        detail.font = .systemFont(ofSize:11); detail.textColor = menu.usesIcons ? .white : .black
+        detail.font = ClassicNativeFont.uiFont; detail.textColor = menu.usesIcons ? .white : .black
         detail.frame = NSRect(x:menu.usesIcons ? 40 : 20,y:menu.usesIcons ? 105 : 320,width:menu.usesIcons ? 217 : 360,height:20); addSubview(detail)
     }
     required init?(coder:NSCoder) { fatalError() }
