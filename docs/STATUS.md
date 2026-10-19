@@ -1075,3 +1075,8 @@ Validation: release build passed; `tools/check_login_flow.swift` injects offline
 - Refused/unconfirmed equipment changes do not start harvesting. Stop, manual inventory use, disconnect or danger cancels the queued start; a late equipment confirmation may update the paperdoll but cannot restart the run. Unexpected targeting during equip is cancelled.
 - Nested unopened bags are not searched. Automatic harvesting still stops with carrying headroom; smelting/crafting/hauling integration remains pending.
 - Release build and all nineteen offline UI fixtures passed in both passes, including equip confirmation, refusal and Stop racing a late confirmation. Live auto-equipping remains unverified.
+
+### 2026-10-19 — Smelting result confirmation
+- Added SmeltOutcome for one classic ore/forge attempt, derived from the installed era ore.m behavior. Success requires exact system feedback plus an ingot increase in the player's backpack; skill-failure loss requires feedback plus a smaller/changed or removed source pile. Ordinary player chat, other containers and elapsed time cannot confirm success.
+- Distinguishes insufficient ore, ownership/in-use refusal and unreachable forge responses. Recognizes the era forge graphic range. No automatic retry or resource-loss prediction.
+- Four focused tests passed, covering both message/inventory orders, partial loss, removal, wrong sender/container, timeout, forge graphics and insufficient ore. This is core groundwork; automatic forge navigation and smelting UI/packet adapter remain pending. No live character actions were issued.
