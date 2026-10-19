@@ -35,6 +35,12 @@ import UOCore
     }
     required init?(coder:NSCoder) { fatalError() }
     override func draw(_ rect:NSRect) {
+        if imagePosition == .imageOnly, let image {
+            let sprite = cell?.isHighlighted == true ? (alternateImage ?? image) : image
+            NSGraphicsContext.current?.imageInterpolation = .none
+            sprite.draw(in:bounds,from:.zero,operation:.sourceOver,fraction:isEnabled ? 1 : 0.5,respectFlipped:true,hints:nil)
+            return
+        }
         NSColor(calibratedRed:0.18,green:0.16,blue:0.12,alpha:cell?.isHighlighted == true ? 1 : 0.75).setFill(); bounds.fill()
         NSColor(calibratedRed:0.5,green:0.42,blue:0.25,alpha:1).setStroke()
         NSBezierPath(rect:bounds.insetBy(dx:0.5,dy:0.5)).stroke()
@@ -46,10 +52,14 @@ import UOCore
 @MainActor class ClassicPanel:NSView {
     let art:LoginArtwork
     override var isFlipped:Bool { true }
-    init(assets:ClientAssets) { art=LoginArtwork(assets:assets); super.init(frame:.zero) }
+    init(assets:ClientAssets) {
+        art=LoginArtwork(assets:assets); super.init(frame:.zero)
+        wantsLayer=true; layer?.masksToBounds=true
+    }
     required init?(coder:NSCoder) { fatalError() }
     override func draw(_ rect:NSRect) {
         NSGraphicsContext.current?.imageInterpolation = .none
+        NSBezierPath(rect:bounds).addClip()
         // Original stone panel center tiled at its native resolution.
         if let image=art.image(0xA2C) {
             var y:CGFloat=0

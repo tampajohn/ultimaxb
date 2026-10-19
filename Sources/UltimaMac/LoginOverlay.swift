@@ -29,7 +29,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private let characterName = NSTextField(string: "Avatar")
     private let female = NSButton(checkboxWithTitle: "Female character", target: nil, action: nil)
     private var secondaryButtons: [NSButton] = []
-    private let action = NSButton(title: "Connect", target: nil, action: nil)
+    private let action: ClassicButton
     private var servers: [LoginServer] = []
     private var characters: [GameCharacter] = []
     private var framer = GamePacketFramer()
@@ -593,6 +593,13 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         didSet {
             artwork.shardSelection = phase == .server || (phase == .connecting && !choices.isHidden)
             account.isHidden = artwork.shardSelection; password.isHidden = artwork.shardSelection
+            rememberPassword.isHidden = artwork.shardSelection
+            action.image = artwork.shardSelection ? nil : artwork.image(0x418)
+            action.alternateImage = artwork.shardSelection ? nil : artwork.image(0x419)
+            action.frame = artwork.shardSelection
+                ? NSRect(x:310,y:270,width:170,height:32)
+                : NSRect(x:378,y:224,width:94,height:85)
+            action.needsDisplay = true
             localLoginButton.isEnabled = phase == .login
             primaryLoginButton.isEnabled = phase == .login
         }
@@ -603,6 +610,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
 
     init(assets: ClientAssets, loginDefaults:UserDefaults = UserDefaults(suiteName:"com.ultimaxb.UltimaMac")!) {
         artwork = LoginArtwork(assets:assets)
+        action = ClassicButton("Connect", fonts:assets.fonts, target:nil, action:nil)
         self.loginDefaults = loginDefaults
         self.savedLogin = SavedLogin(defaults:loginDefaults)
         characterSelection = CharacterSelectionPanel(assets: assets)
