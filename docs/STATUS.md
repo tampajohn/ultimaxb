@@ -27,7 +27,10 @@ experimental and is not at parity yet.
   new visible eligible ground items within six tiles, takes collision-checked
   detours of at most six steps, and resumes its destination. Enemy distance must
   exceed item distance and a conservative closing-time margin for every detour
-  step and pickup pause; shrinking clearance cancels the detour. These additions have offline packet coverage;
+  step and pickup pause; shrinking clearance cancels the detour. Pickup reach is
+  two tiles, subject to server LOS. Travel drains pending movement before pickup
+  planning and tries up to eight nearby candidates, so one unreachable object
+  cannot starve other loot. Scan metadata records eligibility/path exclusions. These additions have offline packet coverage;
   the live Minoc bank entrance/deposit still needs retesting.
 - Automatic travel preserves a stamina reserve (about 25%, capped at ten).
   It conserves by walking, spends the reserve for one enemy within four tiles

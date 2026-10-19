@@ -7,9 +7,9 @@ public struct WalkPoint: Hashable, Sendable {
 public enum WalkPath {
     public static let directions = [(0,-1),(1,-1),(1,0),(1,1),(0,1),(-1,1),(-1,0),(-1,-1)]
     /// Bounded A*. Each step costs one movement request, including diagonals.
-    public static func find(from start:WalkPoint, x:Int, y:Int, adjacent:Bool = false, goalZ:Int? = nil,
+    public static func find(from start:WalkPoint, x:Int, y:Int, adjacent:Bool = false, goalRadius:Int? = nil, goalZ:Int? = nil,
                             limit:Int = 4096, heuristicWeight:Int = 1, segmentLength:Int? = nil, travelCost:(WalkPoint)->Int = { _ in 1 }, step:(WalkPoint,UInt8)throws->WalkPoint?) rethrows -> [WalkPoint]? {
-        func distance(_ p:WalkPoint)->Int { max(0,max(abs(p.x-x),abs(p.y-y))-(adjacent ? 1 : 0)) }
+        func distance(_ p:WalkPoint)->Int { max(0,max(abs(p.x-x),abs(p.y-y))-max(0,goalRadius ?? (adjacent ? 1 : 0))) }
         // Equal-length eight-way routes can otherwise zigzag across open ground.
         // Prefer proximity to the requested line only as a tie-breaker; this
         // never makes a longer route outrank a shorter one.

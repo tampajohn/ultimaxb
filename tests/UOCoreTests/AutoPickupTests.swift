@@ -14,6 +14,16 @@ final class AutoPickupTests:XCTestCase {
         XCTAssertEqual(gather.select(items:[far,near],player:player,at:0,radius:6)?.serial,1)
         XCTAssertNil(gather.select(items:[item(x:17)],player:player,at:0,radius:100))
     }
+    func testTwoTilePickupAndMultipleCandidates() {
+        var gather=AutoPickup(); gather.mode = .reagents
+        let player=WorldMobile(serial:1,body:400,x:10,y:10,z:0)
+        let near=item(8,x:12),far=item(9,x:13)
+        XCTAssertEqual(gather.select(items:[far,near],player:player,at:0,radius:AutoPickup.reach)?.serial,8)
+        XCTAssertEqual(gather.candidates(items:[far,near],player:player,at:0,radius:6).map(\.serial),[8,9])
+        gather.skip(8)
+        XCTAssertNil(gather.select(items:[far,near],player:player,at:0,radius:AutoPickup.reach))
+        XCTAssertEqual(gather.candidates(items:[far,near],player:player,at:0,radius:6).map(\.serial),[9])
+    }
     func testEligibilityAndConfirmation() {
         let player=WorldMobile(serial:1,body:400,x:10,y:10,z:0)
         var gather=AutoPickup(); gather.mode = .reagents

@@ -72,6 +72,28 @@ import UOCore
         login.tickMovement()
         precondition(detours==1 && login.bankGatheredOnArrival,"Safe visible pickup starts a detour without losing bank intent")
         login.cancelRoute()
-        print("Travel waits for doors, preserves banking intent and permits pickups with sufficient enemy clearance")
+        // Keep a movement request outstanding as new items enter view. Scanning
+        // must drain the queue, then try beyond an unreachable nearest item.
+        send(Data([0x1D,0x40,0,0,8])); send(Data([0x1D,0,0,0,3]))
+        send(Data([0x20,0,0,0,1,1,0x90,0,0,0,0,0,10,0,10,0,0,2,0]))
+        Thread.sleep(forTimeInterval:0.45)
+        login.followRoute([next,WalkPoint(x:12,y:10,z:0)],action:nil,running:false,continuing:true,resolver:{ _,_ in [next] })
+        login.tickMovement()
+        precondition(playerX==11)
+        send(Data([0x1A,0,16,0xC0,0,0,7,0x0F,0x7A,0,2,0,14,0,10,0]))
+        send(Data([0x1A,0,16,0xC0,0,0,8,0x0F,0x7A,0,2,0,15,0,10,0]))
+        var tried:[UInt32]=[]
+        login.pickupDetour={ start,item in
+            tried.append(item.serial)
+            if item.serial==0x40000007 { return nil }
+            return [WalkPoint(x:12,y:10,z:0),WalkPoint(x:13,y:10,z:0)]
+        }
+        Thread.sleep(forTimeInterval:1.05); login.tickMovement()
+        precondition(tried.isEmpty && playerX==11,"Wait for movement confirmation instead of adding steps past the loot")
+        send(Data([0x20,0,0,0,1,1,0x90,0,0,0,0,0,11,0,10,0,0,2,0]))
+        login.tickMovement()
+        precondition(tried == [0x40000007,0x40000008],"An unreachable nearest item must not starve the next candidate")
+        login.cancelRoute()
+        print("Travel door waits, threat clearance, movement settling and alternate pickup candidates passed")
     }
 }

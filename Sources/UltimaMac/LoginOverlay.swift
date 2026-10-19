@@ -130,6 +130,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private var detourArrivedAt:TimeInterval?
     private var detourAttempts:Set<UInt32>=[]
     private var nextDetourAt:TimeInterval=0
+    private var waitingForPickupPosition=false
     private var routeRunning = false
     private var routeResolver: ((WalkPoint,Set<WalkPoint>)->[WalkPoint]?)?
     private var routeRecovery=RouteRecovery()
@@ -162,7 +163,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         onRouteCancelled?()
         if let activity=travelActivity { ProcessInfo.processInfo.endActivity(activity); travelActivity=nil }
         travelPace=TravelPace()
-        waitingDoor = nil; travelDoor=nil; detourItem=nil; detourArrivedAt=nil; detourAttempts=[]; nextDetourAt=0
+        waitingDoor = nil; travelDoor=nil; detourItem=nil; detourArrivedAt=nil; detourAttempts=[]; nextDetourAt=0; waitingForPickupPosition=false
         if walkRoute != nil { Telemetry.shared.record("walk_route_cancelled") }
         walkRoute = nil; routeAction = nil; onWalkRoute?([])
         routeResolver = nil; routeRecovery=RouteRecovery(); needsRouteRetry = false; routeContinues = false; routeSegments = 0
@@ -173,7 +174,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             travelActivity=ProcessInfo.processInfo.beginActivity(options:.userInitiatedAllowingIdleSystemSleep,reason:"Completing requested Ultima Online travel")
         }
         routeRecovery=RouteRecovery(); needsRouteRetry=false; travelPace=TravelPace()
-        travelDoor=nil; detourItem=nil; detourArrivedAt=nil; detourAttempts=[]; nextDetourAt=0
+        travelDoor=nil; detourItem=nil; detourArrivedAt=nil; detourAttempts=[]; nextDetourAt=0; waitingForPickupPosition=false
         routeResolver = resolver; routeContinues = continuing
         walkRoute = route; routeAction = action; routeRunning = running; onWalkRoute?(route)
         Telemetry.shared.record("walk_route_started",["steps":route.count,"target":action?.serial as Any? ?? NSNull(),"running":running])
@@ -210,15 +211,17 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         if wasPending && autoPickup.pending == nil && autoPickup.mode == .off {
             onInventoryMessage?(autoPickup.stoppedReason ?? "Auto-pickup stopped."); onAutoPickupMode?(0)
         }
-        guard travelDoor == nil,waitingDoor == nil,!inventoryRecoveryBusy,(detourItem == nil || movement.pendingCount == 0),allowed,loginComplete,trade == nil,combatTarget.serial == nil,targetRequest == nil,now-manualInventoryAt>2,
+        guard travelDoor == nil,waitingDoor == nil,!inventoryRecoveryBusy,movement.pendingCount == 0,allowed,loginComplete,trade == nil,combatTarget.serial == nil,targetRequest == nil,now-manualInventoryAt>2,
               let serial=playerSerial,let player=world.mobiles[serial],
               let weight=characterStatus?.weight,let strength=characterStatus?.strength,
               weight < 40+strength*7/2-10,
               let bag=world.equipment.values.first(where:{$0.owner==serial && $0.layer==21}),
-              let item=autoPickup.select(items:Array(world.items.values),player:player,at:now,portable:{ (self.itemWeight?($0.graphic) ?? 255)<255 }) else { return }
-        guard TravelSafety.pickupIsSafe(from:WalkPoint(x:player.x,y:player.y,z:player.z),
-              target:WalkPoint(x:item.x,y:item.y,z:item.z),path:[],
-              enemies:world.mobiles.values.filter { $0.serial != serial && $0.isEnemy }) else { return }
+              let item=autoPickup.select(items:Array(world.items.values),player:player,at:now,radius:AutoPickup.reach,portable:{ item in
+                  (self.itemWeight?(item.graphic) ?? 255)<255 &&
+                  TravelSafety.pickupIsSafe(from:WalkPoint(x:player.x,y:player.y,z:player.z),
+                    target:WalkPoint(x:item.x,y:item.y,z:item.z),path:[],
+                    enemies:self.world.mobiles.values.filter { $0.serial != serial && $0.isEnemy })
+              }) else { return }
         guard let unitWeight=itemWeight?(item.graphic),unitWeight<255,
               weight+unitWeight*max(1,item.amount)<40+strength*7/2-10 else {
             autoPickup.skip(item.serial)
@@ -354,6 +357,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         tickAutoPickup(allowed:allowRoute || walkRoute != nil)
         if tickGatheredRecovery() { return }
         if tickGatheredBanking() { return }
+        if autoPickup.pending != nil && walkRoute != nil { return }
         if var waiting=travelDoor {
             switch waiting.wait.result(door:world.items[waiting.item.serial],at:ProcessInfo.processInfo.systemUptime) {
             case .waiting: return
@@ -422,24 +426,42 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                 }
             }
             if routeContinues,routeAction == nil,detourItem == nil,
-               movement.pendingCount == 0,autoPickup.pending == nil,!inventoryRecoveryBusy,
+               autoPickup.pending == nil,!inventoryRecoveryBusy,
                trade == nil,targetRequest == nil,combatTarget.serial == nil,
                routeNow >= nextDetourAt,routeNow-manualInventoryAt>2,
                let weight=characterStatus?.weight,let strength=characterStatus?.strength,
                weight<40+strength*7/2-10 {
-                nextDetourAt=routeNow+1
-                let candidates=world.items.values
-                if let item=autoPickup.select(items:Array(candidates),player:player,at:routeNow,radius:6,portable:{
+                let nearby=world.items.values.filter { max(abs($0.x-player.x),abs($0.y-player.y))<=6 }
+                let candidates=autoPickup.candidates(items:Array(world.items.values),player:player,at:routeNow,radius:6,portable:{
                     let unit=self.itemWeight?($0.graphic) ?? 255
                     return !self.detourAttempts.contains($0.serial) && unit<255 && weight+unit*max(1,$0.amount)<40+strength*7/2-10 &&
                         TravelSafety.pickupIsSafe(from:current,target:WalkPoint(x:$0.x,y:$0.y,z:$0.z),path:[],enemies:enemies)
-                }),max(abs(item.x-player.x),abs(item.y-player.y))>1 {
-                    if let path=pickupDetour?(current,item),!path.isEmpty,
-                       TravelSafety.pickupIsSafe(from:current,target:WalkPoint(x:item.x,y:item.y,z:item.z),path:path,enemies:enemies) {
-                        detourAttempts.insert(item.serial)
-                        detourItem=item.serial; detourArrivedAt=nil; route=path; walkRoute=path; onWalkRoute?(path)
-                        Telemetry.shared.record("travel_pickup_detour",["serial":item.serial,"steps":path.count])
+                })
+                if !candidates.isEmpty,movement.pendingCount>0 {
+                    // Stop adding predicted steps so existing acknowledgements
+                    // can settle. Otherwise continuous travel can starve scans.
+                    if !waitingForPickupPosition {
+                        Telemetry.shared.record("travel_pickup_settling",["pending_steps":movement.pendingCount,"candidates":candidates.count])
                     }
+                    waitingForPickupPosition=true
+                    return
+                }
+                waitingForPickupPosition=false
+                nextDetourAt=routeNow+1
+                var examined=0,unreachable=0,unsafe=0
+                for item in candidates.prefix(8) where max(abs(item.x-player.x),abs(item.y-player.y))>AutoPickup.reach {
+                    examined += 1
+                    guard let path=pickupDetour?(current,item),!path.isEmpty else { unreachable += 1; continue }
+                    guard TravelSafety.pickupIsSafe(from:current,target:WalkPoint(x:item.x,y:item.y,z:item.z),path:path,enemies:enemies) else { unsafe += 1; continue }
+                    detourAttempts.insert(item.serial)
+                    detourItem=item.serial; detourArrivedAt=nil; route=path; walkRoute=path; onWalkRoute?(path)
+                    Telemetry.shared.record("travel_pickup_detour",["serial":item.serial,"steps":path.count])
+                    break
+                }
+                if autoPickup.mode != .off {
+                    Telemetry.shared.record("travel_pickup_scan",["nearby":nearby.count,"candidates":candidates.count,
+                        "examined":examined,"unreachable":unreachable,"unsafe_or_long":unsafe,
+                        "weight":weight,"capacity":40+strength*7/2-10,"enemies":enemies.count])
                 }
             }
             while route.first == current { route.removeFirst() }
@@ -529,7 +551,9 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         case .use(let serial), .pickup(let serial,_):
             target = world.items[serial].map { WalkPoint(x:$0.x,y:$0.y,z:$0.z) }
         }
-        guard let target, max(abs(target.x-player.x),abs(target.y-player.y)) <= 1,
+        let reach:Int
+        if case .pickup = action { reach=AutoPickup.reach } else { reach=1 }
+        guard let target, max(abs(target.x-player.x),abs(target.y-player.y)) <= reach,
               abs(target.z-player.z) <= 16 else {
             onInventoryMessage?("The target moved or is no longer within reach.")
             Telemetry.shared.record("arrival_action_out_of_range",["serial":action.serial]); return

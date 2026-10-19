@@ -1,6 +1,17 @@
 import XCTest
 @testable import UOCore
 final class NavigationTests:XCTestCase {
+    func testPickupRouteStopsTwoTilesAway() {
+        let start=WalkPoint(x:0,y:0,z:0)
+        let route=WalkPath.find(from:start,x:5,y:0,goalRadius:2) { point,direction in
+            let delta=WalkPath.directions[Int(direction)]
+            return WalkPoint(x:point.x+delta.0,y:point.y+delta.1,z:0)
+        }
+        XCTAssertEqual(route?.count,3)
+        XCTAssertEqual(route?.last,WalkPoint(x:3,y:0,z:0))
+        XCTAssertEqual(WalkPath.find(from:start,x:2,y:0,goalRadius:2,step:{ _,_ in nil }),[])
+    }
+
     func testGhostPassabilityKeepsWallsWaterAndFloorSupport() {
         typealias S = NavigationMap.Surface
         typealias C = NavigationMap.Cell

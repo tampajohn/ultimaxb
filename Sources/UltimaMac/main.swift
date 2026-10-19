@@ -879,7 +879,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.pickupDetour = { [weak self] start,item in
                 guard let self,let view=self.worldView,
                       let map=try? NavigationMap(assets:self.assets,center:start,additional:view.groundItems,radius:16) else { return nil }
-                return WalkPath.find(from:start,x:item.x,y:item.y,adjacent:true,goalZ:item.z,limit:512) {
+                return WalkPath.find(from:start,x:item.x,y:item.y,goalRadius:AutoPickup.reach,goalZ:item.z,limit:512) {
                     map.step(from:$0,direction:$1)
                 }
             }
@@ -1322,8 +1322,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // walkable tile without requiring the clicked cliff's elevation.
             let goalZ:Int?
             if case .toolTarget = action { goalZ = nil } else { goalZ = action == nil ? nil : location.z }
+            let goalRadius:Int?
+            if case .pickup = action { goalRadius=AutoPickup.reach } else { goalRadius=nil }
             guard let route = WalkPath.find(from:start,x:location.x,y:location.y,adjacent:action != nil,
-                                            goalZ:goalZ,
+                                            goalRadius:goalRadius,goalZ:goalZ,
                                             step:{ map.step(from:$0,direction:$1) }) else {
                 if action == nil, !player.isGhost, doorsRemaining > 0,
                    try routeThroughDoor(to:location,start:start,running:running,remaining:doorsRemaining,map:map) { return }
@@ -1335,7 +1337,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self, let view = self.worldView,
                       let map = try? NavigationMap(assets:self.assets,center:start,additional:view.groundItems,ghost:view.player?.isGhost == true) else { return nil }
                 return WalkPath.find(from:start,x:location.x,y:location.y,adjacent:action != nil,
-                                     goalZ:goalZ) { point,direction in
+                                     goalRadius:goalRadius,goalZ:goalZ) { point,direction in
                     guard let next = map.step(from:point,direction:direction), !blocked.contains(next) else { return nil }
                     return next
                 }
