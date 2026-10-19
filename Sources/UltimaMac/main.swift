@@ -1180,19 +1180,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let goal=candidates.last,
                   let map=try? NavigationMap(assets:self.assets,center:start,additional:view.groundItems,radius:48,ghost:view.player?.isGhost == true) else { return nil }
             let enemies=view.mobiles.filter { $0.serial != view.player?.serial && ($0.isEnemy || $0.serial == view.combatTarget) }
-            return WalkPath.find(from:start,x:goal.x,y:goal.y,goalZ:goal.z,limit:8192,travelCost:{
-                map.travelCost($0)+TravelSafety.penalty($0,enemies:enemies)
-            }) { point,direction in
-                guard let next=map.step(from:point,direction:direction),!blocked.contains(next),TravelSafety.allows(from:point,to:next,enemies:enemies) else { return nil }
+            return TravelSafety.route(from:start,to:goal,enemies:enemies,cost:map.travelCost) { point,direction in
+                guard let next=map.step(from:point,direction:direction),!blocked.contains(next) else { return nil }
                 return next
             }
         }
         guard let route=planner(start,[]) else { chatPanel.append("The route is planned, but a nearby obstacle blocks the first section."); return }
         view.followPlayer=true
-        panel.travelStepAllowed = { [weak self] next in
-            guard let view=self?.worldView,let player=view.player else { return false }
-            return TravelSafety.allows(from:WalkPoint(x:player.x,y:player.y,z:player.z),to:next,enemies:view.mobiles.filter { $0.serial != player.serial && ($0.isEnemy || $0.serial == view.combatTarget) })
-        }
         panel.followRoute(route,action:nil,running:view.running,continuing:true,resolver:planner)
         chatPanel.append("Route planned: \(itinerary.count) steps. Starting travel.")
         Telemetry.shared.record("map_travel_requested",["x":x,"y":y,"steps":itinerary.count])

@@ -53,11 +53,14 @@ public struct WorldState {
     public private(set) var containerItems: [UInt32: ContainerItem] = [:]
     private var corpseLayers:[UInt32:[UInt8:UInt32]] = [:]
     public private(set) var openContainer: OpenContainer?
+    /// Invalidations from the most recent packet/cache eviction, including nested objects.
+    public private(set) var removedObjects:Set<UInt32> = []
     // An empty 0x3C has no parent serial. Its preceding open/corpse-equipment
     // packet supplies the owner; the last UI container may be unrelated.
     private var contentsContext: UInt32?
     public init() {}
     @discardableResult public mutating func apply(_ packet: Data) throws -> Bool {
+        removedObjects.removeAll(keepingCapacity:true)
         guard let opcode = packet.first else { throw LoginProtocolError.malformedPacket }
         switch opcode {
         case 0x89:
@@ -109,13 +112,8 @@ public struct WorldState {
             guard packet.count == 5 else { throw LoginProtocolError.malformedPacket }
             var r = PacketReader(packet, offset: 1)
             let serial = try r.dword()
-            corpseLayers.removeValue(forKey:serial)
-            let removedItem = items.removeValue(forKey: serial) != nil
-            let removedMobile = opcode == 0x1D ? mobiles.removeValue(forKey: serial) != nil : false
-            let oldEquipment = equipment.count
-            equipment = equipment.filter { $0.key != serial && !(opcode == 0x1D && $0.value.owner == serial) }
-            let removedContainerItem = containerItems.removeValue(forKey: serial) != nil
-            return removedItem || removedMobile || oldEquipment != equipment.count || removedContainerItem
+            discardObjects(rootedAt:[serial])
+            return true
         case 0x24:
             openContainer = try OpenContainer.decode(packet)
             contentsContext = openContainer?.serial
@@ -135,7 +133,9 @@ public struct WorldState {
                 items.removeValue(forKey: item.serial)
                 equipment.removeValue(forKey: item.serial)
             }
+            let missing=opcode == 0x3C ? Set(containerItems.keys).subtracting(updated.keys) : []
             containerItems = updated
+            if !missing.isEmpty { discardObjects(rootedAt:missing) }
             if opcode == 0x3C { contentsContext = nil }
             return changed
         default: return false
@@ -148,15 +148,29 @@ public struct WorldState {
         func nearby(_ x: Int, _ y: Int) -> Bool {
             abs(x - player.x) <= radius && abs(y - player.y) <= radius
         }
-        let previous = items.count + mobiles.count + equipment.count
-        items = items.filter { nearby($0.value.x, $0.value.y) }
-        let expiredCorpses = Set(corpseLayers.keys.filter { items[$0] == nil })
-        corpseLayers = corpseLayers.filter { !expiredCorpses.contains($0.key) }
-        containerItems = containerItems.filter { !expiredCorpses.contains($0.value.container) }
-        let removed = Set(mobiles.values.filter { $0.serial != playerSerial && !nearby($0.x, $0.y) }.map(\.serial))
-        mobiles = mobiles.filter { !removed.contains($0.key) }
-        equipment = equipment.filter { !removed.contains($0.value.owner) }
-        return previous - items.count - mobiles.count - equipment.count
+        removedObjects.removeAll(keepingCapacity:true)
+        let previous=items.count+mobiles.count+equipment.count+containerItems.count
+        let expired=Set(items.values.filter { !nearby($0.x,$0.y) }.map(\.serial))
+            .union(mobiles.values.filter { $0.serial != playerSerial && !nearby($0.x,$0.y) }.map(\.serial))
+        if !expired.isEmpty { discardObjects(rootedAt:expired) }
+        return previous-items.count-mobiles.count-equipment.count-containerItems.count
+    }
+    private mutating func discardObjects(rootedAt roots:Set<UInt32>) {
+        var children:[UInt32:[UInt32]]=[:]
+        for item in containerItems.values { children[item.container,default:[]].append(item.serial) }
+        for item in equipment.values { children[item.owner,default:[]].append(item.serial) }
+        var invalid=roots,queue=Array(roots)
+        while let parent=queue.popLast() {
+            for child in children[parent] ?? [] where invalid.insert(child).inserted { queue.append(child) }
+        }
+        items=items.filter { !invalid.contains($0.key) }
+        mobiles=mobiles.filter { !invalid.contains($0.key) }
+        equipment=equipment.filter { !invalid.contains($0.key) }
+        containerItems=containerItems.filter { !invalid.contains($0.key) }
+        corpseLayers=corpseLayers.filter { !invalid.contains($0.key) }
+        if let serial=openContainer?.serial,invalid.contains(serial) { openContainer=nil }
+        if let contentsContext,invalid.contains(contentsContext) { self.contentsContext=nil }
+        removedObjects.formUnion(invalid)
     }
     private mutating func equip(_ item: EquippedItem) {
         equipment = equipment.filter { $0.key != item.serial && !($0.value.owner == item.owner && $0.value.layer == item.layer) }

@@ -110,7 +110,6 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     var routeItems: [GroundItem] { Array(world.items.values) }
     var onDoorOpenedRoute: ((TargetSelection,Int,Bool)->Void)?
     private var waitingDoor: (item:GroundItem,destination:TargetSelection,remaining:Int,running:Bool,wait:DoorOpeningWait)?
-    var travelStepAllowed:((WalkPoint)->Bool)?
     var assistantScope:String { "\(host.stringValue):\(port.stringValue):\(playerSerial ?? 0)" }
     private var routeRunning = false
     private var routeResolver: ((WalkPoint,Set<WalkPoint>)->[WalkPoint]?)?
@@ -203,12 +202,6 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             if walkRoute != route { onWalkRoute?(route) }
             walkRoute = route
             if let next = route.first {
-                if routeContinues, movement.pendingCount == 0, travelStepAllowed?(next) == false {
-                    guard let revised=routeResolver?(current,blockedRouteTiles),!revised.isEmpty,revised.first != next else {
-                        cancelRoute(); onInventoryMessage?("Travel stopped: no clear route around nearby enemies."); return
-                    }
-                    walkRoute=revised; onWalkRoute?(revised); return
-                }
                 if let direction = WalkPath.direction(from:current,to:next) {
                     move(direction:direction | (routeRunning ? 0x80 : 0),routeStep:next)
                 } else { cancelRoute() }
@@ -1017,13 +1010,11 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         if case .attack(let serial) = routeAction, serial == event.serial { cancelRoute() }
                         Telemetry.shared.record("mobile_death",["serial":event.serial,"corpse":event.corpse,"alternate":event.alternate])
                     }
-                    if packet.first == 0x1D,packet.count == 5 {
-                        let serial=packet.dropFirst().reduce(UInt32(0)) { ($0<<8)|UInt32($1) }
-                        let closed=openObjectWindows.removed(serial)
-                        if !closed.isEmpty { onObjectWindowsClosed?(closed) }
-                    }
                     if try world.apply(packet) { changed = true; updateTradeItems() }
                     else if transferWasPending && tradeTransfer == nil { onTrade?(trade) }
+                    var invalidWindows=Set<UInt32>()
+                    for serial in world.removedObjects { invalidWindows.formUnion(openObjectWindows.removed(serial)) }
+                    if !invalidWindows.isEmpty { onObjectWindowsClosed?(invalidWindows) }
                     if let opcode = packet.first, [0x20, 0x77, 0x78].contains(opcode),
                        let serial = playerSerial {
                         let update = try WorldMobile.decode(packet)
@@ -1232,6 +1223,9 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                 }
                 if let serial = playerSerial {
                     let evicted = world.pruneWorld(around: serial)
+                    var invalidWindows=Set<UInt32>()
+                    for serial in world.removedObjects { invalidWindows.formUnion(openObjectWindows.removed(serial)) }
+                    if !invalidWindows.isEmpty { onObjectWindowsClosed?(invalidWindows) }
                     if evicted > 0, let target = combatTarget.serial, world.mobiles[target] == nil {
                         combatTarget.clear(); onCombatTarget?(combatTarget)
                     }
