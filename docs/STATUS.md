@@ -1047,3 +1047,9 @@ Validation: release build passed; `tools/check_login_flow.swift` injects offline
 - Starting an already-active workflow is rejected before replacing its outstanding tool request. Unexpected target cursors while walking, paused or cooling down cancel the cursor and stop the workflow, rather than silently swallowing it.
 - Terminal cursor handling clears the approach route immediately and retains a ten-second late-request window before another run can start.
 - Twelve workflow tests and all eighteen offline UI fixtures passed, including unexpected cursors during travel and cooldown and repeated Start while awaiting a tool response. Live movement between sites remains unverified in the newly launched client.
+
+### 2026-10-19 — Original region music lookup
+- Added an optional regions.txt reader for the classic 0xFACE/0xFACF formats. Uses inclusive 8×8 block assignment, weatherless regions first and smaller weather-bearing regions overriding larger regions. Zero/unknown tracks produce no playable fallback. Equal-area assignments retain input order; original resource iteration order may differ for tied overlapping regions.
+- Local reference: build/ouo/region.c format and weather-data predicate; blockmanager.c region assignment; player.c boundary-driven music sends. This is reference behavior, not evidence that every UO1998 region matches the demo dataset.
+- Three focused tests cover town/forest/building precedence, block boundaries, weather-only clearing, old format and invalid records. tools/check_region_music.swift loaded the original installed file and verified Minoc (16), Britain (9) and surrounding forest (27).
+- No original region data copied or committed. Playback integration and spawn fallback policy remain pending; this reader alone does not change the running client's music.
