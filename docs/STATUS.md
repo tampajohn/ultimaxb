@@ -37,6 +37,11 @@ experimental and is not at parity yet.
 - Click-to-walk door approach no longer selects known-open or previously confirmed changed doors as opening candidates. Long-distance and local planning now agree on known open art rather than relying only on the long-distance leaf exclusion.
 - Twenty focused navigation/door tests and all sixteen offline UI fixtures pass. The installed-terrain fixture checks actual 0x675/0x676 art mapping as well as ghost collision. Live original-obstruction reproduction remains pending; the running client is preserved until the next requested restart.
 
+### 2026-10-19 — Clear superseded target cursors before new actions
+- Starting an accepted skill, spell or item-use action now cancels the previous target request before issuing the new action. This prevents clicks during server latency from answering an obsolete tool/skill cursor. A blocked item use or invalid skill/spell selection leaves the existing cursor intact.
+- Offline packet-adapter coverage includes old tool-route cancellation, server cursor replacement/cancellation, item use, valid/absent spellbook entries, accepting the subsequent cursor and disconnect cleanup. These checks exercise local packet handling without connecting or sending actions to the live character.
+- The active client remains running; new target behavior takes effect on its next launch. This does not claim correlation of arbitrarily delayed server cursors to a specific skill/tool, which the classic protocol does not identify explicitly.
+
 ## Implemented, with live shard testing still ongoing
 
 - Login, shard/character selection, reconnect, creation stats/skills/appearance.

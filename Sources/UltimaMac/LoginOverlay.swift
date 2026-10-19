@@ -87,6 +87,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     }
     func useSkill(_ id: Int) {
         guard loginComplete, let packet = try? SkillState.use(id: id) else { return }
+        if targeting { target(nil,allowApproach:false) }
         equippedTargetTool = nil
         if case .toolTarget = routeAction { cancelRoute() }
         connection.send(packet)
@@ -649,6 +650,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     func castSpell(_ id:Int,book:UInt32) {
         guard loginComplete, ClassicSpells.contents(book:book,items:Array(world.containerItems.values)).contains(id),
               let packet = try? ClassicSpells.cast(id:id,book:book) else { return }
+        if targeting { target(nil,allowApproach:false) }
         cancelRoute(); equippedTargetTool = nil
         connection.send(packet)
         Telemetry.shared.record("spell_cast_requested",["id":id,"book":book])
@@ -755,6 +757,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     @discardableResult func use(serial: UInt32)->Bool {
         guard loginComplete else { return false }
         guard manualInventoryAvailable() else { return false }
+        if targeting { target(nil,allowApproach:false) }
         manualInventoryAt=ProcessInfo.processInfo.systemUptime
         autoPickup.relinquish(serial)
         if waitingDoor != nil { cancelRoute() }
