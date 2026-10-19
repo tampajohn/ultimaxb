@@ -5,6 +5,12 @@ Xbox port. The scope also includes a built-in UOAssist-style assistant, with
 automated mining, lumberjacking, herding, hauling, smelting and crafting as explicit deliverables. The present client is
 experimental and is not at parity yet.
 
+### 2026-10-19 — Britain departure route-search budget
+- Reproduced long-distance search failure from the live Britain position (1451,1654,10). Road penalties consumed the global search near barriers; stale priority-queue entries also consumed budget without exploring new tiles.
+- Search budgets now count actual tile expansions. Global travel reserves 100,000 expansions for road preference, then up to 300,000 for a uniform-cost, destination-directed fallback. Both passes retain the same collision, bridge, diagonal and elevation rules; this weighted search does not promise a shortest route.
+- Added per-pass strategy/outcome/expanded/popped telemetry and distinct messages for disconnected terrain, budget exhaustion and map-loading failure.
+- The local-asset intercity regression revalidates every returned step from the actual Britain position to Minoc, Vesper, Yew and Trinsic inns plus Minoc/Vesper bank approaches; all six pass in roughly 0.7–1.9 seconds each. Core regression: 277 tests, five skips, zero failures. All sixteen offline UI fixtures passed. Live travel still depends on server movement, dynamic obstacles and door responses.
+
 ## Implemented, with live shard testing still ongoing
 
 - Login, shard/character selection, reconnect, creation stats/skills/appearance.

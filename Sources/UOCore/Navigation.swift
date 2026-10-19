@@ -5,10 +5,15 @@ public struct WalkPoint: Hashable, Sendable {
     public init(x:Int,y:Int,z:Int) { self.x=x; self.y=y; self.z=z }
 }
 public enum WalkPath {
+    public struct SearchStatistics:Sendable,Equatable {
+        public enum Outcome:String,Sendable { case found, exhausted, budgetExceeded }
+        public let outcome:Outcome
+        public let expanded:Int, popped:Int
+    }
     public static let directions = [(0,-1),(1,-1),(1,0),(1,1),(0,1),(-1,1),(-1,0),(-1,-1)]
     /// Bounded A*. Each step costs one movement request, including diagonals.
     public static func find(from start:WalkPoint, x:Int, y:Int, adjacent:Bool = false, goalRadius:Int? = nil, goalZ:Int? = nil,
-                            limit:Int = 4096, heuristicWeight:Int = 1, segmentLength:Int? = nil, travelCost:(WalkPoint)->Int = { _ in 1 }, step:(WalkPoint,UInt8)throws->WalkPoint?) rethrows -> [WalkPoint]? {
+                            limit:Int = 4096, heuristicWeight:Int = 1, segmentLength:Int? = nil, travelCost:(WalkPoint)->Int = { _ in 1 }, report:((SearchStatistics)->Void)? = nil, step:(WalkPoint,UInt8)throws->WalkPoint?) rethrows -> [WalkPoint]? {
         func distance(_ p:WalkPoint)->Int { max(0,max(abs(p.x-x),abs(p.y-y))-max(0,goalRadius ?? (adjacent ? 1 : 0))) }
         // Equal-length eight-way routes can otherwise zigzag across open ground.
         // Prefer proximity to the requested line only as a tie-breaker; this
@@ -18,8 +23,12 @@ public enum WalkPath {
         }
         var open=WalkFrontier(),costs=[start:0],parents:[WalkPoint:WalkPoint]=[:],closed=Set<WalkPoint>()
         open.push(point:start,cost:0,score:distance(start)*max(1,heuristicWeight),distance:distance(start),deviation:0)
-        for _ in 0..<max(0,limit) {
-            guard let entry=open.pop() else { return nil }
+        var expanded=0,popped=0
+        while expanded<max(0,limit) {
+            guard let entry=open.pop() else {
+                report?(SearchStatistics(outcome:.exhausted,expanded:expanded,popped:popped)); return nil
+            }
+            popped += 1
             let current=entry.point
             if closed.contains(current) || costs[current] != entry.cost { continue }
             let reached = distance(current) == 0 && (goalZ == nil || abs(current.z-goalZ!)<=16)
@@ -27,9 +36,10 @@ public enum WalkPath {
             if reached || segmentReached {
                 var path:[WalkPoint] = [], node = current
                 while let previous = parents[node] { path.append(node); node = previous }
+                report?(SearchStatistics(outcome:.found,expanded:expanded,popped:popped))
                 return path.reversed()
             }
-            closed.insert(current)
+            closed.insert(current); expanded += 1
             for direction in UInt8(0)...7 {
                 guard let next = try step(current,direction), !closed.contains(next) else { continue }
                 let cost = costs[current]!+max(1,travelCost(next))
@@ -39,6 +49,7 @@ public enum WalkPath {
                 }
             }
         }
+        report?(SearchStatistics(outcome:.budgetExceeded,expanded:expanded,popped:popped))
         return nil
     }
     public static func direction(from:WalkPoint,to:WalkPoint)->UInt8? {

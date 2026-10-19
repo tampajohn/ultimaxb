@@ -1,6 +1,31 @@
 import XCTest
 @testable import UOCore
 final class NavigationTests:XCTestCase {
+    func testSearchBudgetCountsExpandedTilesNotStaleQueueEntries() {
+        let start=WalkPoint(x:0,y:0,z:0),a=WalkPoint(x:9,y:0,z:0),b=WalkPoint(x:1,y:0,z:0)
+        let c=WalkPoint(x:-10,y:0,z:0),goal=WalkPoint(x:10,y:0,z:0)
+        var stats:WalkPath.SearchStatistics?
+        let path=WalkPath.find(from:start,x:goal.x,y:goal.y,limit:5,heuristicWeight:3,
+            travelCost:{ $0==a ? 5 : ($0==goal ? 100 : 1) },report:{stats=$0}) { p,d in
+                if p==start { return d==0 ? a : (d==1 ? b : nil) }
+                if (p==a || p==b) && d==0 { return c }
+                if p==c && d==0 { return goal }
+                return nil
+            }
+        XCTAssertEqual(path,[b,c,goal])
+        XCTAssertEqual(stats?.outcome,.found)
+        XCTAssertEqual(stats?.expanded,4)
+        XCTAssertEqual(stats?.popped,6)
+    }
+    func testSearchDistinguishesBudgetFromDisconnectedGoal() {
+        let start=WalkPoint(x:0,y:0,z:0)
+        var stats:WalkPath.SearchStatistics?
+        XCTAssertNil(WalkPath.find(from:start,x:10,y:0,limit:0,report:{stats=$0},step:{_,_ in nil}))
+        XCTAssertEqual(stats?.outcome,.budgetExceeded)
+        XCTAssertNil(WalkPath.find(from:start,x:10,y:0,limit:10,report:{stats=$0},step:{_,_ in nil}))
+        XCTAssertEqual(stats?.outcome,.exhausted)
+    }
+
     func testPickupRouteStopsTwoTilesAway() {
         let start=WalkPoint(x:0,y:0,z:0)
         let route=WalkPath.find(from:start,x:5,y:0,goalRadius:2) { point,direction in

@@ -1190,7 +1190,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         view.addSubview(panel)
     }
     private var travelPlanning:Task<Void,Never>?
-    private var travelWorker:Task<[WalkPoint]?,Never>?
+    private typealias TravelPlan=(route:[WalkPoint]?,attempts:[WorldTravelPlanner.Attempt])
+    private var travelWorker:Task<TravelPlan,Never>?
     private func travelOnMap(x:Int,y:Int,dropGathered:Bool=false,bankGathered:Bool=false) {
         guard let view = worldView, let player = view.player, let panel = loginOverlay else { return }
         panel.cancelRoute()
@@ -1198,21 +1199,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let start=WalkPoint(x:player.x,y:player.y,z:player.z)
         let directory=URL(fileURLWithPath:options.client),ghost=player.isGhost
         chatPanel.append("Planning the complete route, including bridges...")
-        let worker=Task.detached(priority:.userInitiated) { ()->[WalkPoint]? in
+        let worker=Task.detached(priority:.userInitiated) { ()->TravelPlan in
             do {
                 let assets=try ClientAssets(directory:directory)
-                return try WorldTravelPlanner(assets:assets,ghost:ghost).find(from:start,x:x,y:y,adjacent:bankGathered,cancelled:{ Task.isCancelled })
-            } catch { return nil }
+                let planner=WorldTravelPlanner(assets:assets,ghost:ghost)
+                let route=try planner.find(from:start,x:x,y:y,adjacent:bankGathered,cancelled:{ Task.isCancelled })
+                return (route,planner.attempts)
+            } catch { return (nil,[]) }
         }
         travelWorker=worker
         panel.onRouteCancelled = { [weak self] in self?.travelPlanning?.cancel(); self?.travelWorker?.cancel() }
         travelPlanning=Task { [weak self,weak panel] in
-            let route=await worker.value
+            let plan=await worker.value
             guard !Task.isCancelled,let self,let panel,let view=self.worldView,let current=view.player else { return }
             guard current.serial == player.serial,current.x == start.x,current.y == start.y,current.z == start.z else {
                 self.chatPanel.append("Travel planning cancelled because your position changed. Choose Go again."); return
             }
-            guard let route else { self.chatPanel.append("No complete walking route found within the search budget. Try a nearer waypoint."); return }
+            for attempt in plan.attempts {
+                Telemetry.shared.record("world_route_search",["strategy":attempt.strategy,"outcome":attempt.statistics.outcome.rawValue,
+                    "expanded":attempt.statistics.expanded,"popped":attempt.statistics.popped,
+                    "from_x":start.x,"from_y":start.y,"to_x":x,"to_y":y])
+            }
+            guard let route=plan.route else {
+                let exhausted=plan.attempts.last?.statistics.outcome == .exhausted
+                let message=plan.attempts.isEmpty ? "Unable to plan from the installed map data." :
+                    (exhausted ? "No connected walking route found. This destination may require a boat or moongate." : "Route search reached its limit. Try a nearer waypoint.")
+                self.chatPanel.append(message)
+                return
+            }
             // The reachable bank approach may be beside a wall/sign landmark.
             // Local replanning must follow that actual endpoint, not repeatedly
             // attempt the blocked landmark after the global route finishes.
