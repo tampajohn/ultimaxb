@@ -540,10 +540,11 @@ label confirms Hidden. Installed-asset harness verifies a distinct visible
 appearance and exact original-color restoration when revealed. Release suite:
 203 tests, 3 opt-in skips, zero failures.
 
-Spell integration remains incomplete: the new opt-in classic spell test opens a
-Test Center starter spellbook but receives no contents and no Night Sight target.
-It currently fails against the isolated server, even after the skill-loader fix;
-this is recorded as an unresolved gameplay gap, not a passing spell workflow.
+Spell integration: the initial opt-in test failure was traced to fixture
+sequencing, not missing spellbook contents. It opened the book during the
+server's post-inventory action cooldown, then tried casting with a weapon still
+in hand. The fixture now waits before opening the book and confirms both hands
+are empty before casting. See the verification below for the covered flow.
 The user's indoor-lighting report also remains under investigation: telemetry
 shows server ambient level 22 (brightness 0.3125), but that alone does not explain
 reported indoor appearance. No speculative brightness override was installed.
@@ -562,3 +563,15 @@ non-light items, invalid IDs and unchanged daylight rendering. This corrects one
 lighting mismatch, but the reported indoor appearance still needs live visual
 confirmation. Ambient levels remain server-driven. Foreground light occlusion,
 colored lights and broader lighting fidelity remain parity work.
+
+Classic spell integration verification (2026-10-18): isolated Test Center on
+loopback port 2594 passes opening the 64-spell starter book, casting Night Sight
+and Lightning on the fixture player, and receiving each target cursor, casting
+animation, and expected attached/lightning effect. The test confirms weapon
+unequip before casting and waits for item-use cooldown. Failure diagnostics
+include only this disposable fixture's server messages. Temporary server
+instrumentation was removed and the test passed again on the normal patched
+server build (20.2 seconds). Release suite: 204 tests, 3 opt-in skips, zero
+failures. This verifies two representative spells, not all 64 spell behaviors,
+reagent/mana failure cases, or live UO1998 spell compatibility. The user's app
+and port-2593 server were left running throughout.

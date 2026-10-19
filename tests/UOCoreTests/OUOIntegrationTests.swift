@@ -230,7 +230,22 @@ final class OUOIntegrationTests: XCTestCase {
         }
         if verifySpells {
             let player = try XCTUnwrap(entry)
-            let book = try XCTUnwrap(world.containerItems.values.first { $0.graphic == 0x0EFA })
+            let backpack = try XCTUnwrap(world.equipment.values.first { $0.owner == player.serial && $0.layer == 21 })
+            // Classic casting requires free hands; the fixture starts with a weapon.
+            for held in world.equipment.values.filter({ $0.owner == player.serial && [1, 2].contains($0.layer) }) {
+                try await Task.sleep(for: .seconds(2))
+                connection.send(try InteractionPackets.pickup(serial: held.serial, amount: 1))
+                connection.send(try InteractionPackets.drop(serial: held.serial, x: 0xFFFF, y: 0xFFFF, container: backpack.serial))
+                for _ in 0..<100 {
+                    if world.containerItems[held.serial]?.container == backpack.serial { break }
+                    try await Task.sleep(for: .milliseconds(50))
+                }
+                XCTAssertEqual(world.containerItems[held.serial]?.container, backpack.serial)
+                XCTAssertNil(world.equipment[held.serial])
+            }
+            let book = try XCTUnwrap(world.containerItems.values.first { $0.graphic == 0x0EFA && $0.container == backpack.serial })
+            // The server throttles item use after the preceding inventory action.
+            try await Task.sleep(for: .seconds(2))
             connection.send(InteractionPackets.use(serial: book.serial))
             for _ in 0..<100 {
                 if ClassicSpells.contents(book: book.serial, items: Array(world.containerItems.values)).count == 64 { break }
@@ -245,7 +260,7 @@ final class OUOIntegrationTests: XCTestCase {
                     if skillTarget != nil || failure != nil { break }
                     try await Task.sleep(for: .milliseconds(50))
                 }
-                let target = try XCTUnwrap(skillTarget, "Spell \(id) did not request a target")
+                let target = try XCTUnwrap(skillTarget, "Spell \(id) did not request a target; fixture messages: \(fixtureMessages)")
                 let mobile = try XCTUnwrap(world.mobiles[player.serial])
                 connection.send(try target.response(TargetSelection(serial: player.serial, x: mobile.x, y: mobile.y, z: mobile.z, graphic: mobile.body)))
                 for _ in 0..<200 {
