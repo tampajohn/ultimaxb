@@ -672,3 +672,17 @@ snapshot bug. The fixture records bounded content-count/parent metadata and will
 assert item serial, graphic, backpack and placement on successful recovery.
 Validation: 213 tests, 5 opt-in skips, zero failures; isolated death/resurrection
 plus retained-spellbook assertion passes in 22.2 seconds.
+
+Ordinary corpse loot recovery (2026-10-18): the isolated recovery extension now
+passes in 25.6 seconds. Server registration marks the starting inventory as
+protected, explaining the earlier empty corpses. The fixture-only patch now adds
+an ordinary gemstone after registration, leaving normal death/drop rules intact.
+The integration follows that exact serial through death, the newly created
+corpse, resurrection and recovery into the backpack, verifying graphic and
+placement. Retained spellbook contents remain intact throughout.
+
+Release suite: 213 tests, 5 opt-in skips, zero failures. The isolated port-2594
+server was stopped after verification and its executable restored to the normal
+build. The user's running client and port-2593 server were left uninterrupted.
+Live UO1998 corpse recovery, healer resurrection and denial workflows remain
+unverified; this result covers the local fixture only.

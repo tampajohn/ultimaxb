@@ -97,7 +97,9 @@ only to a dedicated fixture checkout/build alongside the loopback, player-trade
 and skill-header patches. Run that executable from a separate provisioned world
 on loopback port 2594 with `-client 12532 -a 127.0.0.1 -p 2594 -test -fast 10
 -watchdog 10000`. Do not install this fixture executable in the user's local
-shard. It changes no damage, death, resurrection or permission rules.
+shard. It also adds one ordinary gemstone after player registration has protected
+the starting inventory. It changes no damage, death, resurrection or permission
+rules; the extra item exists only to exercise normal corpse recovery.
 
 With that server fully loaded, run:
 
@@ -116,8 +118,11 @@ accounts and assets are never inputs. Nearby corpse contents must not satisfy th
 backpack-open wait; the test now requires the requested container as well.
 
 Add `UO_VERIFY_CORPSE_LOOT=1` to extend the death fixture through corpse opening
-and loot recovery into its backpack. This extension currently fails because the
-isolated server transmits zero contents for the newly created corpse. The basic
-death/resurrection flow is verified separately; do not treat the recovery
-extension as a passing check. It logs bounded item-count/parent-serial metadata
-for diagnosis, not raw packets or user payloads.
+and loot recovery into its backpack. This passes with the fixture's ordinary
+gemstone: the test follows the same serial from inventory to the new corpse and
+back into the backpack, checking graphic and placement. A starting-kit-only
+character produced an empty corpse because registration protects that inventory
+from death loss. The test also verifies that nearby empty corpse broadcasts do
+not erase the retained spellbook contents. It logs bounded item-count/parent-serial
+metadata for diagnosis, not raw packets or user payloads. This local check does
+not establish live UO1998 corpse recovery or healer resurrection parity.

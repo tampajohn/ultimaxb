@@ -9,3 +9,16 @@
  	{ "Minoc", "Tavern", 2477, 411, 15 },
  	{ "Britain", "Sweet Dreams Inn", 1495, 1629, 10 },
  	{ "Moonglow", "Docks", 4406, 1045, 0 },
+--- a/player.c
++++ b/player.c
+@@ -886,6 +886,10 @@
+ 	player->creationTime = g_GameTick;
+ 
+ 	CPlayer_AttachStartupScripts(player);
++
++    // Fixture-only: add ordinary loot after registration protects starter gear.
++    if (g_DebugTest && backpack != NULL)
++        Script_createGlobalObjectIn(0x0F13, backpack->serial);
+ 
+ 	return player;
+ }

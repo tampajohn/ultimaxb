@@ -336,6 +336,8 @@ final class OUOIntegrationTests: XCTestCase {
         }
         if verifyDeath {
             let player = try XCTUnwrap(entry)
+            let recoveryItem = world.containerItems.values.first { $0.graphic == 0x0F13 }
+            if verifyCorpseRecovery { XCTAssertNotNil(recoveryItem, "Wilderness fixture must provide ordinary loot after starter protection") }
             let book = try XCTUnwrap(world.containerItems.values.first { $0.graphic == 0x0EFA })
             connection.send(try SpeechPackets.say(".set str 1"))
             for _ in 0..<100 {
@@ -386,7 +388,7 @@ final class OUOIntegrationTests: XCTestCase {
                 }
                 XCTAssertEqual(world.openContainer?.serial, corpse.serial)
                 let loot = try XCTUnwrap(world.containerItems.values.filter {
-                    $0.container == corpse.serial && $0.amount > 0
+                    $0.container == corpse.serial && $0.amount > 0 && $0.serial == recoveryItem?.serial
                 }.sorted { $0.serial < $1.serial }.first, "New corpse loot metadata: \(world.containerItems.values.filter { $0.container == corpse.serial }.map { [$0.graphic, $0.amount] }); corpse=\(corpse.serial); snapshots=\(corpseContentsMetadata)")
                 let backpack = try XCTUnwrap(world.equipment.values.first { $0.owner == player.serial && $0.layer == 21 })
                 try await Task.sleep(for: .seconds(2))
