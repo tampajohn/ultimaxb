@@ -867,6 +867,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         } catch { reset("Could not connect: \(error)") }
     }
     private func showCharacterSelection() {
+        connection.finishWorldEntryWait()
         phase = .character
         characterCreation.isHidden = true
         card.isHidden = true; artwork.showsForm=false; characterSelection.isHidden = false
@@ -1243,6 +1244,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         action.isEnabled = false
                         status.stringValue = "World position: \(entry.x), \(entry.y), \(entry.z). Body rendering is active; movement and clothing are pending."
                     case 0x55:
+                        connection.finishWorldEntryWait()
                         Telemetry.shared.record("world_entry_complete")
                         loginComplete = true
                         requestStatus(); requestSkills()

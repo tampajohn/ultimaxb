@@ -24,8 +24,25 @@ public final class GameConnection {
     private var huffman = GameHuffmanDecoder()
     private var inGame = false
     private var deadline: Task<Void, Never>?
+    private var worldEntryDeadline:Task<Void,Never>?
+    private let worldEntryTimeout:Duration
 
-    public init() {}
+    public init() { worldEntryTimeout = .seconds(15) }
+    init(worldEntryTimeout:Duration) { self.worldEntryTimeout=worldEntryTimeout }
+
+    func waitForWorldEntry() {
+        worldEntryDeadline?.cancel()
+        let token=generation
+        worldEntryDeadline=Task { [weak self,worldEntryTimeout] in
+            do { try await Task.sleep(for:worldEntryTimeout) } catch { return }
+            guard !Task.isCancelled,let self,self.generation == token else { return }
+            self.fail("The server did not complete world entry. Reconnect and select the character again.")
+        }
+    }
+    /// A complete entry or returned character list resolves the pending choice.
+    public func finishWorldEntryWait() {
+        worldEntryDeadline?.cancel(); worldEntryDeadline=nil
+    }
 
     public func login(host: String, port: UInt16, name: String, password: String) throws {
         let packet = try LoginPackets.account(name: name, password: password)
@@ -45,6 +62,7 @@ public final class GameConnection {
 
     public func send(_ packet: Data) {
         guard let connection, var cipher else { return }
+        if packet.first == 0x00 || packet.first == 0x5D { waitForWorldEntry() }
         if let opcode = packet.first { onPacketMetadata?(true, opcode, packet.count) }
         let encrypted = cipher.transform(packet)
         self.cipher = cipher
@@ -60,6 +78,7 @@ public final class GameConnection {
 
     public func disconnect(notify: Bool = true) {
         generation += 1
+        finishWorldEntryWait()
         deadline?.cancel()
         deadline = nil
         connection?.cancel()
