@@ -750,3 +750,29 @@ This is protocol groundwork only: live dispatch, original-art layout rendering,
 page navigation, radio groups, editable fields and reply validation against the
 active dialog are still pending. No dialog replies are sent automatically and no
 dialog or entered text is recorded in telemetry.
+
+
+### Replaying a blocked local travel section
+
+A `travel_section_blocked` telemetry row now includes the start, attempted goals,
+blocked cells, opened door leaves and up to 2,048 nearby collision tiles (numeric
+art IDs, coordinates and dynamic flags only). These local diagnostics contain no
+credentials, names, speech or raw packets; keep captured rows under ignored
+`build/`. The snapshot's `tile_count` makes truncation explicit.
+
+Save a complete row as `build/blocked-route-snapshot.json`, then run:
+
+```sh
+swift build
+swiftc -parse-as-library -I .build/debug/Modules \
+  tools/replay_travel_obstruction.swift .build/debug/UOCore.build/*.o \
+  -o build/replay_travel_obstruction
+build/replay_travel_obstruction uo1998-client build/blocked-route-snapshot.json
+```
+
+The tool uses the same map collision and local search limits, compares normal
+collision with door relaxation, and prints nearby tile flags. Relaxing *all*
+doors is diagnostic only; it is never sent as a walking route. Truncated tile
+snapshots are rejected rather than silently treated as complete. The Vesper
+static baseline and a blocked-goal case were checked; the live opened-door
+failure still needs its captured dynamic geometry before a fix can be claimed.
