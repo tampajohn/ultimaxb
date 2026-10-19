@@ -4,6 +4,7 @@ import UOCore
 
 struct Options {
     var client = "uo1998-client"
+    var regions: String?
     var output: String?
     var previewBody: Int?
     var previewZ: Int?
@@ -31,11 +32,12 @@ struct Options {
             else if arg == "--connect" { connect = true }
             else if arg == "--land-only" { statics = false }
             else if arg == "--legacy-terrain" { legacyTerrain = true }
-            else if ["--client", "--render", "--x", "--y", "--preview-body", "--preview-z"].contains(arg) {
+            else if ["--regions", "--client", "--render", "--x", "--y", "--preview-body", "--preview-z"].contains(arg) {
                 i += 1
                 guard i < arguments.count else { throw AssetError("Missing value for \(arg)") }
                 let value = arguments[i]
                 switch arg {
+                case "--regions": regions = value
                 case "--client": client = value
                 case "--render": output = value
                 default:
@@ -690,6 +692,20 @@ final class WorldView: NSView {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let audio = GameAudio()
+    private var spawnMusic=SpawnMusic()
+    private lazy var regionMusic:RegionMusic? = {
+        let url=options.regions.map { URL(fileURLWithPath:$0) } ?? URL(fileURLWithPath:options.client).appendingPathComponent("regions.txt")
+        guard FileManager.default.fileExists(atPath:url.path) else { return nil }
+        do { return try RegionMusic(text:String(contentsOf:url,encoding:.utf8)) }
+        catch { Telemetry.shared.record("region_music_load_failed",[:]); return nil }
+    }()
+    private func tickSpawnMusic() {
+        guard let player=worldView?.player,!player.isGhost else { return }
+        if let id=spawnMusic.next(regionTrack:regionMusic?.track(x:player.x,y:player.y),time:ProcessInfo.processInfo.systemUptime) {
+            audio.playMusic(id,directory:URL(fileURLWithPath:options.client))
+            Telemetry.shared.record("music_spawn_fallback",["id":id])
+        }
+    }
     @objc func toggleSound(_ item:NSMenuItem) {
         audio.enabled.toggle(); item.state = audio.enabled ? .on : .off
         Telemetry.shared.record("sound_setting_changed",["enabled":audio.enabled])
@@ -915,6 +931,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.onCharacterStatus = { [weak self] in self?.characterPanel?.updateStatus($0); self?.vendorPanel?.updateGold($0?.gold); self?.worldView?.sidebar?.updateStatus($0) }
             panel.onMusic = { [weak self] id in
                 guard let self else { return }
+                self.spawnMusic.serverMusicReceived()
                 self.audio.playMusic(id,directory:URL(fileURLWithPath:self.options.client))
             }
             panel.onSound = { [weak self] sound in
@@ -1137,7 +1154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 view.window?.invalidateCursorRects(for:view)
                 view.sidebar?.isHidden = player == nil
                 view.sidebar?.updateEquipment(view.equipment, player:player?.serial, assets:view.assets)
-                if player == nil { self?.harvestPanel?.closePanel(); self?.harvestPanel=nil; view.harvestBoundary=[]; view.harvestSites=[]; self?.travelPanel?.removeFromSuperview(); self?.travelPanel=nil; self?.mapPanel?.onPickLocation=nil; view.resetDeathAnimations(); view.effects = WorldEffects(); self?.audio.stop(); view.sidebar?.updateStatus(nil); self?.skillsPanel?.update(SkillState()) }
+                if player == nil { self?.harvestPanel?.closePanel(); self?.harvestPanel=nil; view.harvestBoundary=[]; view.harvestSites=[]; self?.travelPanel?.removeFromSuperview(); self?.travelPanel=nil; self?.mapPanel?.onPickLocation=nil; view.resetDeathAnimations(); view.effects = WorldEffects(); self?.audio.stop(); self?.spawnMusic.reset(); view.sidebar?.updateStatus(nil); self?.skillsPanel?.update(SkillState()) }
                 view.needsLayout = true
                 if player == nil { self?.worldView?.overheadSpeech = OverheadSpeech(); self?.spellShortcuts.values.forEach { $0.removeFromSuperview() }; self?.spellShortcuts.removeAll(); self?.spellbooks.values.forEach { $0.removeFromSuperview() }; self?.spellbooks.removeAll(); self?.chatPanel.reset(); self?.journalPanel?.removeFromSuperview(); self?.characterPanel?.removeFromSuperview(); self?.characterPanel = nil; self?.containerPanels.values.forEach { $0.removeFromSuperview() }; self?.containerPanels.removeAll() }
                 if let player, view.followPlayer, player.x != view.cx || player.y != view.cy {
@@ -1170,6 +1187,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             worldView?.onMovementTick = { [weak self, weak panel] in
                 guard let view = self?.worldView else { return }
+                self?.tickSpawnMusic()
                 panel?.tickMovement(allowRoute:view.window?.isKeyWindow == true && view.window?.firstResponder === view && !view.chatting)
             }
             worldView?.onMove = { [weak self, weak panel] direction in

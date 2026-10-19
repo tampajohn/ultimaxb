@@ -29,4 +29,9 @@ for line in subprocess.check_output(['ps','-ax','-o','pid=,comm='],text=True).sp
             time.sleep(.02)
         else: raise SystemExit('Existing UltimaMac did not exit; refusing to start a second copy.')
 PY
-exec .build/release/UltimaMac --client uo1998-client --connect "$@"
+# Optional original region data stays local; server music always overrides it.
+region_args=()
+if [[ -f build/local-shard/.rundir/uogolddemo/regions.txt ]]; then
+    region_args=(--regions build/local-shard/.rundir/uogolddemo/regions.txt)
+fi
+exec .build/release/UltimaMac --client uo1998-client --connect "${region_args[@]}" "$@"
