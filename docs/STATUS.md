@@ -62,6 +62,11 @@ experimental and is not at parity yet.
 - Empty skill checks are now distinct from permanent refusal. The scheduler retries after cooldown, stops after a configurable consecutive-empty limit (default five), and does not increase successful-action counts for failed checks.
 - Nineteen focused tests pass, covering core scheduling, outcome ordering, unrelated chat/resources/containers, ground positions, depletion/refusal, stale inventory and timeout, plus bounded empty-attempt retries. No live actions were sent. Profiles still require UO1998 verification and UI/adapter integration; they cannot provide transaction-ID correlation absent from the protocol.
 
+### 2026-10-19 — Installed-map harvest-site discovery
+- Added era-specific mining-land, mining-static and tree-art classification from the local itemmanip reference. Bounded flood planning uses normal collision, stays within the selected zone, excludes dynamic resource lookalikes, deduplicates identical targets and finds reachable neighboring standing tiles while preserving the target's true Z.
+- Five focused tests pass. The installed-map verifier found 92 reachable mining sites around (2584,482) and 23 woodland sites around (2603,309), with no search truncation; every standing point was independently reachable through a zone-constrained A* check. These are candidate work sites, not confirmed un-depleted resources.
+- Harvest UI/zone overlays, tool selection/equip, enemy checks and live adapters remain unfinished. No live actions or restart were performed.
+
 ## Implemented, with live shard testing still ongoing
 
 - Login, shard/character selection, reconnect, creation stats/skills/appearance.

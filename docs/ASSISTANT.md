@@ -106,6 +106,22 @@ changes can still be ambiguous. UI/live wiring and metadata-only lifecycle event
 remain unfinished. Ground yield recognition does not implement ground recovery
 or ore hauling.
 
+## Installed-map work-site discovery
+
+`HarvestSitePlanner` applies the local era `itemmanip` terrain/static mining and
+tree-art rules, then floods the walkable portion of the selected zone using the
+shared `NavigationMap`. Targets retain their real elevation and static graphic;
+land targets use graphic zero. Standing points are reachable neighbors, not the
+cliff's elevation. Live additional world tiles affect collision but never become
+harvest targets solely by matching art. The flood is bounded at 32,768 positions;
+results expose truncation and omitted sites beyond the 256-site limit.
+
+`tools/check_harvest_sites.swift` checks installed assets around Minoc's mountain
+position (2584, 482) and woodland position (2603, 309). It independently routes to
+every emitted standing point inside the zone. This proves local static-map reach,
+not server resource availability, line of sight, ownership or depletion. The
+server's result remains authoritative. Live map changes require fresh planning.
+
 ## Verification and current test boundaries
 
 Test state transitions with deterministic packet fixtures: normal completion,
