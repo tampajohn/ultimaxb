@@ -12,7 +12,8 @@ final class AutoPickupTests:XCTestCase {
         gather.begin(herb,bag:0x40000002,contents:[],at:0)
         XCTAssertNil(gather.select(items:[item(0x40000003)],player:player,at:1))
         let received=ContainerItem(serial:herb.serial,graphic:herb.graphic,amount:2,x:0,y:0,container:0x40000002,hue:0)
-        gather.update(contents:[received],at:1); XCTAssertNotNil(gather.pending)
+        gather.update(contents:[received],at:1); XCTAssertNil(gather.pending)
+        XCTAssertEqual(gather.mode,.reagents)
         gather.receive(Data([0x29])); gather.update(contents:[received],at:1.1); XCTAssertNil(gather.pending)
         XCTAssertNil(gather.select(items:[herb],player:player,at:2))
     }
@@ -30,12 +31,13 @@ final class AutoPickupTests:XCTestCase {
         XCTAssertNil(gather.select(items:[item()],player:player,at:10))
         XCTAssertEqual(gather.select(items:[item(99)],player:player,at:10)?.serial,99)
     }
-    func testMergedStackNeedsAcknowledgementAndExactQuantity() {
+    func testMergedStackConfirmsWithoutSeparateAcknowledgement() {
         var gather=AutoPickup(); gather.mode = .reagents
         let before=ContainerItem(serial:9,graphic:0xF7A,amount:10,x:0,y:0,container:2,hue:0)
-        gather.begin(item(),bag:2,contents:[before],at:0); gather.receive(Data([0x29]))
+        gather.begin(item(),bag:2,contents:[before],at:0)
         gather.update(contents:[before],at:1); XCTAssertNotNil(gather.pending)
         let after=ContainerItem(serial:9,graphic:0xF7A,amount:12,x:0,y:0,container:2,hue:0)
         gather.update(contents:[after],at:2); XCTAssertNil(gather.pending)
+        XCTAssertEqual(gather.mode,.reagents)
     }
 }
