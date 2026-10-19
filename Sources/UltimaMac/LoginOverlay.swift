@@ -393,6 +393,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     }
     var onGraphicEffect: ((GraphicEffect)->Void)?
     var onAnimation: ((MobileAction)->Void)?
+    var onMobileDeath: ((MobileDeath,WorldMobile,[EquippedItem])->Void)?
     func useEquippedTool() {
         guard loginComplete, let owner = playerSerial else { return }
         let hands = world.equipment.values.filter { $0.owner == owner && ($0.layer == 1 || $0.layer == 2) }
@@ -895,6 +896,14 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         try transfer.receive(packet)
                         tradeTransfer = transfer.complete ? nil : transfer
                         if transfer.complete { trade?.finishOfferChange() }
+                    }
+                    if packet.first == 0xAF {
+                        let event = try MobileDeath.decode(packet)
+                        if let mobile = world.mobiles[event.serial] {
+                            onMobileDeath?(event,mobile,Array(world.equipment.values))
+                        }
+                        if case .attack(let serial) = routeAction, serial == event.serial { cancelRoute() }
+                        Telemetry.shared.record("mobile_death",["serial":event.serial,"corpse":event.corpse,"alternate":event.alternate])
                     }
                     if try world.apply(packet) { changed = true; updateTradeItems() }
                     else if transferWasPending && tradeTransfer == nil { onTrade?(trade) }

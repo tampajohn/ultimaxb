@@ -34,7 +34,7 @@ experimental and is not at parity yet.
   version-specific packet support; current appearance UI is not an exact clone.
 - More reliable global path planning, dynamic obstacles and elevation/occlusion
   edge cases. Large barriers can stop segmented routes.
-- Full equipment coverage, mounts, corpse/death animations and spell effects.
+- Full equipment coverage, mounts, broader death-animation coverage and spell effects.
 - Live verification of ghost routes through doors and passable objects.
 - Complete combat, spell, skill, crafting, healer and housing workflows.
 - Live two-party secure-trade validation, live text-prompt validation and remaining
@@ -725,3 +725,22 @@ its closed graphic. The test explicitly turns after death because the server
 can change facing. Passed in 23.3 seconds against local OUO. This extends the
 prior open-ground check; live UO1998, locked-door variants and other passable
 objects remain unverified. No production server rules were changed.
+
+Death animation and combat lifecycle (2026-10-18): classic 0xAF is now decoded
+and validated. It clears a matching combat target, cancels an attack route to
+that mobile, and removes the mobile and worn equipment from authoritative world
+state. A separate visual snapshot plays the fall with its equipment and last
+interpolated position. Snapshots are capped at 128, expire after one animation,
+and reset on disconnect. They never enter hit-testing or server state. The
+matching corpse is withheld during the fall to avoid drawing both poses, then
+normal corpse rendering resumes. Missing death assets leave the corpse visible.
+The packet's alternate-death flag and corpse direction's high bit now select
+matching classic death groups (monster 2/3, animal 8/12, human 21/22).
+
+Validation: fragmented 0xAF parsing, atomic malformed-packet rejection, target
+and equipment removal, animation frame progression, duplicate-event handling,
+expiry, ghost visibility and group selection. Installed human assets verify
+both variants advance and their final frames match corpse art; the final render
+was visually inspected. Monster/equipment combinations and live combat timing
+still need broader verification. Reference packet/group behavior was checked
+against local OUO packet_manager.c and CrossUO DisplayDeath/animation groups.

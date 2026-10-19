@@ -95,6 +95,7 @@ public struct WorldTile {
     public let x: Int, y: Int, z: Int, art: Int, hue: Int
     public var lightID: Int? = nil
     public var isDynamic: Bool = false
+    public var sourceSerial: UInt32? = nil
     public var effectRotation: Double? = nil
     public var effectFrameInterval: TimeInterval? = nil
     public var effectGump: Int? = nil

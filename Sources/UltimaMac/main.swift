@@ -156,6 +156,17 @@ final class WorldView: NSView {
         return super.resignFirstResponder()
     }
     private var motion = MobileMotion()
+    private var deaths = DeathAnimations()
+    func resetDeathAnimations() { deaths = DeathAnimations() }
+    func playDeath(_ event:MobileDeath,mobile:WorldMobile,equipment:[EquippedItem]) {
+        let action = CorpseArt.deathAction(body:mobile.body,alternate:event.alternate)
+        do {
+            guard let frames = try assets.animations?.frameCount(body:mobile.body,direction:mobile.direction,action:action),frames > 0 else { return }
+            let now = ProcessInfo.processInfo.systemUptime
+            deaths.play(event,mobile:mobile,equipment:equipment,pose:motion.presentations(at:now)[mobile.serial],frames:frames,at:now)
+            wasAnimating = true
+        } catch { Telemetry.shared.record("death_animation_asset_error",["body":mobile.body,"action":action]) }
+    }
     private var animationTimer: Timer?
     private var wasAnimating = false
     func updateMobiles(_ values: [WorldMobile]) {
@@ -253,7 +264,7 @@ final class WorldView: NSView {
         }
 
         onMovementTick?()
-        let active = motion.isAnimating(at: ProcessInfo.processInfo.systemUptime) || effects.count > 0
+        let active = motion.isAnimating(at: ProcessInfo.processInfo.systemUptime) || effects.count > 0 || deaths.isAnimating
         if active || wasAnimating || (assets.staticAnimations != nil && ProcessInfo.processInfo.systemUptime-displayedAnimationTime >= 0.08) { refresh() }
         wasAnimating = active
     }
@@ -298,7 +309,12 @@ final class WorldView: NSView {
                 lastCeiling = visibility.ceiling
             }
             let renderTime = ProcessInfo.processInfo.systemUptime
-            let frame = try WorldRenderer.render(assets, x: cx, y: cy, statics: rendersStatics, legacyTerrain: legacyTerrain, visibility: visibility, camera: camera, groundItems: groundItems + effects.tiles(at:renderTime,mobiles:mobiles,items:groundObjects,presentations:presentations), mobiles: mobiles, equipment: equipment, mobilePresentations: presentations, lighting:lighting, animationTime:renderTime)
+            deaths.expire(at:renderTime)
+            let hiddenCorpses = deaths.hiddenCorpses
+            let renderGround = groundItems.filter { tile in !(tile.sourceSerial.map { hiddenCorpses.contains($0) } ?? false) }
+            let renderMobiles = mobiles.filter { !deaths.hides($0) } + deaths.mobiles
+            let renderPoses = presentations.merging(deaths.presentations(at:renderTime),uniquingKeysWith:{ _,death in death })
+            let frame = try WorldRenderer.render(assets, x: cx, y: cy, statics: rendersStatics, legacyTerrain: legacyTerrain, visibility: visibility, camera: camera, groundItems: renderGround + effects.tiles(at:renderTime,mobiles:mobiles,items:groundObjects,presentations:presentations), mobiles: renderMobiles, equipment: equipment + deaths.equipment, mobilePresentations: renderPoses, lighting:lighting, animationTime:renderTime)
             let now = ProcessInfo.processInfo.systemUptime
             if now - lastRenderDiagnostic >= 5 {
                 Telemetry.shared.record("render_state", ["x":cx, "y":cy, "statics_enabled":rendersStatics,
@@ -799,6 +815,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.worldView?.refresh()
             }
             panel.onAnimation = { [weak self] in self?.worldView?.playAnimation($0) }
+            panel.onMobileDeath = { [weak self] in self?.worldView?.playDeath($0,mobile:$1,equipment:$2) }
             worldView?.onUseEquippedTool = { [weak panel] in panel?.useEquippedTool() }
             panel.onApproachToolTarget = { [weak self] request,selection,tool in
                 self?.approach(selection,action:.toolTarget(request,selection,tool),running:self?.worldView?.running ?? false)
@@ -1018,7 +1035,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 view.window?.invalidateCursorRects(for:view)
                 view.sidebar?.isHidden = player == nil
                 view.sidebar?.updateEquipment(view.equipment, player:player?.serial, assets:view.assets)
-                if player == nil { view.effects = WorldEffects(); self?.audio.stop(); view.sidebar?.updateStatus(nil); self?.skillsPanel?.update(SkillState()) }
+                if player == nil { view.resetDeathAnimations(); view.effects = WorldEffects(); self?.audio.stop(); view.sidebar?.updateStatus(nil); self?.skillsPanel?.update(SkillState()) }
                 view.needsLayout = true
                 if player == nil { self?.worldView?.overheadSpeech = OverheadSpeech(); self?.spellShortcuts.values.forEach { $0.removeFromSuperview() }; self?.spellShortcuts.removeAll(); self?.spellbooks.values.forEach { $0.removeFromSuperview() }; self?.spellbooks.removeAll(); self?.chatPanel.reset(); self?.journalPanel?.removeFromSuperview(); self?.characterPanel?.removeFromSuperview(); self?.characterPanel = nil; self?.containerPanels.values.forEach { $0.removeFromSuperview() }; self?.containerPanels.removeAll() }
                 if let player, view.followPlayer, player.x != view.cx || player.y != view.cy {

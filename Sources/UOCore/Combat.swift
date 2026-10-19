@@ -33,6 +33,8 @@ public struct CombatTarget: Equatable {
             guard target < 0x40000000 else { throw LoginProtocolError.malformedPacket }
             if target == 0 { clear() }
             else if target != serial { serial = target; name = ""; status = CharacterStatus(serial:target) }
+        case 0xAF:
+            if try MobileDeath.decode(packet).serial == serial { clear() }
         case 0x31:
             guard packet.count == 1 else { throw LoginProtocolError.malformedPacket }
             clear()

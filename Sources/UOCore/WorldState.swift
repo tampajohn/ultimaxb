@@ -98,6 +98,12 @@ public struct WorldState {
             containerItems.removeValue(forKey: item.serial)
             items[item.serial] = item
             return true
+        case 0xAF:
+            let death = try MobileDeath.decode(packet)
+            let removed = mobiles.removeValue(forKey:death.serial) != nil
+            let oldEquipment = equipment.count
+            equipment = equipment.filter { $0.value.owner != death.serial }
+            return removed || oldEquipment != equipment.count
         case 0x1D:
             guard packet.count == 5 else { throw LoginProtocolError.malformedPacket }
             var r = PacketReader(packet, offset: 1)
@@ -178,6 +184,7 @@ public struct WorldState {
             var tile = WorldTile(x: item.x, y: item.y, z: item.z, art: item.graphic + 0x4000, hue: item.hue,
                              lightID: Int(item.direction), corpseBody:item.graphic == 0x2006 ? item.amount : nil,corpseDirection:item.direction,corpseEquipment:item.corpseEquipment)
             tile.isDynamic = true
+            tile.sourceSerial = item.serial
             return tile
         }
     }
