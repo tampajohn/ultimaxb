@@ -561,8 +561,8 @@ Validation: 204 tests, 3 opt-in skips, zero failures; installed-asset harness
 `tools/check_light_patterns.swift` checks server-selected versus default masks,
 non-light items, invalid IDs and unchanged daylight rendering. This corrects one
 lighting mismatch, but the reported indoor appearance still needs live visual
-confirmation. Ambient levels remain server-driven. Foreground light occlusion,
-colored lights and broader lighting fidelity remain parity work.
+confirmation. Ambient levels remain server-driven. Foreground light occlusion was subsequently added below; colored lights and
+broader lighting fidelity remain parity work.
 
 Classic spell integration verification (2026-10-18): isolated Test Center on
 loopback port 2594 passes opening the 64-spell starter book, casting Night Sight
@@ -589,3 +589,18 @@ Release suite: 206 tests, 4 opt-in skips, zero failures. This does not establish
 all skill behaviors or reproduce the exact timing of the user's original report.
 The server-backed hiding/reveal test also passes after the reconciliation fix
 (12.0 seconds), with the user's port-2593 server untouched.
+
+Foreground light occlusion (2026-10-18): renderer now follows the local CrossUO
+GameScreen::AddLight foreground-cell rule: an opaque visible static/item at
+(x+1,y+1), at least five Z units above the source, suppresses that light. Applies
+to map/dynamic lamps and carried lights. NoDraw, transparent art, terrain and
+transient effects do not occlude. The index respects our connected cutaway cells
+so removed ceilings do not extinguish interior lights and neighboring buildings
+remain opaque. It is a classic sprite visibility rule, not general wall shadows.
+
+Validation: 209 tests, 4 opt-in skips, zero failures. Installed-asset harness
+`tools/check_light_occlusion.swift` verifies an unobstructed lamp changes night
+pixels, a foreground wall suppresses its light mask exactly, a cutaway restores
+its contribution, and daylight remains unchanged. Existing light-pattern
+harness still passes. The exact indoor screenshot remains visually unconfirmed;
+colored lights, broader light placement and night appearance still need work.

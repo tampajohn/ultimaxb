@@ -47,8 +47,10 @@ public enum WorldRenderer {
         var illumination = ambient<255 ? [UInt16](repeating:ambient,count:width*height) : []
         var lightCount = 0
         var masks:[Int:LightMask] = [:]
-        func addLight(graphic:Int,atX:Int,atY:Int,lightID:Int? = nil) throws {
+        var lightOcclusion: LightOcclusion?
+        func addLight(graphic:Int,atX:Int,atY:Int,worldX:Int,worldY:Int,worldZ:Int,lightID:Int? = nil) throws {
             guard !illumination.isEmpty,lightCount<100,let id = try assets.lightIndex(graphic:graphic,override:lightID) else { return }
+            guard lightOcclusion?.blocks(x: worldX, y: worldY, z: worldZ) != true else { return }
             let mask:LightMask
             if let cached = masks[id] { mask = cached }
             else if let loaded = try assets.lights?.mask(id) { mask = loaded; masks[id] = loaded }
@@ -74,6 +76,11 @@ public enum WorldRenderer {
                 DrawEntry(tile: $0.element, priority: try assets.drawPriority($0.element), originalIndex: $0.offset)
             }
             tiles = entries.sorted(by: DrawEntry.precedes).map(\.tile)
+        }
+        if !illumination.isEmpty && statics {
+            lightOcclusion = try LightOcclusion(tiles: tiles, visibility: visibility) { graphic in
+                try !assets.isNoDraw(graphic: graphic) && assets.itemFlags(graphic: graphic) & 0x04 == 0
+            }
         }
         var entries = try tiles.enumerated().map {
             DrawEntry(tile: $0.element, priority: try assets.drawPriority($0.element), originalIndex: $0.offset)
@@ -166,7 +173,7 @@ public enum WorldRenderer {
                 // Use the same interpolated world position as the mobile, so carried
                 // illumination does not jump ahead to its next server tile.
                 for item in equipment where item.owner == mobile.serial {
-                    try addLight(graphic:item.graphic,atX:Int(screenX.rounded()),atY:Int(screenY.rounded())+22)
+                    try addLight(graphic:item.graphic,atX:Int(screenX.rounded()),atY:Int(screenY.rounded())+22,worldX:mobile.x,worldY:mobile.y,worldZ:mobile.z)
                 }
                 items += 1
                 continue
@@ -199,7 +206,7 @@ public enum WorldRenderer {
                 sx = anchorX - sprite.width / 2
                 sy = anchorY + 44 - sprite.height
             }
-            if tile.isStatic && tile.effectGump == nil { try addLight(graphic:tile.art-0x4000,atX:anchorX,atY:anchorY+22,lightID:tile.lightID) }
+            if tile.isStatic && tile.effectGump == nil { try addLight(graphic:tile.art-0x4000,atX:anchorX,atY:anchorY+22,worldX:tile.x,worldY:tile.y,worldZ:tile.z,lightID:tile.lightID) }
             let left = max(0, -sx), right = min(sprite.width, width - sx)
             let top = max(0, -sy), bottom = min(sprite.height, height - sy)
             if left >= right || top >= bottom { continue }
