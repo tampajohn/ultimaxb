@@ -745,8 +745,10 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         Telemetry.shared.record("inspect_object", ["serial": serial,"automatic":automatic])
         connection.send(InteractionPackets.inspect(serial: serial))
     }
-    func use(serial: UInt32) {
-        guard loginComplete,!inventoryRecoveryBusy else { return }
+    @discardableResult func use(serial: UInt32)->Bool {
+        guard loginComplete else { return false }
+        guard manualInventoryAvailable() else { return false }
+        manualInventoryAt=ProcessInfo.processInfo.systemUptime
         autoPickup.relinquish(serial)
         if waitingDoor != nil { cancelRoute() }
         if case .toolTarget = routeAction { cancelRoute() }
@@ -755,6 +757,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         } else { equippedTargetTool = nil }
         Telemetry.shared.record("use_item", ["serial": serial])
         connection.send(InteractionPackets.use(serial: serial))
+        return true
     }
     var onGraphicEffect: ((GraphicEffect)->Void)?
     var onAnimation: ((MobileAction)->Void)?
@@ -769,7 +772,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             return a.layer < b.layer
         }.first
         guard let selected else { onInventoryMessage?("Equip a tool, then press U to use it."); return }
-        use(serial:selected.serial)
+        guard use(serial:selected.serial) else { return }
         Telemetry.shared.record("equipped_tool_shortcut",["serial":selected.serial,"graphic":selected.graphic])
     }
     private var equippedTargetTool:UInt32?
@@ -834,8 +837,15 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         Telemetry.shared.record("quick_pickup", ["serial": serial, "amount": amount])
         moveItem(serial: serial, amount: amount, x: 0xFFFF, y: 0xFFFF, target: backpack.serial)
     }
+    private func manualInventoryAvailable()->Bool {
+        guard autoPickup.pending == nil,!inventoryRecoveryBusy else {
+            onInventoryMessage?("Waiting for automatic inventory transfer to finish.")
+            return false
+        }
+        return true
+    }
     func moveItem(serial: UInt32, amount: Int, x: Int, y: Int, target: UInt32, z: Int = 0) {
-        guard autoPickup.pending == nil,!inventoryRecoveryBusy else { onInventoryMessage?("Waiting for automatic inventory transfer to finish."); return }
+        guard manualInventoryAvailable() else { return }
         autoPickup.relinquish(serial)
         manualInventoryAt=ProcessInfo.processInfo.systemUptime
         guard loginComplete, let playerSerial else { return }
@@ -863,7 +873,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         equipItem(serial: serial, layer: layer)
     }
     func equipItem(serial: UInt32, layer: UInt8) {
-        guard autoPickup.pending == nil,!inventoryRecoveryBusy else { return }
+        guard manualInventoryAvailable() else { return }
         autoPickup.relinquish(serial)
         manualInventoryAt=ProcessInfo.processInfo.systemUptime
         guard trade?.isOwnOffer(serial) != false else { return }
@@ -888,7 +898,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         } catch { onInventoryMessage?("That item cannot be equipped.") }
     }
     func removeEquipment(serial: UInt32) {
-        guard autoPickup.pending == nil,!inventoryRecoveryBusy else { return }
+        guard manualInventoryAvailable() else { return }
         manualInventoryAt=ProcessInfo.processInfo.systemUptime
         guard loginComplete, let owner = playerSerial, let item = world.equipment[serial], item.owner == owner,
               EquipmentRules.isWearable(item.layer),

@@ -21,6 +21,11 @@ experimental and is not at parity yet.
 - Refusal cooldowns start at receipt time, rather than the original request time. A slow refusal therefore cannot permit an immediate follow-up request. Refused serials remain skipped while observed; unrelated late refusals do not extend the wait. Gather mode stays enabled.
 - Eight pickup core tests pass, including delayed replies, cooldown boundaries, no duplicate credit and eligibility of other items after refusal. All sixteen offline UI fixtures pass in both runner passes. Live effectiveness of the longer pause still needs validation after the next launch; the current running journey is preserved.
 
+### 2026-10-19 — Serialize item use with automatic inventory transfers
+- Double-click/use now shares the transfer guard with drag, equip and unequip. While an automatic pickup, overload recovery or banking transfer is active, these actions report a waiting message instead of overlapping server requests; equip/unequip no longer fail silently at that guard.
+- Accepted use starts the existing two-second manual-interaction grace period before gathering can resume. The equipped-tool shortcut reports a use only when the guard accepts it. No blocked action is queued or replayed later.
+- The offline banking fixture now exercises use/equip/unequip during a pending pickup, use during banking, and use after completion. All sixteen offline UI fixtures pass in both runner passes. The active client is unchanged; this fix takes effect next launch. This does not yet serialize all manual-to-manual transfers or guarantee every server response can be correlated; that remains inventory reliability work.
+
 ## Implemented, with live shard testing still ongoing
 
 - Login, shard/character selection, reconnect, creation stats/skills/appearance.

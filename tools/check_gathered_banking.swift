@@ -30,11 +30,16 @@ import UOCore
         // Two herbs on the player's tile, followed by the authoritative pickup.
         send(Data([0x1A,0,16,0xC0,0,0,4,0x0F,0x7A,0,2,0,10,0,10,0]))
         login.tickMovement()
+        precondition(!login.use(serial:0x40000002),"Use must wait for a pending automatic pickup")
+        login.equipItem(serial:0x40000004,layer:1)
+        login.removeEquipment(serial:0x40000002)
+        precondition(messages.filter { $0=="Waiting for automatic inventory transfer to finish." }.count==3)
         send(contents(2,0x40000002)); login.tickMovement()
         login.followRoute([],action:nil,running:false,resolver:{ _,_ in [] })
         login.bankGatheredOnArrival=true
         login.tickMovement(); login.tickMovement()
         precondition(messages.contains("Requesting your bank box…"))
+        precondition(!login.use(serial:0x40000002),"Use must wait while bank deposits are active")
         // An unrelated open container must not start a deposit.
         send(Data([0x24,0x40,0,0,9,0,0x49])); send(Data([0x3C,0,5,0,0]))
         login.tickMovement()
@@ -63,6 +68,7 @@ import UOCore
         send(Data([0x24,0x40,0,0,3,0,0x49])); send(Data([0x3C,0,5,0,0]))
         login.tickMovement(); Thread.sleep(forTimeInterval:1.05); login.tickMovement()
         precondition(messages.contains("No gathered goods to deposit. Existing belongings were kept."))
+        precondition(login.use(serial:0x40000002),"Use must resume once automatic transfers finish")
         print("Offline bank arrival, unrelated container rejection, single deposit and authoritative completion passed")
     }
 }
