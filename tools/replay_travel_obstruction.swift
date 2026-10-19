@@ -35,7 +35,7 @@ import Foundation
         let goals=try snapshot.goals.map(point)
         print("Start: \(start); \(tiles.count) live collision tiles; \(leaves.count) opened leaves")
         for (index,goal) in goals.enumerated() {
-            for (name,ignoreDoors,retainLeaves) in [("ordinary",false,true),("closed doors relaxed",true,true),("all doors relaxed (diagnostic only)",true,false)] {
+            for (name,ignoreDoors,retainLeaves) in [("ordinary",false,true),("closed doors relaxed",true,true),("without remembered-leaf exclusions (diagnostic only)",true,false)] {
                 var statistics:WalkPath.SearchStatistics?
                 let route=WalkPath.find(from:start,x:goal.x,y:goal.y,goalZ:goal.z,limit:8192,travelCost:map.travelCost,report:{statistics=$0}) { p,d in
                     guard let next=map.step(from:p,direction:d,ignoringDoors:ignoreDoors),!blocked.contains(next),

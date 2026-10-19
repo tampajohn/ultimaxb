@@ -21,6 +21,18 @@ import Foundation
             precondition(ghost.standingPoint(x:destination.x,y:destination.y,fromZ:center.z) == destination)
             let route = WalkPath.find(from:center,x:destination.x,y:destination.y) { ghost.step(from:$0,direction:$1) }
             precondition(route == [destination])
+            // The installed art flags, not merely open state, determine whether
+            // a swung door leaf blocks its new tile.
+            for graphic in [0x675,0x676] {
+                var leaf=WorldTile(x:destination.x,y:destination.y,z:destination.z,art:graphic+0x4000,hue:0)
+                leaf.isDynamic=true
+                let actual=try NavigationMap(assets:assets,center:center,additional:[leaf])
+                let regular=actual.step(from:center,direction:direction)
+                let planned=actual.step(from:center,direction:direction,ignoringDoors:true)
+                if DoorOpeningWait.isOpenGraphic(graphic)==true {
+                    precondition(planned==regular,"Open leaf must retain actual installed collision")
+                } else { precondition(planned==destination,"Closed door can be relaxed for approach planning") }
+            }
             checked = true
             break
         }

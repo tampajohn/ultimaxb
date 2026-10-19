@@ -62,8 +62,9 @@ public final class NavigationMap {
     public struct Surface {
         public let z:Int, height:Int, flags:Int
         public let ghostPassable:Bool
-        public init(z:Int,height:Int,flags:Int,ghostPassable:Bool = false) {
-            self.z=z; self.height=height; self.flags=flags; self.ghostPassable=ghostPassable
+        public let openDoor:Bool
+        public init(z:Int,height:Int,flags:Int,ghostPassable:Bool = false,openDoor:Bool = false) {
+            self.z=z; self.height=height; self.flags=flags; self.ghostPassable=ghostPassable; self.openDoor=openDoor
         }
         /// Classic ghost exceptions remove obstruction, not supporting surfaces.
         /// Lightweight world items differ from baked map/multi components.
@@ -78,7 +79,7 @@ public final class NavigationMap {
             self.landZ=landZ; self.lowZ=lowZ; self.landBlocked=landBlocked; self.surfaces=surfaces
         }
         public func standingZ(from:Int, ignoringDoors:Bool = false, ghost:Bool = false)->Int? {
-            let surfaces = ignoringDoors ? surfaces.filter { $0.flags & 0x20000000 == 0 } : surfaces
+            let surfaces = ignoringDoors ? surfaces.filter { $0.flags & 0x20000000 == 0 || $0.openDoor } : surfaces
             var candidates:[Int] = []
             if !landBlocked && lowZ <= from+8 && landZ >= from-20 { candidates.append(landZ) }
             for s in surfaces where s.flags & 0x600 != 0 && s.flags & 0x40 == 0 {
@@ -123,7 +124,8 @@ public final class NavigationMap {
                 let flags = try assets.itemFlags(graphic:graphic)
                 return Surface(z:tile.z,height:try assets.itemHeight(graphic:graphic),flags:flags,
                     ghostPassable:try Surface.passableForGhost(graphic:graphic,flags:flags,dynamic:tile.isDynamic,
-                                                              weight:assets.itemWeight(graphic:graphic)))
+                                                              weight:assets.itemWeight(graphic:graphic)),
+                    openDoor:DoorOpeningWait.isOpenGraphic(graphic) == true)
             }
             cells[xy] = Cell(landZ:average,lowZ:corners.min()!,landBlocked:land.art<=2 || flags & 0xC0 != 0,surfaces:surfaces)
         }

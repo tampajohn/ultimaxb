@@ -32,6 +32,11 @@ experimental and is not at parity yet.
 - Door-change telemetry records old/new graphic, coordinates and known/unknown open state. The reference for paired art is local OUO item tile lookup (base graphic plus the open-state offset); supported families are explicitly bounded.
 - Added core art-family boundary checks and offline packet-adapter coverage for initially open doors, retained open state and subsequent closure. Eight door core tests and all sixteen offline UI fixtures pass. The correction takes effect on the next client launch. This addresses a concrete state bug, but does not claim the earlier obstruction is conclusively reproduced or all door routes are fixed.
 
+### 2026-10-19 — Keep open-door collision in click-to-walk planning
+- Shared navigation's door-relaxed planning now removes only closed/unknown door surfaces. Known open leaves retain their actual tiledata flags, so solid leaves remain obstacles and passable art remains passable. Ghost exceptions are unchanged.
+- Click-to-walk door approach no longer selects known-open or previously confirmed changed doors as opening candidates. Long-distance and local planning now agree on known open art rather than relying only on the long-distance leaf exclusion.
+- Twenty focused navigation/door tests and all sixteen offline UI fixtures pass. The installed-terrain fixture checks actual 0x675/0x676 art mapping as well as ghost collision. Live original-obstruction reproduction remains pending; the running client is preserved until the next requested restart.
+
 ## Implemented, with live shard testing still ongoing
 
 - Login, shard/character selection, reconnect, creation stats/skills/appearance.

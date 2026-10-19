@@ -771,8 +771,8 @@ build/replay_travel_obstruction uo1998-client build/blocked-route-snapshot.json
 ```
 
 The tool uses the same map collision and local search limits, compares normal
-collision with door relaxation, and prints nearby tile flags. Relaxing *all*
-doors is diagnostic only; it is never sent as a walking route. Truncated tile
+collision with door relaxation, and prints nearby tile flags. Removing remembered-leaf exclusions is diagnostic only; known open art still
+retains its tiledata collision, and no diagnostic route is sent to the server. Truncated tile
 snapshots are rejected rather than silently treated as complete. The Vesper
 static baseline and a blocked-goal case were checked; the live opened-door
 failure still needs its captured dynamic geometry before a fix can be claimed.

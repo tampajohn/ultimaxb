@@ -1285,7 +1285,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func routeThroughDoor(to destination:TargetSelection,start:WalkPoint,running:Bool,remaining:Int,map:NavigationMap)throws->Bool {
         guard let panel = loginOverlay,let view = worldView else { return false }
         let doors = try panel.routeItems.filter { item in
-            guard max(abs(item.x-start.x),abs(item.y-start.y)) <= 24 else { return false }
+            guard max(abs(item.x-start.x),abs(item.y-start.y)) <= 24,
+                  !panel.travelDoorAlreadyChanged(item) else { return false }
             return try assets.isDoor(graphic:item.graphic)
         }.sorted { $0.serial < $1.serial }
         guard !doors.isEmpty else { return false }

@@ -61,6 +61,19 @@ final class DoorOpeningWaitTests: XCTestCase {
         XCTAssertFalse(TravelSafety.clearsDoorLeaves(from:start,to:WalkPoint(x:11,y:11,z:0),leaves:[leaf]))
         XCTAssertTrue(TravelSafety.clearsDoorLeaves(from:start,to:WalkPoint(x:10,y:11,z:0),leaves:[leaf]))
     }
+    func testPlanningRetainsSolidOpenLeavesButAllowsClosedDoorApproach() {
+        let closed=NavigationMap.Surface(z:0,height:20,flags:0x20000040)
+        let opened=NavigationMap.Surface(z:0,height:20,flags:0x20000040,ghostPassable:true,openDoor:true)
+        let closedCell=NavigationMap.Cell(landZ:0,lowZ:0,landBlocked:false,surfaces:[closed])
+        let openCell=NavigationMap.Cell(landZ:0,lowZ:0,landBlocked:false,surfaces:[opened])
+        XCTAssertNil(closedCell.standingZ(from:0))
+        XCTAssertEqual(closedCell.standingZ(from:0,ignoringDoors:true),0)
+        XCTAssertNil(openCell.standingZ(from:0))
+        XCTAssertNil(openCell.standingZ(from:0,ignoringDoors:true),"Opening cannot make a solid leaf disappear for route planning")
+        XCTAssertEqual(openCell.standingZ(from:0,ignoringDoors:true,ghost:true),0)
+        let passable=NavigationMap.Surface(z:0,height:20,flags:0x20000000,openDoor:true)
+        XCTAssertEqual(NavigationMap.Cell(landZ:0,lowZ:0,landBlocked:false,surfaces:[passable]).standingZ(from:0,ignoringDoors:true),0,"Open art without blocking flags stays passable")
+    }
     func testPlanningPastDoorDoesNotRemoveWallsOrBlockedLand() {
         let door = NavigationMap.Surface(z: 0, height: 20, flags: 0x20000040)
         let wall = NavigationMap.Surface(z: 0, height: 20, flags: 0x40)
