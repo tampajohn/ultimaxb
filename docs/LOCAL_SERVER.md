@@ -100,6 +100,7 @@ on loopback port 2594 with `-client 12532 -a 127.0.0.1 -p 2594 -test -fast 10
 shard. It also adds one ordinary gemstone after player registration has protected
 the starting inventory. It changes no damage, death, resurrection or permission
 rules; the extra item exists only to exercise normal corpse recovery.
+It also places a closed door at (2603,310,15) for ghost collision verification.
 
 With that server fully loaded, run:
 
@@ -133,3 +134,11 @@ with 0x2C to that choice. The fixture requires an accepted movement request,
 no movement denial, and a subsequent authoritative position one tile away with
 the ghost body retained. This checks open-ground movement, not passage through
 doors, healer resurrection or reconnecting as a ghost.
+
+Add `UO_VERIFY_GHOST_DOOR=1` alongside `UO_VERIFY_GHOST=1` to test that closed
+door. The fixture first verifies a living movement denial, then declines
+resurrection, faces the door and requires a successful ghost step into its cell.
+It checks the route planner against both states, the server-confirmed position,
+and that the door's graphic stays closed. Run this only with the fixture patch
+that places the door. This passes against local OUO; UO1998 still needs live
+verification.

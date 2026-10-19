@@ -715,3 +715,13 @@ closed door. The harness checks a blocked living step, accepted ghost step,
 unchanged terrain Z and a direct ghost route. Actual server traversal through a
 closed door remains unverified; prior integration verified open-ground ghost
 movement only.
+
+Server-confirmed ghost door passage (2026-10-18): the isolated fixture now places
+a closed door beside spawn. With `UO_VERIFY_GHOST_DOOR=1`, integration first
+requires a living movement denial at the doorway, then verifies the planner's
+living/ghost results, declines resurrection and walks the ghost into that same
+cell. The server confirms the position and ghost body while the door retains
+its closed graphic. The test explicitly turns after death because the server
+can change facing. Passed in 23.3 seconds against local OUO. This extends the
+prior open-ground check; live UO1998, locked-door variants and other passable
+objects remain unverified. No production server rules were changed.

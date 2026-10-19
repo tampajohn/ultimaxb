@@ -338,6 +338,27 @@ final class OUOIntegrationTests: XCTestCase {
         }
         if verifyDeath {
             let player = try XCTUnwrap(entry)
+            let verifyDoor = verifyGhost && ProcessInfo.processInfo.environment["UO_VERIFY_GHOST_DOOR"] == "1"
+            var ghostDoor: GroundItem?
+            if verifyDoor {
+                ghostDoor = try XCTUnwrap(world.items.values.first { $0.graphic == 0x0675 && $0.x == 2603 && $0.y == 310 })
+                let deniedBeforeDoor = counts[0x21,default:0]
+                // Turn toward the fixture door, then attempt a real living step.
+                // The denial, not just our collision model, must prove it closed.
+                for _ in 0..<2 {
+                    let current = try XCTUnwrap(world.mobiles[player.serial])
+                    movement = PlayerMovement(); moveReply = false; positionReply = false
+                    connection.send(try XCTUnwrap(movement.request(direction:4,player:current,at:ProcessInfo.processInfo.systemUptime)))
+                    for _ in 0..<100 {
+                        if moveReply && positionReply { break }
+                        try await Task.sleep(for: .milliseconds(50))
+                    }
+                    try await Task.sleep(for: .milliseconds(450))
+                }
+                let current = try XCTUnwrap(world.mobiles[player.serial])
+                XCTAssertEqual(current.x,2603); XCTAssertEqual(current.y,309)
+                XCTAssertGreaterThan(counts[0x21,default:0],deniedBeforeDoor,"Closed fixture door must reject a living step")
+            }
             let recoveryItem = world.containerItems.values.first { $0.graphic == 0x0F13 }
             if verifyCorpseRecovery { XCTAssertNotNil(recoveryItem, "Wilderness fixture must provide ordinary loot after starter protection") }
             let book = try XCTUnwrap(world.containerItems.values.first { $0.graphic == 0x0EFA })
@@ -374,8 +395,29 @@ final class OUOIntegrationTests: XCTestCase {
                 // OUO processes the decline without a 0x2C reply. The following
                 // accepted move and authoritative ghost position prove progress.
                 XCTAssertEqual(death.phase, .ghost)
-                let ghost = try XCTUnwrap(world.mobiles[player.serial])
+                var ghost = try XCTUnwrap(world.mobiles[player.serial])
                 XCTAssertTrue([402, 403].contains(ghost.body))
+                if ghostDoor != nil, ghost.direction & 7 != 4 {
+                    // The server changes facing during death; explicitly turn
+                    // back toward the door before testing traversal.
+                    movement = PlayerMovement(); moveReply = false; positionReply = false
+                    connection.send(try XCTUnwrap(movement.request(direction:4,player:ghost,at:ProcessInfo.processInfo.systemUptime)))
+                    for _ in 0..<100 {
+                        if moveReply && positionReply { break }
+                        try await Task.sleep(for: .milliseconds(50))
+                    }
+                    ghost = try XCTUnwrap(world.mobiles[player.serial])
+                    try await Task.sleep(for: .milliseconds(450))
+                }
+                if let door = ghostDoor {
+                    let assets = try ClientAssets(directory:URL(fileURLWithPath:"uo1998-client"))
+                    let start = WalkPoint(x:ghost.x,y:ghost.y,z:ghost.z)
+                    let livingMap = try NavigationMap(assets:assets,center:start,additional:world.groundTiles)
+                    let ghostMap = try NavigationMap(assets:assets,center:start,additional:world.groundTiles,ghost:true)
+                    XCTAssertNil(livingMap.step(from:start,direction:4))
+                    XCTAssertEqual(ghostMap.step(from:start,direction:4),WalkPoint(x:door.x,y:door.y,z:door.z))
+                    XCTAssertEqual(ghost.direction & 7,4)
+                }
                 movement = PlayerMovement()
                 moveReply = false; positionReply = false; moveSent = true
                 let accepted = counts[0x22, default: 0]
@@ -396,6 +438,10 @@ final class OUOIntegrationTests: XCTestCase {
                 XCTAssertEqual(moved.y, ghost.y + delta.1)
                 XCTAssertTrue([402, 403].contains(moved.body))
                 XCTAssertEqual(death.phase, .ghost)
+                if let door = ghostDoor {
+                    XCTAssertEqual(moved.x,door.x); XCTAssertEqual(moved.y,door.y)
+                    XCTAssertEqual(world.items[door.serial]?.graphic,door.graphic,"Ghost passage must not open the door")
+                }
                 return
             }
             connection.send(try death.response(resurrect: true))

@@ -11,7 +11,7 @@
  	{ "Moonglow", "Docks", 4406, 1045, 0 },
 --- a/player.c
 +++ b/player.c
-@@ -886,6 +886,10 @@
+@@ -886,6 +886,15 @@
  	player->creationTime = g_GameTick;
  
  	CPlayer_AttachStartupScripts(player);
@@ -19,6 +19,11 @@
 +    // Fixture-only: add ordinary loot after registration protects starter gear.
 +    if (g_DebugTest && backpack != NULL)
 +        Script_createGlobalObjectIn(0x0F13, backpack->serial);
++    if (g_DebugTest) {
++        CLocation doorLoc;
++        CLocation_Set(&doorLoc, 2603, 310, 15);
++        Script_createGlobalObjectAt(0x0675, &doorLoc);
++    }
  
  	return player;
  }
