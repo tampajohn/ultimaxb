@@ -1216,6 +1216,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let panel=HarvestPanel(assets:assets,scope:login.assistantScope,position:.init(x:player.x,y:player.y,z:player.z)); harvestPanel=panel
         panel.onPlayerPosition={ [weak view] in view?.player.map { WalkPoint(x:$0.x,y:$0.y,z:$0.z) } }
         panel.onStop={ [weak login] in login?.stopHarvest() }
+        panel.onSmelt={ [weak self,weak login,weak panel,weak view] in
+            guard let self,let login,let view,let player=view.player else { return }
+            let start=WalkPoint(x:player.x,y:player.y,z:player.z)
+            guard let map=try? NavigationMap(assets:self.assets,center:start,additional:view.groundItems) else { return }
+            let forges=login.routeItems.filter { SmeltOutcome.isForge($0.graphic) && max(abs($0.x-start.x),abs($0.y-start.y))<=24 }
+                .sorted { max(abs($0.x-start.x),abs($0.y-start.y)) < max(abs($1.x-start.x),abs($1.y-start.y)) }
+            for forge in forges {
+                guard let route=WalkPath.find(from:start,x:forge.x,y:forge.y,adjacent:true,goalZ:forge.z,step:{map.step(from:$0,direction:$1)}) else { continue }
+                login.cancelRoute(); view.followPlayer=true
+                panel?.showResult("Walking to a forge to smelt backpack ore.")
+                login.followRoute(route,action:.smelt(forge.serial),running:false) { [weak self,weak view] position,blocked in
+                    guard let self,let view,let current=try? NavigationMap(assets:self.assets,center:position,additional:view.groundItems) else { return nil }
+                    return WalkPath.find(from:position,x:forge.x,y:forge.y,adjacent:true,goalZ:forge.z) {
+                        guard let next=current.step(from:$0,direction:$1),!blocked.contains(next) else { return nil }; return next
+                    }
+                }
+                return
+            }
+            panel?.showResult("No reachable visible forge nearby. Move closer to a smithy, then try again.")
+        }
         panel.isHarvesting={ [weak login] in login?.harvestActive ?? false }
         login.onHarvestStatus={ [weak panel] text in panel?.showResult(text) }
         panel.onStart={ [weak self,weak view,weak login,weak panel] zone,kind in

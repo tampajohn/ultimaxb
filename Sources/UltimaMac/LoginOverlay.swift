@@ -102,11 +102,11 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     var onWalkRoute: (([WalkPoint])->Void)?
     private var walkRoute:[WalkPoint]?
     enum ArrivalAction {
-        case use(UInt32), pickup(UInt32, Int), attack(UInt32)
+        case use(UInt32), pickup(UInt32, Int), attack(UInt32), smelt(UInt32)
         case toolTarget(TargetRequest,TargetSelection,UInt32)
         case openDoor(GroundItem,TargetSelection,Int)
         var serial: UInt32 {
-            switch self { case .use(let s), .pickup(let s,_), .attack(let s): return s; case .openDoor(let door,_,_): return door.serial; case .toolTarget(_,let target,_): return target.serial }
+            switch self { case .use(let s), .pickup(let s,_), .attack(let s), .smelt(let s): return s; case .openDoor(let door,_,_): return door.serial; case .toolTarget(_,let target,_): return target.serial }
         }
     }
     private var routeAction: ArrivalAction?
@@ -197,6 +197,65 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     var harvestNow:()->TimeInterval = { ProcessInfo.processInfo.systemUptime }
     private var harvestRestartAfter:TimeInterval=0
     private var harvestKnownContents=Set<UInt32>()
+    private var smelt:SmeltWorkflow?
+    private var smeltLastState:SmeltWorkflow.State?
+    private var smeltActive:Bool {
+        guard let smelt else { return false }
+        switch smelt.state { case .ready,.working,.coolingDown: return true; default: return false }
+    }
+    @discardableResult func startSmelting(forge serial:UInt32)->Bool {
+        guard !harvestActive,harvestNow()>=harvestRestartAfter,loginComplete,
+              let playerSerial,let player=world.mobiles[playerSerial],!player.isGhost,
+              targetRequest==nil,trade==nil,combatTarget.serial==nil,
+              manualTransfer.serial==nil,autoPickup.pending==nil,!inventoryRecoveryBusy,
+              let forge=world.items[serial],max(abs(player.x-forge.x),abs(player.y-forge.y))<=3,
+              let bag=world.equipment.values.first(where:{$0.owner==playerSerial && $0.layer==21}) else {
+            onHarvestStatus?("Finish the current action and stand near a forge before smelting."); return false
+        }
+        guard harvestKnownContents.contains(bag.serial) else {
+            connection.send(InteractionPackets.use(serial:bag.serial))
+            onHarvestStatus?("Opening your backpack. Choose Smelt again once its contents arrive."); return false
+        }
+        var flow=SmeltWorkflow()
+        do { try flow.start(backpack:bag.serial,forge:forge,world:world) }
+        catch { onHarvestStatus?("No known backpack ore or visible forge is available."); return false }
+        cancelRoute(); harvest=nil; harvestOutcome=nil; harvestCursorUntil=0
+        smelt=flow; smeltLastState=nil
+        publishSmeltStatus()
+        return true
+    }
+    private func smeltCommand(_ command:AssistantAction.Command) {
+        switch command {
+        case .useItem(let serial):
+            harvestCursorUntil=harvestNow()+10
+            connection.send(InteractionPackets.use(serial:serial))
+            Telemetry.shared.record("smelt_ore_used",["serial":serial])
+        case .target(let request,let selection):
+            if let packet=try? request.response(selection) { connection.send(packet) }
+            Telemetry.shared.record("smelt_forge_targeted",["serial":selection.serial])
+        case .cancelTarget(let request):
+            if let packet=try? request.response(nil) { connection.send(packet) }
+        }
+    }
+    private func publishSmeltStatus() {
+        guard let smelt,smeltLastState != smelt.state else { return }
+        if case .stopped=smelt.state,smeltLastState == .working {
+            harvestRestartAfter=max(harvestRestartAfter,harvestNow()+10)
+            harvestCursorUntil=harvestNow()+10
+        }
+        smeltLastState=smelt.state
+        let text:String
+        switch smelt.state {
+        case .idle: text="Smelting idle."
+        case .ready,.coolingDown: text="Smelting: \(smelt.successes) piles processed. Waiting before the next pile."
+        case .working: text="Smelting ore; waiting for the server."
+        case .completed: text="Smelting finished: \(smelt.successes) successful piles, \(smelt.skipped) too small."
+        case .stopped(.noProgress): text="Smelting stopped after metal loss. Improve Mining before trying again."
+        case .stopped(let reason): text="Smelting stopped: \(reason)."
+        }
+        onHarvestStatus?(text)
+        Telemetry.shared.record("smelt_state",["state":String(describing:smelt.state),"successes":smelt.successes,"skipped":smelt.skipped])
+    }
     private var harvest:HarvestWorkflow?
     private var harvestAfterEquip:(()->Void)?
     private var harvestOutcome:HarvestOutcome?
@@ -207,6 +266,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private var harvestCursorUntil:TimeInterval=0
     var onHarvestStatus:((String)->Void)?
     var harvestActive:Bool {
+        if smeltActive { return true }
+        if case .smelt = routeAction { return true }
         if harvestAfterEquip != nil { return true }
         guard let harvest else { return false }
         switch harvest.state { case .idle,.completed,.stopped: return false; default: return true }
@@ -238,7 +299,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         // used by the paperdoll; never issue a use before the server accepts it.
         if equipped == nil,let carried,let item=world.containerItems[carried],
            let layer=equipmentLayer?(item.graphic),[1,2].contains(layer) {
-            cancelRoute()
+            cancelRoute(); smelt=nil; smeltLastState=nil
             equipItem(serial:carried,layer:layer)
             guard manualTransfer.serial == carried else { return false }
             harvestAfterEquip={ [weak self] in
@@ -256,6 +317,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         do { try runner.start(zone:zone,sites:sites,tool:tool,successfulActions:100,maxConsecutiveEmptyAttempts:20) }
         catch { onHarvestStatus?("Preview a zone with reachable work sites first."); return false }
         cancelRoute()
+        smelt=nil; smeltLastState=nil
         harvest=runner; harvestTool=tool; harvestKind=kind; harvestRoute=route
         harvestOutcome=nil; harvestLastState=nil; harvestCursorUntil=0
         Telemetry.shared.record("harvest_started",["kind":kind == .mining ? "mining":"lumberjacking","sites":sites.count,"tool":tool,"limit":100])
@@ -264,6 +326,14 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     }
     func stopHarvest() {
         guard harvestActive else { return }
+        if case .smelt = routeAction {
+            cancelRoute(preservingHarvest:true)
+            onHarvestStatus?("Forge approach cancelled."); return
+        }
+        if smeltActive {
+            if smelt?.state == .working { harvestRestartAfter=harvestNow()+10; harvestCursorUntil=harvestNow()+10 }
+            smelt?.stop(); publishSmeltStatus(); cancelRoute(preservingHarvest:true); return
+        }
         if harvestAfterEquip != nil {
             harvestAfterEquip=nil
             onHarvestStatus?("Harvesting cancelled. Any pending equipment change may still finish.")
@@ -277,6 +347,9 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     }
     private func skipHarvestSite() {
         guard harvestActive else { return }
+        if case .smelt=routeAction {
+            stopHarvest(); onHarvestStatus?("Forge approach was blocked. Choose Smelt again from a reachable location."); return
+        }
         harvest?.skipCurrentSite(time:harvestNow())
         harvestOutcome=nil
         cancelRoute(preservingHarvest:true)
@@ -329,6 +402,10 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private func harvestTarget(_ request:TargetRequest)->Bool {
         let now=harvestNow()
         guard harvestActive || now<harvestCursorUntil else { return false }
+        if smelt != nil,let playerSerial,let player=world.mobiles[playerSerial] {
+            if let command=smelt?.receive(request,world:world,position:.init(x:player.x,y:player.y,z:player.z),time:now) { smeltCommand(command) }
+            publishSmeltStatus(); return true
+        }
         if harvestAfterEquip != nil {
             stopHarvest()
             if request.flags != 3,let packet=try? request.response(nil) { connection.send(packet) }
@@ -345,6 +422,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         return true
     }
     private func observeHarvest(_ speech:SpeechMessage? = nil) {
+        if smeltActive { smelt?.observe(speech:speech,world:world,time:harvestNow()); publishSmeltStatus(); return }
         guard harvestActive,var outcome=harvestOutcome else { return }
         let now=harvestNow()
         let result=outcome.observe(speech:speech,world:world,time:now)
@@ -361,6 +439,12 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             world.mobiles.values.contains(where:{$0.serial != playerSerial && $0.isEnemy && max(abs($0.x-player.x),abs($0.y-player.y))<=6}) {
             stopHarvest(); onHarvestStatus?("Harvesting stopped: danger or another interaction nearby."); return
         }
+        if smeltActive {
+            guard movement.pendingCount==0,!movement.awaitingPosition else { return }
+            if let command=smelt?.next(world:world,position:.init(x:player.x,y:player.y,z:player.z),time:harvestNow()) { smeltCommand(command) }
+            publishSmeltStatus(); return
+        }
+        if case .smelt = routeAction { return }
         if harvestAfterEquip != nil { return }
         observeHarvest()
         guard movement.pendingCount==0,!movement.awaitingPosition else { return }
@@ -760,7 +844,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             target = world.mobiles[serial].map { WalkPoint(x:$0.x,y:$0.y,z:$0.z) }
         case .openDoor(let door,_,_):
             target = world.items[door.serial].map { WalkPoint(x:$0.x,y:$0.y,z:$0.z) }
-        case .use(let serial), .pickup(let serial,_):
+        case .use(let serial), .pickup(let serial,_), .smelt(let serial):
             target = world.items[serial].map { WalkPoint(x:$0.x,y:$0.y,z:$0.z) }
         }
         let reach:Int
@@ -779,6 +863,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             waitingDoor = (door,destination,remaining,routeRunning,DoorOpeningWait(door:door,at:ProcessInfo.processInfo.systemUptime))
             onInventoryMessage?("Opening door…")
             Telemetry.shared.record("door_route_open_requested", ["serial":serial])
+        case .smelt(let serial): _=startSmelting(forge:serial)
         case .use(let serial): use(serial:serial)
         case .pickup(let serial,let amount):
             guard let item = world.items[serial] else { return }
@@ -1492,7 +1577,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private func reset(_ message: String) {
         introControls.isHidden=true; artwork.mainMenu=false; settings.isHidden=true
         statusRefreshTask?.cancel(); statusRefreshTask = nil
-        stopHarvest(); harvest=nil; harvestOutcome=nil; harvestCursorUntil=0; harvestRestartAfter=0; harvestKnownContents=[]
+        stopHarvest(); smelt=nil; smeltLastState=nil; harvest=nil; harvestOutcome=nil; harvestCursorUntil=0; harvestRestartAfter=0; harvestKnownContents=[]
         world = WorldState(); openedTravelDoors=[:]; manualTransfer=ManualInventoryTransfer()
         servers=[]; characters=[]; cities=[]; choices.removeAllItems(); cityChoice.removeAllItems()
         autoPickup = AutoPickup(); gatheredDrop=nil; awaitingDropWeight=nil; dropGatheredDuringTravel=false; banking=nil; bankingRequested=false; bankGatheredOnArrival=false; bankContentsContext=nil; bankTransferUntil=0; onAutoPickupMode?(0)

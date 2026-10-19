@@ -15,6 +15,7 @@ import UOCore
     var onPlayerPosition:(()->WalkPoint?)?
     var onStart:((HarvestWorkflow.Zone,HarvestOutcome.Kind)->Void)?
     var onStop:(()->Void)?
+    var onSmelt:(()->Void)?
     var isHarvesting:(()->Bool)?
     private var validatedZone:HarvestWorkflow.Zone?
     init(assets:ClientAssets,scope:String,position:WalkPoint,defaults:UserDefaults = UserDefaults(suiteName:"com.ultimaxb.UltimaMac")!) {
@@ -23,7 +24,7 @@ import UOCore
         mining=ClassicButton("Mining",fonts:assets.fonts,target:nil,action:nil)
         wood=ClassicButton("Lumberjacking",fonts:assets.fonts,target:nil,action:nil)
         super.init(assets:assets)
-        frame=NSRect(x:310,y:30,width:420,height:430)
+        frame=NSRect(x:310,y:30,width:420,height:480)
         let title=ClassicLabel("Harvest planning",fonts:assets.fonts); title.frame=NSRect(x:20,y:16,width:340,height:25); addSubview(title)
         let close=ClassicButton("X",fonts:assets.fonts,target:self,action:#selector(closePanel)); close.frame=NSRect(x:380,y:12,width:26,height:26); addSubview(close)
         mining.target=self; mining.action=#selector(selectMining); mining.frame=NSRect(x:20,y:52,width:180,height:30); addSubview(mining)
@@ -49,7 +50,9 @@ import UOCore
         start.frame=NSRect(x:20,y:252,width:235,height:32); addSubview(start)
         let stop=ClassicButton("Stop",fonts:assets.fonts,target:self,action:#selector(stopHarvesting))
         stop.frame=NSRect(x:265,y:252,width:135,height:32); addSubview(stop)
-        message.frame=NSRect(x:20,y:300,width:380,height:110); addSubview(message)
+        let smelt=ClassicButton("Smelt backpack ore",fonts:assets.fonts,target:self,action:#selector(smeltOre))
+        smelt.frame=NSRect(x:20,y:296,width:380,height:32); addSubview(smelt)
+        message.frame=NSRect(x:20,y:344,width:380,height:116); addSubview(message)
         updateKind()
     }
     required init?(coder:NSCoder) { fatalError() }
@@ -71,6 +74,10 @@ import UOCore
         }
         preview()
         if let zone=validatedZone { onStart?(zone,kind) }
+    }
+    @objc func smeltOre() {
+        guard isHarvesting?() != true else { showResult("Choose Stop before starting another activity."); return }
+        onSmelt?()
     }
     @objc func stopHarvesting() { onStop?() }
     @objc func preview() {
