@@ -643,6 +643,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
 
     init(assets: ClientAssets, loginDefaults:UserDefaults = UserDefaults(suiteName:"com.ultimaxb.UltimaMac")!, connection:GameConnection? = nil) {
         self.connection=connection ?? GameConnection()
+        ClassicControlArt.install(assets)
         ClassicNativeFont.install(assets.fonts)
         choices=ClassicChoice(fonts:assets.fonts); cityChoice=ClassicChoice(fonts:assets.fonts)
         settings=ClassicPanel(assets:assets)

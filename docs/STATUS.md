@@ -877,3 +877,9 @@ Validation: release build passed; `tools/check_login_flow.swift` injects offline
 - Converted text-only paperdoll detail, selection, quantity, prompt and server-choice buttons to ClassicButton; original image buttons remain original sprites. Login dropdowns use ClassicChoice. Original container artwork remains intact.
 - Added the project-wide controls/panels style rule. Login and saved-settings previews inspected; all thirteen offline UI fixtures passed, including the layering/close-flow assertion, active font editing and inventory interaction checks.
 - Exact original layout parity and custom scrollbars/sliders remain follow-up work; this does not claim the entire UI is an exact original-client clone.
+
+### 2026-10-19 — Classic slider and scrollbar rendering
+- Shared NSScrollView styling now uses classic sprite thumbs with opaque brown/gold tracks, preserving AppKit scrolling/tracking and reserving content space rather than overlaying native translucent scrollers.
+- Quantity sliders draw the original 0x845/0x846 jewel thumb. Native slider tracking and keyboard behavior are retained.
+- Sprite IDs checked against the local CrossUO GumpDrag, GumpBaseScroll and GUIHTMLGump references. The installed era lacks later 0xFE/0x100 scrollbar graphics; the available journal thumb 0x1F is used vertically and 0xD8 horizontally.
+- Removed native entry bezels restored by convenience initialization. Thirteen offline UI fixtures passed, including original sprite presence, custom cell/scroller classes, scroll offsets, editing and split interaction tests. Quantity/scrollbar previews inspected; exact original scrollbar geometry remains different because native tracking bounds are retained.

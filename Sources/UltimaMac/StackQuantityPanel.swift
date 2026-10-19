@@ -12,8 +12,9 @@ final class StackQuantityPanel: NSView, NSTextFieldDelegate {
     var onCancel: (() -> Void)?
     override var isFlipped: Bool { true }
     init(maximum: Int, assets: ClientAssets) {
+        ClassicControlArt.install(assets)
         self.maximum = maximum
-        slider = NSSlider(value: Double(maximum), minValue: 1, maxValue: Double(maximum), target: nil, action: nil)
+        slider = ClassicSlider(value: Double(maximum), minValue: 1, maxValue: Double(maximum), target: nil, action: nil)
         background = (try? assets.gumps?.sprite(0x085C)).flatMap(Self.image)
         super.init(frame: NSRect(x: 70, y: 90, width: 320, height: 165))
         amount.stringValue = String(maximum)

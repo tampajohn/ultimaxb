@@ -31,6 +31,22 @@ import UOCore
             CTFontGetAdvancesForGlyphs(ct,.horizontal,&mapped,&advance,1)
             precondition(abs(advance.width-CGFloat(max(1,glyph.sprite.width)))<0.01,"Game glyph advance changed")
         }
+        for id in [0x845,0x846,0x1F,0xD8] {
+            precondition(ClassicControlArt.image(id) != nil,"Missing classic scroll sprite")
+        }
+        let scroll=NSScrollView(frame:NSRect(x:0,y:0,width:150,height:120))
+        let document=NSView(frame:NSRect(x:0,y:0,width:400,height:400))
+        scroll.documentView=document; scroll.hasVerticalScroller=true; scroll.hasHorizontalScroller=true
+        ClassicNativeFont.apply(to:scroll)
+        precondition(scroll.verticalScroller is ClassicScroller && scroll.horizontalScroller is ClassicScroller)
+        scroll.contentView.scroll(to:NSPoint(x:30,y:60)); scroll.reflectScrolledClipView(scroll.contentView)
+        precondition(scroll.contentView.bounds.origin == NSPoint(x:30,y:60))
+        try capture(scroll,"classic-scroll-controls")
+        let quantity=StackQuantityPanel(maximum:100,assets:assets)
+        let slider=descendants(quantity).compactMap { $0 as? NSSlider }.first!
+        precondition(slider.cell is ClassicSliderCell)
+        try capture(quantity,"classic-quantity-controls")
+        precondition(descendants(quantity).compactMap { $0 as? NSTextField }.filter { $0.isEditable }.allSatisfy { !$0.isBezeled })
         let controls=descendants(login.view)
         let account=controls.compactMap { $0 as? NSTextField }.first { $0.accessibilityLabel()=="Account name" }!
         let password=controls.compactMap { $0 as? NSSecureTextField }.first!

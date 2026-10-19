@@ -26,6 +26,11 @@ import UOCore
     static var uiFont:NSFont { installed ?? NSFont.systemFont(ofSize:16) }
     static func apply(to view:NSView) {
         guard let font=installed else { return }
+        if let field=view as? NSTextField,field is ClassicEntry || field is ClassicSecureEntry {
+            if field.isBezeled { field.isBezeled=false }
+            if field.isBordered { field.isBordered=false }
+        }
+        if let scroll=view as? NSScrollView { ClassicControlArt.apply(to:scroll) }
         if let control=view as? NSControl,control.font?.fontName != font.fontName { control.font=font }
         if let popup=view as? NSPopUpButton,popup.menu?.font?.fontName != font.fontName { popup.menu?.font=font }
         if let text=view as? NSTextView,(text.isFieldEditor || !text.isRichText),text.font?.fontName != font.fontName { text.font=font }

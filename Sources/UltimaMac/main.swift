@@ -1301,6 +1301,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let options: Options
     init(assets: ClientAssets, options: Options) { self.assets = assets; self.options = options }
     func applicationDidFinishLaunching(_ notification: Notification) {
+        ClassicControlArt.install(assets)
         ClassicNativeFont.install(assets.fonts)
         Telemetry.shared.installClickMonitor()
         let menu = NSMenu()
