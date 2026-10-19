@@ -687,7 +687,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         rememberPassword.setAccessibilityLabel("Remember password in Keychain")
         rememberPassword.font=ClassicNativeFont.uiFont; card.addSubview(rememberPassword)
         let settingsButton=ClassicButton("Server & saved login",fonts:assets.fonts,target:self,action:#selector(toggleSettings))
-        settingsButton.frame=NSRect(x:225,y:385,width:190,height:26); card.addSubview(settingsButton)
+        settingsButton.gemBackground=ClassicButton.sapphireGem
+        settingsButton.frame=NSRect(x:140,y:372,width:230,height:42); card.addSubview(settingsButton)
         settings.frame=NSRect(x:105,y:100,width:430,height:250)
         settings.isHidden=true; card.addSubview(settings)
         localLoginButton.target=self; localLoginButton.action=#selector(quickLocalLogin)
@@ -712,7 +713,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         done.frame=NSRect(x:295,y:188,width:120,height:44); settings.addSubview(done)
         choices.isHidden=true; choices.frame=NSRect(x:155,y:170,width:330,height:30); card.addSubview(choices)
         for control in [characterName,female,cityChoice] as [NSView] { control.isHidden=true; card.addSubview(control) }
-        status.frame=NSRect(x:115,y:418,width:420,height:45); status.font=ClassicNativeFont.uiFont
+        status.frame=NSRect(x:115,y:418,width:420,height:54); status.font=ClassicNativeFont.uiFont
         status.textColor=NSColor(calibratedRed:0.9,green:0.85,blue:0.7,alpha:1); card.addSubview(status)
         action.target=self; action.action=#selector(performAction)
         action.frame=NSRect(x:310,y:290,width:180,height:52)
@@ -720,7 +721,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         action.isBordered=false; action.imagePosition = .noImage; action.setAccessibilityLabel("Connect or continue")
         card.addSubview(action)
         let disconnect=ClassicButton("Disconnect",fonts:assets.fonts,target:self,action:#selector(disconnect))
-        disconnect.frame=NSRect(x:8,y:448,width:105,height:24); card.addSubview(disconnect)
+        disconnect.gemBackground=ClassicButton.sapphireGem
+        disconnect.frame=NSRect(x:380,y:372,width:140,height:42); card.addSubview(disconnect)
         let close=ClassicButton("Back",fonts:assets.fonts,target:self,action:#selector(dismissOverlay))
         close.frame=NSRect(x:150,y:290,width:140,height:52)
         close.gemBackground=ClassicButton.sapphireGem

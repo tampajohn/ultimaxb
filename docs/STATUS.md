@@ -26,6 +26,13 @@ experimental and is not at parity yet.
 
 ## Remaining parity work
 
+- Travel journal options (requested, not implemented): independently enable nearby
+  chest looting without lockpicking/stealing, overload recovery that drops only
+  newly gathered non-gold goods, and bank arrival/opening/deposit of gathered goods.
+  Track server-confirmed gathered quantities separately from existing inventory,
+  including merged stacks. Preserve gold on overload. Do not infer ownership or
+  permission to loot merely because a container opens. Bank destinations must be
+  editable on the map; transfers must await server confirmation and stop on refusal.
 - Validate every interaction against live UO1998, particularly long travel,
   spellcasting, death/resurrection and general server dialogs.
 - Full original menu layouts, fonts and hue fidelity; more general gump commands
