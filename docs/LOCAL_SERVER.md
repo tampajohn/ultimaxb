@@ -88,3 +88,29 @@ Apply this patch alongside the other server patches before building. Verified
 with a disposable character: all 46 skills become exactly 100.0 after `.set all
 1000`, and Anatomy returns a target cursor. The local server was saved and
 restarted with this correction; reconnect to refresh displayed values.
+
+## Isolated death/resurrection fixture
+
+`tools/server-patches/ouo-wilderness-fixture.patch` changes starting-city slot 0
+from Ocllo to terrain at (2603,309,15), outside Minoc's guarded regions. Apply it
+only to a dedicated fixture checkout/build alongside the loopback, player-trade
+and skill-header patches. Run that executable from a separate provisioned world
+on loopback port 2594 with `-client 12532 -a 127.0.0.1 -p 2594 -test -fast 10
+-watchdog 10000`. Do not install this fixture executable in the user's local
+shard. It changes no damage, death, resurrection or permission rules.
+
+With that server fully loaded, run:
+
+```sh
+UO_LOCAL_TEST_PORT=2594 UO_LOCAL_TEST_CENTER=1 UO_VERIFY_DEATH=1 \
+  swift test -c release --cache-path build/swift-cache --scratch-path .build \
+  --filter OUOIntegrationTests/testDeathAndResurrectionOutsideGuards
+```
+
+Leave `UO_LOCAL_TEST_ACCOUNT` unset: this test requires a fresh disposable
+account and refuses the normal play-server port. It verifies the expected spawn,
+opens the spellbook, frees the hands, reduces its own HP via Test Center settings,
+and targets itself with Lightning. It then checks the death dialog, ghost body,
+corpse, explicit resurrection reply and restored living body. Original player
+accounts and assets are never inputs. Nearby corpse contents must not satisfy the
+backpack-open wait; the test now requires the requested container as well.

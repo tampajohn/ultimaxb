@@ -31,7 +31,17 @@ final class OUOIntegrationTests: XCTestCase {
         try await exerciseWorld(verifySkillTarget: false, verifyHiding: true)
     }
     @MainActor
-    private func exerciseWorld(verifySkillTarget: Bool, verifySpells: Bool = false, verifyHiding: Bool = false) async throws {
+    func testDeathAndResurrectionOutsideGuards() async throws {
+        guard ProcessInfo.processInfo.environment["UO_VERIFY_DEATH"] == "1",
+              ProcessInfo.processInfo.environment["UO_LOCAL_TEST_CENTER"] == "1",
+              ProcessInfo.processInfo.environment["UO_LOCAL_TEST_PORT"] == "2594",
+              ProcessInfo.processInfo.environment["UO_LOCAL_TEST_ACCOUNT"] == nil else {
+            throw XCTSkip("Requires isolated wilderness-spawn Test Center; see docs/LOCAL_SERVER.md")
+        }
+        try await exerciseWorld(verifySkillTarget: false, verifySpells: true, verifyDeath: true)
+    }
+    @MainActor
+    private func exerciseWorld(verifySkillTarget: Bool, verifySpells: Bool = false, verifyHiding: Bool = false, verifyDeath: Bool = false) async throws {
         guard let value = ProcessInfo.processInfo.environment["UO_LOCAL_TEST_PORT"],
               let port = UInt16(value) else { throw XCTSkip("Set UO_LOCAL_TEST_PORT for a local OUO integration run") }
         let connection = GameConnection()
@@ -42,6 +52,7 @@ final class OUOIntegrationTests: XCTestCase {
         var entry: WorldEntry?
         var characterStatus: CharacterStatus?
         var skills = SkillState()
+        var death = DeathState()
         var skillTarget: TargetRequest?
         var spellEffects: [GraphicEffect] = []
         var spellActions: [MobileAction] = []
@@ -73,6 +84,13 @@ final class OUOIntegrationTests: XCTestCase {
                             }
                         }
                         _ = try world.apply(packet)
+                        if verifyDeath {
+                            _ = try death.apply(packet)
+                            if [0x20, 0x77, 0x78].contains(opcode), let entry {
+                                let update = try WorldMobile.decode(packet)
+                                if update.serial == entry.serial { death.apply(player: update) }
+                            }
+                        }
                         if moveSent, let entry, let player = world.mobiles[entry.serial] {
                             if opcode == 0x21 || opcode == 0x22 {
                                 if let moved = try movement.receive(packet, player: player) {
@@ -121,6 +139,13 @@ final class OUOIntegrationTests: XCTestCase {
             if complete || failure != nil { break }
             try await Task.sleep(for: .milliseconds(50))
         }
+        if verifyDeath {
+            let spawn = try XCTUnwrap(entry)
+            guard spawn.x == 2603 && spawn.y == 309 else {
+                XCTFail("Death test requires the isolated wilderness spawn; refusing to run at a normal town spawn")
+                return
+            }
+        }
         if complete {
             try await Task.sleep(for: .milliseconds(500))
             if let entry, let player = world.mobiles[entry.serial],
@@ -138,9 +163,10 @@ final class OUOIntegrationTests: XCTestCase {
         }
         if complete, let entry,
            let backpack = world.equipment.values.first(where: { $0.owner == entry.serial && $0.layer == 21 }) {
+            let previousContentsCount = counts[0x3C] ?? 0
             connection.send(InteractionPackets.use(serial: backpack.serial))
             for _ in 0..<100 {
-                if (counts[0x3C] ?? 0) > 0 || failure != nil { break }
+                if (world.openContainer?.serial == backpack.serial && (counts[0x3C] ?? 0) > previousContentsCount) || failure != nil { break }
                 try await Task.sleep(for: .milliseconds(50))
             }
             XCTAssertEqual(world.openContainer?.serial, backpack.serial)
@@ -282,7 +308,7 @@ final class OUOIntegrationTests: XCTestCase {
                 try await Task.sleep(for: .milliseconds(50))
             }
             XCTAssertEqual(ClassicSpells.contents(book: book.serial, items: Array(world.containerItems.values)).count, 64)
-            for (id, kind): (Int, GraphicEffect.Kind) in [(6, .attached), (30, .lightning)] {
+            for (id, kind): (Int, GraphicEffect.Kind) in (verifyDeath ? [(6, .attached)] : [(6, .attached), (30, .lightning)]) {
                 try await Task.sleep(for: .seconds(2))
                 skillTarget = nil; spellEffects.removeAll(); spellActions.removeAll()
                 connection.send(try ClassicSpells.cast(id: id, book: book.serial))
@@ -300,6 +326,41 @@ final class OUOIntegrationTests: XCTestCase {
                 XCTAssertTrue(spellEffects.contains { $0.kind == kind && $0.source == player.serial }, "Spell \(id) effect missing")
                 XCTAssertTrue(spellActions.contains { $0.serial == player.serial }, "Spell \(id) casting animation missing")
             }
+        }
+        if verifyDeath {
+            let player = try XCTUnwrap(entry)
+            let book = try XCTUnwrap(world.containerItems.values.first { $0.graphic == 0x0EFA })
+            connection.send(try SpeechPackets.say(".set str 1"))
+            for _ in 0..<100 {
+                if characterStatus?.health == 1 { break }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            XCTAssertEqual(characterStatus?.health, 1)
+            try await Task.sleep(for: .seconds(2))
+            skillTarget = nil
+            connection.send(try ClassicSpells.cast(id: 30, book: book.serial))
+            for _ in 0..<200 {
+                if skillTarget != nil { break }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            let target = try XCTUnwrap(skillTarget, "Death fixture messages: \(fixtureMessages); phase=\(death.phase)")
+            let mobile = try XCTUnwrap(world.mobiles[player.serial])
+            connection.send(try target.response(TargetSelection(serial: player.serial, x: mobile.x, y: mobile.y, z: mobile.z, graphic: mobile.body)))
+            for _ in 0..<200 {
+                if death.phase == .offered, let body = world.mobiles[player.serial]?.body, [402, 403].contains(body) { break }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            XCTAssertEqual(death.phase, .offered, "Fixture health=\(characterStatus?.health ?? -1), messages=\(fixtureMessages)")
+            guard death.phase == .offered else { return }
+            XCTAssertTrue([402, 403].contains(world.mobiles[player.serial]?.body ?? 0))
+            XCTAssertTrue(world.items.values.contains { $0.graphic == 0x2006 }, "Death should create a corpse")
+            connection.send(try death.response(resurrect: true))
+            for _ in 0..<200 {
+                if death.phase == .alive, let body = world.mobiles[player.serial]?.body, [400, 401].contains(body) { break }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            XCTAssertEqual(death.phase, .alive)
+            XCTAssertTrue([400, 401].contains(world.mobiles[player.serial]?.body ?? 0))
         }
         XCTAssertNotNil(characterStatus?.maxHealth)
         XCTAssertNotNil(characterStatus?.gold)

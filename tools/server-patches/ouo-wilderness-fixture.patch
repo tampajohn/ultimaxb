@@ -1,0 +1,11 @@
+--- a/packet_handler.c
++++ b/packet_handler.c
+@@ -865,7 +865,7 @@
+  * configured start (server.txt: startx 3669, starty 2620).
+  */
+ PlaceName g_PlaceNameList[] = {
+-	{ "Ocllo", "Bountiful Harvest", 3669, 2620, 0 },
++	{ "Test Wilderness", "Death fixture", 2603, 309, 15 },
+ 	{ "Minoc", "Tavern", 2477, 411, 15 },
+ 	{ "Britain", "Sweet Dreams Inn", 1495, 1629, 10 },
+ 	{ "Moonglow", "Docks", 4406, 1045, 0 },

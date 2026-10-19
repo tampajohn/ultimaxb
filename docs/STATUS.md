@@ -617,8 +617,25 @@ ghost movement, denial/dismissal and both packet orders.
 An isolated end-to-end death attempt did not kill its disposable character:
 self-targeted Lightning produced its effect but no damage even at one HP.
 Source inspection confirms spelskil.m Q43E suppresses player spell damage in
-guarded regions. The default Britain fixture therefore cannot establish death
+guarded regions. The default Ocllo fixture therefore cannot establish death
 and resurrection this way. Full integration remains pending a fixture outside
 the guarded region or a dedicated controlled death setup; no passing end-to-end
 death claim is made. User character/server were not changed by this experiment.
 Release validation: 211 tests, 4 opt-in skips, zero failures.
+
+Death/resurrection integration completed locally (2026-10-18): a fixture-only
+starting-city patch places a fresh character at (2603,309,15), outside guards.
+The test passes (22.0 seconds): spellbook contents, free hands, lethal Lightning,
+0x2C death offer, ghost body 402/403, corpse creation, explicit resurrection
+response, and living body 400/401. The earlier failure was guarded-region spell
+damage suppression; an additional fixture sequencing issue came from Lightning's
+delayed damage callback. The death test now omits the earlier nonlethal Lightning
+cast. Backpack waiting also now checks the requested container, since nearby
+corpses can send 0x3C contents before the backpack opens.
+
+The fixture source change was removed from the normal OUO checkout and its
+normal executable rebuilt. Only the isolated port-2594 process used the special
+spawn; it was stopped after verification. The user's client and port-2593 server
+were left running. Live UO1998 death, healer resurrection, corpse retrieval and
+resurrection denial still require broader workflow verification.
+Release suite after the fixture additions: 212 tests, 5 opt-in skips, zero failures.
