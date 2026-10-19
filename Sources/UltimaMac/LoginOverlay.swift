@@ -3,7 +3,7 @@ import UOCore
 
 @MainActor
 final class LoginOverlay: NSViewController, NSTextFieldDelegate {
-    private let connection = GameConnection()
+    private let connection:GameConnection
     private var savedLogin:SavedLogin
     private let loginDefaults:UserDefaults
     private let localLoginButton = NSButton(title:"Local Test Center",target:nil,action:nil)
@@ -595,6 +595,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             artwork.shardSelection = phase == .server || (phase == .connecting && !choices.isHidden)
             account.isHidden = artwork.shardSelection; password.isHidden = artwork.shardSelection
             rememberPassword.isHidden = artwork.shardSelection
+            action.imagePosition = artwork.shardSelection ? .noImage : .imageOnly
             action.image = artwork.shardSelection ? nil : artwork.image(0x418)
             action.alternateImage = artwork.shardSelection ? nil : artwork.image(0x419)
             action.frame = artwork.shardSelection
@@ -609,7 +610,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
 
     var onDismiss: (() -> Void)?
 
-    init(assets: ClientAssets, loginDefaults:UserDefaults = UserDefaults(suiteName:"com.ultimaxb.UltimaMac")!) {
+    init(assets: ClientAssets, loginDefaults:UserDefaults = UserDefaults(suiteName:"com.ultimaxb.UltimaMac")!, connection:GameConnection? = nil) {
+        self.connection=connection ?? GameConnection()
         artwork = LoginArtwork(assets:assets)
         action = ClassicButton("Connect", fonts:assets.fonts, target:nil, action:nil)
         self.loginDefaults = loginDefaults
@@ -742,11 +744,11 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                 Telemetry.shared.record("character_delete_confirmed",["slot":character.slot])
             } catch { self.characterSelection.update(self.characters,message:"Could not request deletion.") }
         }
-        connection.onPacketMetadata = { outbound, opcode, count in
+        self.connection.onPacketMetadata = { outbound, opcode, count in
             Telemetry.shared.record(outbound ? "packet_sent" : "login_packet_received",
                 ["opcode": String(format: "0x%02X", opcode), "bytes": count])
         }
-        connection.onEvent = { [weak self] event in self?.handle(event) }
+        self.connection.onEvent = { [weak self] event in self?.handle(event) }
 
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -847,12 +849,14 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         characterCreation.isHidden = true
         card.isHidden = true; artwork.showsForm=false; characterSelection.isHidden = false
         characterSelection.update(characters,message:characters.isEmpty ? "Choose New to create a character." : "")
+        updateTabOrder(); focusVisibleControl()
     }
     private func beginCreation() {
         guard phase == .character, let slot = CharacterList.firstEmptySlot(characters) else { return }
         creationSlot = slot; phase = .create
         characterSelection.isHidden = true; card.isHidden = true; artwork.showsForm=false
         characterCreation.isHidden = false; characterCreation.configure(cities:cities)
+        updateTabOrder(); focusVisibleControl()
         Telemetry.shared.record("character_creation_opened",["slot":slot])
     }
     @objc private func forgetPassword() {
@@ -868,17 +872,17 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         // A manually inserted overlay does not automatically join the window's
         // original key-view loop. Keep its traversal separate from the world view.
         view.window?.autorecalculatesKeyViewLoop = false
-        var controls: [NSView] = []
-        if !settings.isHidden {
-            controls += [primaryLoginButton,localLoginButton]
-            if savedLogin.profile == .primary { controls += [host,port] }
-        }
-        if !account.isHidden { controls += [account,password,rememberPassword] }
-        if !choices.isHidden { controls.append(choices) }
-        if !characterName.isHidden { controls += [characterName, female, cityChoice] }
-        if action.isEnabled { controls.append(action) }
-        controls += secondaryButtons
-        for index in controls.indices { controls[index].nextKeyView = controls[(index + 1) % controls.count] }
+        let controls=focusableControls(in:view)
+        for index in controls.indices { controls[index].nextKeyView = controls[(index+1)%controls.count] }
+    }
+    private func focusableControls(in parent:NSView)->[NSView] {
+        guard !parent.isHiddenOrHasHiddenAncestor else { return [] }
+        if let field=parent as? NSTextField,field.isEditable,field.isEnabled { return [field] }
+        if let button=parent as? NSButton,button.isEnabled { return [button] }
+        return parent.subviews.flatMap { focusableControls(in:$0) }
+    }
+    private func focusVisibleControl() {
+        view.window?.makeFirstResponder(focusableControls(in:view).first)
     }
     func show(in parent: NSView) {
         if view.superview !== parent {
@@ -894,12 +898,15 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
            host.stringValue == savedLogin.host, port.stringValue == savedLogin.port, account.stringValue == savedLogin.account {
             password.stringValue = savedLogin.password() ?? ""
         }
-        parent.window?.makeFirstResponder(account)
+        focusVisibleControl()
     }
     @objc private func dismissOverlay() {
         if !loginComplete {
+            connection.disconnect(notify:false)
+            reset("Connect using the 1.25.32 protocol.")
             card.isHidden=true; characterSelection.isHidden=true; characterCreation.isHidden=true
             introControls.isHidden=false; artwork.mainMenu=true; artwork.showsForm=false
+            updateTabOrder(); focusVisibleControl()
             return
         }
         Telemetry.shared.record("login_dismissed", ["connected": loginComplete])
@@ -911,6 +918,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         introControls.isHidden=true; artwork.mainMenu=false; settings.isHidden=true
         statusRefreshTask?.cancel(); statusRefreshTask = nil
         world = WorldState()
+        servers=[]; characters=[]; cities=[]; choices.removeAllItems(); cityChoice.removeAllItems()
         autoPickup = AutoPickup(); onAutoPickupMode?(0)
         hoverInspection = HoverInspection()
         lastContainerContents = []; stagedVendorOffers = []; vendorOffers = []; vendorSerial = nil; onVendorClosed?()
@@ -1275,10 +1283,11 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         choices.removeAllItems()
         choices.addItems(withTitles: names)
         choices.isHidden = false
-        action.title = title
+        action.title = title; action.setAccessibilityLabel(title)
         action.isEnabled = !names.isEmpty
         updateTabOrder()
         status.stringValue = "Choose an entry to continue."
+        focusVisibleControl()
     }
 }
 
