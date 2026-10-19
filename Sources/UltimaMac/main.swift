@@ -694,6 +694,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var serverGumpPanels:[UInt64:ServerGumpPanel] = [:]
     private var serverMenuPanel:ServerMenuPanel?
     private var spellShortcuts:[UInt64:SpellShortcut] = [:]
+    private let shortcutLayout=SpellShortcutLayout()
     private var spellbooks:[UInt32:SpellbookPanel] = [:]
     private func toggleMap() {
         guard let view = worldView, view.player != nil else { return }
@@ -989,6 +990,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     panel?.castSpell(id,book:serial)
                     self?.window?.makeFirstResponder(self?.worldView)
                 }
+                let scope=panel?.assistantScope ?? ""
                 book.onShortcut = { [weak self,weak panel,weak view] id,point in
                     guard let self,let view else { return }
                     let key = UInt64(serial)<<32 | UInt64(id)
@@ -1001,12 +1003,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             panel?.castSpell(id,book:serial)
                             self?.window?.makeFirstResponder(self?.worldView)
                         }
-                        shortcut.onClose = { [weak self] in self?.spellShortcuts.removeValue(forKey:key) }
+                        shortcut.onClose = { [weak self] in
+                            self?.spellShortcuts.removeValue(forKey:key)
+                            self?.shortcutLayout.remove(book:serial,spell:id,scope:scope)
+                        }
+                        shortcut.onMoved = { [weak self,weak shortcut,weak view] in
+                            guard let self,let shortcut,let view,view.bounds.width>0,view.bounds.height>0 else { return }
+                            self.shortcutLayout.save(.init(book:serial,spell:id,x:Double(shortcut.frame.midX/view.bounds.width),y:Double(shortcut.frame.midY/view.bounds.height)),scope:scope)
+                        }
                         self.spellShortcuts[key] = shortcut
                         Telemetry.shared.record("spell_shortcut_created",["id":id,"book":serial])
                     }
                     shortcut.removeFromSuperview(); view.addSubview(shortcut)
                     shortcut.place(at:view.convert(point,from:nil),in:view)
+                    shortcut.onMoved?()
+                }
+                let known=ClassicSpells.contents(book:serial,items:items)
+                for entry in self.shortcutLayout.entries(scope:scope) where entry.book == serial && known.contains(entry.spell) {
+                    let key=UInt64(serial)<<32 | UInt64(entry.spell)
+                    guard self.spellShortcuts[key] == nil else { continue }
+                    let point=NSPoint(x:CGFloat(entry.x)*view.bounds.width,y:CGFloat(entry.y)*view.bounds.height)
+                    book.onShortcut?(entry.spell,view.convert(point,to:nil))
                 }
                 book.removeFromSuperview(); view.addSubview(book)
             }

@@ -1,7 +1,7 @@
 import AppKit
 import UOCore
 
-/// A session-local shortcut. Casting still goes through the active book validation.
+/// Casting always goes through the active book validation.
 @MainActor
 final class SpellShortcut:NSView {
     let spell:Int
@@ -9,6 +9,7 @@ final class SpellShortcut:NSView {
     private var drag:NSPoint?
     var onCast:(()->Void)?
     var onClose:(()->Void)?
+    var onMoved:(()->Void)?
     override var isFlipped:Bool { true }
     init(spell:Int,assets:ClientAssets) {
         self.spell = spell
@@ -44,6 +45,6 @@ final class SpellShortcut:NSView {
         place(at:NSPoint(x:frame.midX+to.x-from.x,y:frame.midY+to.y-from.y),in:parent)
         self.drag = event.locationInWindow
     }
-    override func mouseUp(with event:NSEvent) { drag = nil }
+    override func mouseUp(with event:NSEvent) { if drag != nil { onMoved?() }; drag = nil }
     override func rightMouseDown(with event:NSEvent) { onClose?(); removeFromSuperview() }
 }
