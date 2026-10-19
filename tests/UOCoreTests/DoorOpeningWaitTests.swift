@@ -5,6 +5,15 @@ final class DoorOpeningWaitTests: XCTestCase {
     func door(serial: UInt32 = 1, graphic: Int = 0x675, x: Int = 10, hue: Int = 0) -> GroundItem {
         GroundItem(serial: serial, graphic: graphic, amount: 1, x: x, y: 10, z: 0, direction: 0, hue: hue, flags: 0)
     }
+    func testClassicDoorArtDistinguishesOpenFromClosedWithoutGuessingCustomArt() {
+        for (closed,open) in [(0x675,0x676),(0x693,0x694),(0x6F3,0x6F4),(0x824,0x825),(0x839,0x83A),(0x84C,0x84D),(0x866,0x867),(0x1FED,0x1FEE)] {
+            XCTAssertEqual(DoorOpeningWait.isOpenGraphic(closed),false)
+            XCTAssertEqual(DoorOpeningWait.isOpenGraphic(open),true)
+        }
+        for unknown in [0,0x674,0x6F5,0x834,0x849,0x85C,0x876,0x1FFD,0x4000] {
+            XCTAssertNil(DoorOpeningWait.isOpenGraphic(unknown))
+        }
+    }
     func testOnlySameDoorGeometryChangeCanResume() {
         let wait = DoorOpeningWait(door: door(), at: 10)
         XCTAssertEqual(wait.result(door: door(), at: 11), .waiting)

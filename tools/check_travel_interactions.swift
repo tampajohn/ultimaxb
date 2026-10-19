@@ -15,6 +15,11 @@ import UOCore
         var entry=Data(repeating:0,count:37); entry[0]=0x1B; entry[4]=1
         entry.replaceSubrange(9..<18,with:[1,0x90,0,10,0,10,0,0,2])
         send(entry+Data([0x55]))
+        // A door can already be open when it first enters view.
+        send(Data([0x1A,0,14,0x40,0,0,5,0x06,0x76,0,15,0,15,0]))
+        let alreadyOpen=login.routeItems.first { $0.serial==0x40000005 }!
+        precondition(login.travelDoorAlreadyChanged(alreadyOpen))
+        precondition(login.travelDoorObstacles.contains(WalkPoint(x:15,y:15,z:0)))
         let next=WalkPoint(x:11,y:10,z:0)
         send(Data([0x1A,0,14,0x40,0,0,4,0x06,0x75,0,11,0,10,0]))
         let door=login.routeItems.first { $0.serial==0x40000004 }!
@@ -43,6 +48,13 @@ import UOCore
         precondition(login.travelDoorObstacles.contains(WalkPoint(x:11,y:11,z:0)))
         login.cancelRoute()
         precondition(login.travelDoorAlreadyChanged(opened),"Restarting travel must remember the opened door")
+
+        // A subsequent close must remove the remembered open-leaf exclusion.
+        send(Data([0x1A,0,14,0x40,0,0,4,0x06,0x75,0,11,0,10,0]))
+        let closed=login.routeItems.first { $0.serial==0x40000004 }!
+        precondition(!login.travelDoorAlreadyChanged(closed))
+        precondition(!login.travelDoorObstacles.contains(WalkPoint(x:11,y:10,z:0)))
+        precondition(!login.travelDoorObstacles.contains(WalkPoint(x:11,y:11,z:0)))
 
         // Reset the authoritative player position before testing opportunistic detours.
         send(Data([0x20,0,0,0,1,1,0x90,0,0,0,0,0,10,0,10,0,0,2,0]))

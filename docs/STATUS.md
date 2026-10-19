@@ -26,6 +26,12 @@ experimental and is not at parity yet.
 - Accepted use starts the existing two-second manual-interaction grace period before gathering can resume. The equipped-tool shortcut reports a use only when the guard accepts it. No blocked action is queued or replayed later.
 - The offline banking fixture now exercises use/equip/unequip during a pending pickup, use during banking, and use after completion. All sixteen offline UI fixtures pass in both runner passes. The active client is unchanged; this fix takes effect next launch. This does not yet serialize all manual-to-manual transfers or guarantee every server response can be correlated; that remains inventory reliability work.
 
+### 2026-10-19 — Explicit classic door state during travel
+- The post-relaunch Vesper-to-Minoc retry completed, including four door changes and arrival at the Minoc bank approach. The prior blocked-open-leaf failure did not recur, so its exact dynamic collision snapshot remains unavailable.
+- Corrected a state ambiguity: any geometry change used to be remembered as an opened door, even if use had closed it. Known classic door art pairs now distinguish open from closed, including doors already open when first observed. Closed doors no longer inherit the remembered open-leaf exclusion. Custom art retains the geometry-change fallback rather than guessed parity.
+- Door-change telemetry records old/new graphic, coordinates and known/unknown open state. The reference for paired art is local OUO item tile lookup (base graphic plus the open-state offset); supported families are explicitly bounded.
+- Added core art-family boundary checks and offline packet-adapter coverage for initially open doors, retained open state and subsequent closure. Eight door core tests and all sixteen offline UI fixtures pass. The correction takes effect on the next client launch. This addresses a concrete state bug, but does not claim the earlier obstruction is conclusively reproduced or all door routes are fixed.
+
 ## Implemented, with live shard testing still ongoing
 
 - Login, shard/character selection, reconnect, creation stats/skills/appearance.

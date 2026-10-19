@@ -117,12 +117,13 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private var travelDoor:(item:GroundItem,wait:DoorOpeningWait)?
     private var openedTravelDoors:[UInt32:GroundItem]=[:]
     func travelDoorAlreadyChanged(_ item:GroundItem)->Bool {
+        if let isOpen=DoorOpeningWait.isOpenGraphic(item.graphic) { return isOpen }
         guard let opened=openedTravelDoors[item.serial] else { return false }
         return !DoorOpeningWait.geometryChanged(from:opened,to:item)
     }
     var travelDoorObstacles:Set<WalkPoint> {
-        Set(openedTravelDoors.values.compactMap { opened in
-            guard let current=world.items[opened.serial],travelDoorAlreadyChanged(current) else { return nil }
+        Set(world.items.values.compactMap { current in
+            guard travelDoorAlreadyChanged(current) else { return nil }
             return WalkPoint(x:current.x,y:current.y,z:current.z)
         })
     }
@@ -377,9 +378,15 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                 Telemetry.shared.record("travel_door_retry",["serial":current.serial,"attempt":waiting.wait.retries])
                 return
             case .changed:
-                if let opened=world.items[waiting.item.serial] { openedTravelDoors[opened.serial]=opened }
+                if let changed=world.items[waiting.item.serial] {
+                    if DoorOpeningWait.isOpenGraphic(changed.graphic) == false { openedTravelDoors.removeValue(forKey:changed.serial) }
+                    else { openedTravelDoors[changed.serial]=changed }
+                    Telemetry.shared.record("travel_door_changed",["serial":changed.serial,
+                        "old_graphic":waiting.item.graphic,"graphic":changed.graphic,
+                        "x":changed.x,"y":changed.y,"z":changed.z,
+                        "state":DoorOpeningWait.isOpenGraphic(changed.graphic).map { $0 ? "open" : "closed" } ?? "unknown"])
+                }
                 travelDoor=nil; needsRouteRetry=true
-                Telemetry.shared.record("travel_door_opened",["serial":waiting.item.serial])
             case .timedOut:
                 cancelRoute()
                 onInventoryMessage?("Travel stopped: the door did not open; it may be locked.")

@@ -21,6 +21,15 @@ public struct DoorOpeningWait {
         guard let retryAt,time>=retryAt,retries<2 else { return }
         retries += 1; self.retryAt=nil; sentAt=time; deadline=time+4
     }
+    /// Classic door art uses consecutive closed/open pairs. OUO's item tile
+    /// lookup adds its open flag to the base graphic. Limit this to known era
+    /// door families; custom graphics have unknown state, not guessed parity.
+    public static func isOpenGraphic(_ graphic:Int)->Bool? {
+        let families=[0x0675...0x06F4,0x0824...0x0833,0x0839...0x0848,
+                      0x084C...0x085B,0x0866...0x0875,0x1FED...0x1FFC]
+        guard let family=families.first(where:{$0.contains(graphic)}) else { return nil }
+        return (graphic-family.lowerBound)%2 == 1
+    }
     public static func geometryChanged(from original: GroundItem, to door: GroundItem) -> Bool {
         door.serial == original.serial && (door.graphic != original.graphic || door.x != original.x || door.y != original.y || door.z != original.z)
     }
