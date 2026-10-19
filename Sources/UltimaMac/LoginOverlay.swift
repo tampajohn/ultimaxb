@@ -206,15 +206,20 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                 Telemetry.shared.record("door_route_timeout", ["serial":waiting.item.serial])
             }
         }
-        if needsRouteRetry, !movement.awaitingPosition, let serial = playerSerial, let player = world.mobiles[serial] {
+        let routeNow=ProcessInfo.processInfo.systemUptime
+        routeRecovery.expire(at:routeNow)
+        if needsRouteRetry, routeNow>=routeRecovery.retryAt, !movement.awaitingPosition, let serial = playerSerial, let player = world.mobiles[serial] {
             needsRouteRetry = false
             let start = WalkPoint(x:player.x,y:player.y,z:player.z)
             if let route = routeResolver?(start,routeRecovery.blocked) {
                 walkRoute = route; onWalkRoute?(route)
                 Telemetry.shared.record("walk_route_replanned",["attempt":routeRecovery.attempts,"steps":route.count])
+            } else if routeRecovery.hasTemporaryBlocks {
+                needsRouteRetry=true // Keep the destination while an animal blocks a narrow passage.
+                routeRecovery.waitForTemporaryBlocks()
             } else { cancelRoute(); onInventoryMessage?("No clear route around the obstruction.") }
         }
-        if !movement.awaitingPosition, let serial = playerSerial, let player = world.mobiles[serial], var route = walkRoute {
+        if !needsRouteRetry, !movement.awaitingPosition, let serial = playerSerial, let player = world.mobiles[serial], var route = walkRoute {
             let current = WalkPoint(x:player.x,y:player.y,z:player.z)
             while route.first == current { route.removeFirst() }
             if walkRoute != route { onWalkRoute?(route) }
@@ -1074,11 +1079,16 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                             world.setPlayerPosition(moved)
                             changed = true
                             if packet.first == 0x21 {
+                                let rejected=movement.rejectedStep
+                                let mobileBlock = rejected.map { point in
+                                    world.mobiles.values.contains { $0.serial != serial && !$0.isGhost &&
+                                        $0.x == point.x && $0.y == point.y && abs($0.z-point.z)<16 }
+                                } ?? false
                                 if walkRoute != nil, let blocked = movement.rejectedStep,
-                                   routeRecovery.reject(blocked,from:WalkPoint(x:moved.x,y:moved.y,z:moved.z)) {
+                                   routeRecovery.reject(blocked,from:WalkPoint(x:moved.x,y:moved.y,z:moved.z),temporary:mobileBlock,at:ProcessInfo.processInfo.systemUptime) {
                                     needsRouteRetry = true
                                     onWalkRoute?([])
-                                    Telemetry.shared.record("walk_route_retry_pending",["attempt":routeRecovery.attempts,"x":blocked.x,"y":blocked.y,"z":blocked.z])
+                                    Telemetry.shared.record("walk_route_retry_pending",["attempt":routeRecovery.attempts,"mobile_attempt":routeRecovery.mobileAttempts,"temporary":mobileBlock,"x":blocked.x,"y":blocked.y,"z":blocked.z])
                                 } else { cancelRoute(); onInventoryMessage?("Movement was blocked; route stopped.") }
                                 connection.send(movement.resynchronize(at:ProcessInfo.processInfo.systemUptime))
                             }

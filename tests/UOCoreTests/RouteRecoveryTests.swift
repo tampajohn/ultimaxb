@@ -2,6 +2,22 @@ import XCTest
 @testable import UOCore
 
 final class RouteRecoveryTests:XCTestCase {
+    func testAnimalsExpireWithoutSpendingWallRetryBudget() {
+        var recovery=RouteRecovery()
+        let origin=WalkPoint(x:10,y:10,z:0), animal=WalkPoint(x:11,y:10,z:0)
+        for index in 0..<12 {
+            let time=Double(index)*3
+            XCTAssertTrue(recovery.reject(animal,from:origin,temporary:true,at:time))
+            XCTAssertEqual(recovery.attempts,0)
+            XCTAssertTrue(recovery.blocked.contains(animal))
+            XCTAssertEqual(recovery.retryAt,time+0.75)
+            recovery.expire(at:time+2)
+            XCTAssertFalse(recovery.blocked.contains(animal))
+        }
+        XCTAssertFalse(recovery.reject(animal,from:origin,temporary:true,at:40))
+        recovery.progress(WalkPoint(x:18,y:10,z:0))
+        XCTAssertTrue(recovery.reject(animal,from:origin,temporary:true,at:41))
+    }
     func testRepeatedLocalFailuresRemainBounded() {
         var recovery=RouteRecovery()
         let origin=WalkPoint(x:10,y:10,z:0)
