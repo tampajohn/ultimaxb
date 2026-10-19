@@ -1,6 +1,35 @@
 import XCTest
 @testable import UOCore
 final class NavigationTests:XCTestCase {
+    func testGhostPassabilityKeepsWallsWaterAndFloorSupport() {
+        typealias S = NavigationMap.Surface
+        typealias C = NavigationMap.Cell
+        let door = S(z:0,height:20,flags:0x20000040,ghostPassable:true)
+        let wall = S(z:0,height:20,flags:0x40)
+        let doorway = C(landZ:0,lowZ:0,landBlocked:false,surfaces:[door])
+        XCTAssertNil(doorway.standingZ(from:0))
+        XCTAssertEqual(doorway.standingZ(from:0,ghost:true),0)
+        XCTAssertNil(C(landZ:0,lowZ:0,landBlocked:false,surfaces:[door,wall]).standingZ(from:0,ghost:true))
+        XCTAssertNil(C(landZ:0,lowZ:0,landBlocked:true,surfaces:[door]).standingZ(from:0,ghost:true))
+        let platform = S(z:0,height:6,flags:0x200,ghostPassable:true)
+        XCTAssertEqual(C(landZ:-20,lowZ:-20,landBlocked:true,surfaces:[platform]).standingZ(from:0,ghost:true),6,
+                       "Ghost exceptions must preserve supporting surfaces over blocked terrain")
+        XCTAssertNil(doorway.standingZ(from:0), "Living movement must still collide after resurrection")
+    }
+    func testGhostExceptionsDistinguishWorldItemsFromBuildingComponents() {
+        typealias S = NavigationMap.Surface
+        XCTAssertTrue(S.passableForGhost(graphic:0x675,flags:0x20000040,dynamic:true,weight:255))
+        for id in [0x692,0x6F5,0x6F6,0x846,0x873] {
+            XCTAssertTrue(S.passableForGhost(graphic:id,flags:0x40,dynamic:false,weight:255))
+        }
+        XCTAssertTrue(S.passableForGhost(graphic:0xE3C,flags:0x40,dynamic:true,weight:90))
+        XCTAssertFalse(S.passableForGhost(graphic:0xE3C,flags:0x40,dynamic:true,weight:91))
+        XCTAssertFalse(S.passableForGhost(graphic:0xE3C,flags:0x40,dynamic:false,weight:1))
+        XCTAssertFalse(S.passableForGhost(graphic:0x80,flags:0x40,dynamic:true,weight:255))
+        XCTAssertTrue(WorldMobile(serial:1,body:402,x:0,y:0,z:0).isGhost)
+        XCTAssertTrue(WorldMobile(serial:1,body:403,x:0,y:0,z:0).isGhost)
+        XCTAssertFalse(WorldMobile(serial:1,body:400,x:0,y:0,z:0).isGhost)
+    }
     func testShortestRouteAroundWallAndBoundedFailure() {
         let start = WalkPoint(x:0,y:0,z:0)
         func step(_ p:WalkPoint,_ d:UInt8)->WalkPoint? {

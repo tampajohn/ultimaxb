@@ -1078,7 +1078,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.cancelRoute()
         let planner: (WalkPoint,Set<WalkPoint>)->[WalkPoint]? = { [weak self] start,blocked in
             guard let self, let view = self.worldView,
-                  let map = try? NavigationMap(assets:self.assets,center:start,additional:view.groundItems,radius:48) else { return nil }
+                  let map = try? NavigationMap(assets:self.assets,center:start,additional:view.groundItems,radius:48,ghost:view.player?.isGhost == true) else { return nil }
             return WalkPath.find(from:start,x:x,y:y,segmentLength:32) { point,direction in
                 guard let next = map.step(from:point,direction:direction), !blocked.contains(next) else { return nil }
                 return next
@@ -1116,7 +1116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             view.followPlayer = true
             panel.followRoute(approach,action:.openDoor(door,destination,remaining-1),running:running) { [weak self] position,blocked in
                 guard let self,let view = self.worldView,
-                      let current = try? NavigationMap(assets:self.assets,center:position,additional:view.groundItems) else { return nil }
+                      let current = try? NavigationMap(assets:self.assets,center:position,additional:view.groundItems,ghost:view.player?.isGhost == true) else { return nil }
                 return WalkPath.find(from:position,x:door.x,y:door.y,adjacent:true,goalZ:door.z) { point,direction in
                     guard let next = current.step(from:point,direction:direction),!blocked.contains(next) else { return nil }
                     return next
@@ -1135,7 +1135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             chatPanel.append("Choose a closer destination."); return
         }
         do {
-            let map = try NavigationMap(assets:assets,center:start,additional:view.groundItems)
+            let map = try NavigationMap(assets:assets,center:start,additional:view.groundItems,ghost:view.player?.isGhost == true)
             var location = location
             if action == nil, location.graphic != 0,
                try assets.itemFlags(graphic:location.graphic) & 0x10000000 != 0 {
@@ -1158,7 +1158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let route = WalkPath.find(from:start,x:location.x,y:location.y,adjacent:action != nil,
                                             goalZ:goalZ,
                                             step:{ map.step(from:$0,direction:$1) }) else {
-                if action == nil, doorsRemaining > 0,
+                if action == nil, !player.isGhost, doorsRemaining > 0,
                    try routeThroughDoor(to:location,start:start,running:running,remaining:doorsRemaining,map:map) { return }
                 chatPanel.append("No clear route to that location.")
                 Telemetry.shared.record("walk_route_unreachable",["x":location.x,"y":location.y]); return
@@ -1166,7 +1166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             view.followPlayer = true
             panel.followRoute(route,action:action,running:running) { [weak self] start,blocked in
                 guard let self, let view = self.worldView,
-                      let map = try? NavigationMap(assets:self.assets,center:start,additional:view.groundItems) else { return nil }
+                      let map = try? NavigationMap(assets:self.assets,center:start,additional:view.groundItems,ghost:view.player?.isGhost == true) else { return nil }
                 return WalkPath.find(from:start,x:location.x,y:location.y,adjacent:action != nil,
                                      goalZ:goalZ) { point,direction in
                     guard let next = map.step(from:point,direction:direction), !blocked.contains(next) else { return nil }

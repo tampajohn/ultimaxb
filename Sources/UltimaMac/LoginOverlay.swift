@@ -903,6 +903,10 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         let update = try WorldMobile.decode(packet)
                         if update.serial == serial, death.apply(player: update) {
                             if death.phase == .ghost { cancelActionsForDeath() }
+                            else if death.phase == .alive {
+                                // A route planned while dead may cross closed doors.
+                                cancelRoute()
+                            }
                             onDeath?(death)
                             Telemetry.shared.record("death_body_updated", ["body": update.body, "alive": death.phase == .alive])
                         }

@@ -48,14 +48,23 @@ public enum WalkPath {
 public final class NavigationMap {
     public struct Surface {
         public let z:Int, height:Int, flags:Int
-        public init(z:Int,height:Int,flags:Int) { self.z=z; self.height=height; self.flags=flags }
+        public let ghostPassable:Bool
+        public init(z:Int,height:Int,flags:Int,ghostPassable:Bool = false) {
+            self.z=z; self.height=height; self.flags=flags; self.ghostPassable=ghostPassable
+        }
+        /// Classic ghost exceptions remove obstruction, not supporting surfaces.
+        /// Lightweight world items differ from baked map/multi components.
+        public static func passableForGhost(graphic:Int,flags:Int,dynamic:Bool,weight:Int)->Bool {
+            flags & 0x20000000 != 0 || [0x0692,0x06F5,0x06F6,0x0846,0x0873].contains(graphic) ||
+                (dynamic && weight <= 90)
+        }
     }
     public struct Cell {
         public let landZ:Int, lowZ:Int, landBlocked:Bool, surfaces:[Surface]
         public init(landZ:Int,lowZ:Int,landBlocked:Bool,surfaces:[Surface]) {
             self.landZ=landZ; self.lowZ=lowZ; self.landBlocked=landBlocked; self.surfaces=surfaces
         }
-        public func standingZ(from:Int, ignoringDoors:Bool = false)->Int? {
+        public func standingZ(from:Int, ignoringDoors:Bool = false, ghost:Bool = false)->Int? {
             let surfaces = ignoringDoors ? surfaces.filter { $0.flags & 0x20000000 == 0 } : surfaces
             var candidates:[Int] = []
             if !landBlocked && lowZ <= from+8 && landZ >= from-20 { candidates.append(landZ) }
@@ -65,6 +74,7 @@ public final class NavigationMap {
             }
             return candidates.sorted(by:>).first { z in
                 !surfaces.contains { s in
+                    if ghost && s.ghostPassable { return false }
                     guard s.flags & 0x640 != 0 else { return false }
                     let top = s.z + (s.flags & 0x400 != 0 ? s.height/2 : (s.flags & 0x40 != 0 ? max(1,s.height) : s.height))
                     return top > z && s.z < z+16
@@ -74,7 +84,9 @@ public final class NavigationMap {
     }
     private struct XY:Hashable { let x:Int,y:Int }
     private var cells:[XY:Cell] = [:]
-    public init(assets:ClientAssets,center:WalkPoint,additional:[WorldTile],radius:Int = 24) throws {
+    private let ghost:Bool
+    public init(assets:ClientAssets,center:WalkPoint,additional:[WorldTile],radius:Int = 24,ghost:Bool = false) throws {
+        self.ghost = ghost
         let tiles = try assets.region(x:center.x,y:center.y,radius:radius)
         let grouped = Dictionary(grouping:tiles + additional,by:{ XY(x:$0.x,y:$0.y) })
         for (xy,items) in grouped {
@@ -84,23 +96,27 @@ public final class NavigationMap {
             let average = abs(corners[0]-corners[2]) <= abs(corners[1]-corners[3]) ? (corners[0]+corners[2])>>1 : (corners[1]+corners[3])>>1
             let flags = try assets.landFlags(graphic:land.art)
             let surfaces = try items.filter(\.isStatic).map { tile in
-                Surface(z:tile.z,height:try assets.itemHeight(graphic:tile.art-0x4000),flags:try assets.itemFlags(graphic:tile.art-0x4000))
+                let graphic = tile.art-0x4000
+                let flags = try assets.itemFlags(graphic:graphic)
+                return Surface(z:tile.z,height:try assets.itemHeight(graphic:graphic),flags:flags,
+                    ghostPassable:try Surface.passableForGhost(graphic:graphic,flags:flags,dynamic:tile.isDynamic,
+                                                              weight:assets.itemWeight(graphic:graphic)))
             }
             cells[xy] = Cell(landZ:average,lowZ:corners.min()!,landBlocked:land.art<=2 || flags & 0xC0 != 0,surfaces:surfaces)
         }
     }
     public func standingPoint(x:Int,y:Int,fromZ:Int)->WalkPoint? {
-        guard let z = cells[XY(x:x,y:y)]?.standingZ(from:fromZ) else { return nil }
+        guard let z = cells[XY(x:x,y:y)]?.standingZ(from:fromZ,ghost:ghost) else { return nil }
         return WalkPoint(x:x,y:y,z:z)
     }
     public func step(from:WalkPoint,direction:UInt8, ignoringDoors:Bool = false)->WalkPoint? {
         let delta = WalkPath.directions[Int(direction&7)]
         let x=from.x+delta.0,y=from.y+delta.1
-        guard let z=cells[XY(x:x,y:y)]?.standingZ(from:from.z, ignoringDoors:ignoringDoors) else { return nil }
+        guard let z=cells[XY(x:x,y:y)]?.standingZ(from:from.z, ignoringDoors:ignoringDoors,ghost:ghost) else { return nil }
         // Conservative corner clearance prevents routes through touching walls.
         if delta.0 != 0 && delta.1 != 0 {
-            guard cells[XY(x:x,y:from.y)]?.standingZ(from:from.z, ignoringDoors:ignoringDoors) != nil,
-                  cells[XY(x:from.x,y:y)]?.standingZ(from:from.z, ignoringDoors:ignoringDoors) != nil else { return nil }
+            guard cells[XY(x:x,y:from.y)]?.standingZ(from:from.z, ignoringDoors:ignoringDoors,ghost:ghost) != nil,
+                  cells[XY(x:from.x,y:y)]?.standingZ(from:from.z, ignoringDoors:ignoringDoors,ghost:ghost) != nil else { return nil }
         }
         return WalkPoint(x:x,y:y,z:z)
     }

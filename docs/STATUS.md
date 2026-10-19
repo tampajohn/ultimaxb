@@ -35,8 +35,7 @@ experimental and is not at parity yet.
 - More reliable global path planning, dynamic obstacles and elevation/occlusion
   edge cases. Large barriers can stop segmented routes.
 - Full equipment coverage, mounts, corpse/death animations and spell effects.
-- Ghost-specific route collision rules for doors and passable objects; current
-  route planning still uses living-character collision rules.
+- Live verification of ghost routes through doors and passable objects.
 - Complete combat, spell, skill, crafting, healer and housing workflows.
 - Live two-party secure-trade validation, live text-prompt validation and remaining
   server packet handlers.
@@ -698,3 +697,21 @@ declined; source and the integration agree, so movement/position confirmation
 provides the evidence instead. Connection failure diagnostics now identify
 failure before world entry rather than reporting only a missing entry object.
 This does not verify ghost door traversal, healer interactions or ghost reconnect.
+
+Ghost route collision (2026-10-18): NavigationMap now uses the authoritative
+player body's ghost state for local routes, map travel and replanning. Doors,
+classic special graphics (0692/06F5/06F6/0846/0873), and lightweight dynamic
+items cease obstructing ghosts. Static/multi components do not inherit the
+dynamic-item weight exception. Supporting surfaces remain available; walls,
+blocked land and diagonal clearance still apply. Resurrection cancels any route
+planned with ghost permissions, and new routes use living collision rules.
+References inspected locally: CrossUO Walker/PathFinder.cpp and OUO
+CItem_GetSurfaceFlags_VT. The dynamic weight threshold follows CrossUO; the
+server remains authoritative for item-specific movability overrides.
+
+Validation includes cell collision regressions, world-item metadata propagation,
+and tools/check_ghost_navigation.swift using installed terrain/tiledata and a
+closed door. The harness checks a blocked living step, accepted ghost step,
+unchanged terrain Z and a direct ghost route. Actual server traversal through a
+closed door remains unverified; prior integration verified open-ground ghost
+movement only.

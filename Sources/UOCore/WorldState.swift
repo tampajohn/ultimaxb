@@ -175,8 +175,10 @@ public struct WorldState {
     public var groundTiles: [WorldTile] {
         groundObjects.compactMap { item in
             guard item.graphic < 0x4000, item.flags & 0x80 == 0 else { return nil }
-            return WorldTile(x: item.x, y: item.y, z: item.z, art: item.graphic + 0x4000, hue: item.hue,
+            var tile = WorldTile(x: item.x, y: item.y, z: item.z, art: item.graphic + 0x4000, hue: item.hue,
                              lightID: Int(item.direction), corpseBody:item.graphic == 0x2006 ? item.amount : nil,corpseDirection:item.direction,corpseEquipment:item.corpseEquipment)
+            tile.isDynamic = true
+            return tile
         }
     }
 }

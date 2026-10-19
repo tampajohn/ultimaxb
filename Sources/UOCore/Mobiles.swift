@@ -7,6 +7,7 @@ public struct WorldMobile: Equatable, Sendable {
     public let direction: UInt8
     public let hue: Int
     public let flags: UInt8
+    public var isGhost: Bool { body == 402 || body == 403 }
     public init(serial: UInt32, body: Int, x: Int, y: Int, z: Int, direction: UInt8 = 3, hue: Int = 0, flags: UInt8 = 0) {
         self.serial = serial; self.body = body; self.x = x; self.y = y; self.z = z
         self.direction = direction; self.hue = hue; self.flags = flags
