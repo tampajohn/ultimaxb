@@ -38,10 +38,11 @@ final class OUOIntegrationTests: XCTestCase {
               ProcessInfo.processInfo.environment["UO_LOCAL_TEST_ACCOUNT"] == nil else {
             throw XCTSkip("Requires isolated wilderness-spawn Test Center; see docs/LOCAL_SERVER.md")
         }
-        try await exerciseWorld(verifySkillTarget: false, verifySpells: true, verifyDeath: true)
+        try await exerciseWorld(verifySkillTarget: false, verifySpells: true, verifyDeath: true,
+                                verifyCorpseRecovery: ProcessInfo.processInfo.environment["UO_VERIFY_CORPSE_LOOT"] == "1")
     }
     @MainActor
-    private func exerciseWorld(verifySkillTarget: Bool, verifySpells: Bool = false, verifyHiding: Bool = false, verifyDeath: Bool = false) async throws {
+    private func exerciseWorld(verifySkillTarget: Bool, verifySpells: Bool = false, verifyHiding: Bool = false, verifyDeath: Bool = false, verifyCorpseRecovery: Bool = false) async throws {
         guard let value = ProcessInfo.processInfo.environment["UO_LOCAL_TEST_PORT"],
               let port = UInt16(value) else { throw XCTSkip("Set UO_LOCAL_TEST_PORT for a local OUO integration run") }
         let connection = GameConnection()
@@ -53,6 +54,7 @@ final class OUOIntegrationTests: XCTestCase {
         var characterStatus: CharacterStatus?
         var skills = SkillState()
         var death = DeathState()
+        var corpseContentsMetadata: [String] = []
         var skillTarget: TargetRequest?
         var spellEffects: [GraphicEffect] = []
         var spellActions: [MobileAction] = []
@@ -82,6 +84,11 @@ final class OUOIntegrationTests: XCTestCase {
                             if stats.needsDetailRefresh(after: previous, opcode: opcode) {
                                 connection.send(CharacterStatus.request(serial: stats.serial))
                             }
+                        }
+                        if verifyDeath, opcode == 0x3C {
+                            let contents = try ContainerItem.decode(packet)
+                            corpseContentsMetadata.append("count=\(contents.count), parents=\(Set(contents.map(\.container)).sorted()), open=\(world.openContainer?.serial ?? 0)")
+                            if corpseContentsMetadata.count > 40 { corpseContentsMetadata.removeFirst() }
                         }
                         _ = try world.apply(packet)
                         if verifyDeath {
@@ -345,6 +352,7 @@ final class OUOIntegrationTests: XCTestCase {
             }
             let target = try XCTUnwrap(skillTarget, "Death fixture messages: \(fixtureMessages); phase=\(death.phase)")
             let mobile = try XCTUnwrap(world.mobiles[player.serial])
+            let priorCorpses = Set(world.items.values.filter { $0.graphic == 0x2006 }.map(\.serial))
             connection.send(try target.response(TargetSelection(serial: player.serial, x: mobile.x, y: mobile.y, z: mobile.z, graphic: mobile.body)))
             for _ in 0..<200 {
                 if death.phase == .offered, let body = world.mobiles[player.serial]?.body, [402, 403].contains(body) { break }
@@ -353,7 +361,10 @@ final class OUOIntegrationTests: XCTestCase {
             XCTAssertEqual(death.phase, .offered, "Fixture health=\(characterStatus?.health ?? -1), messages=\(fixtureMessages)")
             guard death.phase == .offered else { return }
             XCTAssertTrue([402, 403].contains(world.mobiles[player.serial]?.body ?? 0))
-            XCTAssertTrue(world.items.values.contains { $0.graphic == 0x2006 }, "Death should create a corpse")
+            let corpse = try XCTUnwrap(world.items.values.first {
+                $0.graphic == 0x2006 && !priorCorpses.contains($0.serial) &&
+                $0.x == mobile.x && $0.y == mobile.y && $0.z == mobile.z
+            }, "This death must create a new corpse at the player's position")
             connection.send(try death.response(resurrect: true))
             for _ in 0..<200 {
                 if death.phase == .alive, let body = world.mobiles[player.serial]?.body, [400, 401].contains(body) { break }
@@ -361,6 +372,36 @@ final class OUOIntegrationTests: XCTestCase {
             }
             XCTAssertEqual(death.phase, .alive)
             XCTAssertTrue([400, 401].contains(world.mobiles[player.serial]?.body ?? 0))
+            XCTAssertEqual(ClassicSpells.contents(book: book.serial, items: Array(world.containerItems.values)).count, 64,
+                           "Nearby empty corpse snapshots must not erase the retained spellbook")
+            if verifyCorpseRecovery {
+                // Restore carrying capacity before recovering loot on this disposable character.
+                connection.send(try SpeechPackets.say(".set str 100"))
+                try await Task.sleep(for: .seconds(2))
+                let beforeContents = counts[0x3C] ?? 0
+                connection.send(InteractionPackets.use(serial: corpse.serial))
+                for _ in 0..<100 {
+                    if world.openContainer?.serial == corpse.serial && (counts[0x3C] ?? 0) > beforeContents { break }
+                    try await Task.sleep(for: .milliseconds(50))
+                }
+                XCTAssertEqual(world.openContainer?.serial, corpse.serial)
+                let loot = try XCTUnwrap(world.containerItems.values.filter {
+                    $0.container == corpse.serial && $0.amount > 0
+                }.sorted { $0.serial < $1.serial }.first, "New corpse loot metadata: \(world.containerItems.values.filter { $0.container == corpse.serial }.map { [$0.graphic, $0.amount] }); corpse=\(corpse.serial); snapshots=\(corpseContentsMetadata)")
+                let backpack = try XCTUnwrap(world.equipment.values.first { $0.owner == player.serial && $0.layer == 21 })
+                try await Task.sleep(for: .seconds(2))
+                connection.send(try InteractionPackets.pickup(serial: loot.serial, amount: 1))
+                connection.send(try InteractionPackets.drop(serial: loot.serial, x: 80, y: 90, container: backpack.serial))
+                for _ in 0..<100 {
+                    if world.containerItems[loot.serial]?.container == backpack.serial { break }
+                    try await Task.sleep(for: .milliseconds(50))
+                }
+                let recovered = try XCTUnwrap(world.containerItems[loot.serial])
+                XCTAssertEqual(recovered.container, backpack.serial, "Corpse loot must reach the backpack")
+                XCTAssertEqual(recovered.graphic, loot.graphic)
+                XCTAssertEqual(recovered.x, 80)
+                XCTAssertEqual(recovered.y, 90)
+            }
         }
         XCTAssertNotNil(characterStatus?.maxHealth)
         XCTAssertNotNil(characterStatus?.gold)

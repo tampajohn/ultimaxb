@@ -53,12 +53,16 @@ public struct WorldState {
     public private(set) var containerItems: [UInt32: ContainerItem] = [:]
     private var corpseLayers:[UInt32:[UInt8:UInt32]] = [:]
     public private(set) var openContainer: OpenContainer?
+    // An empty 0x3C has no parent serial. Its preceding open/corpse-equipment
+    // packet supplies the owner; the last UI container may be unrelated.
+    private var contentsContext: UInt32?
     public init() {}
     @discardableResult public mutating func apply(_ packet: Data) throws -> Bool {
         guard let opcode = packet.first else { throw LoginProtocolError.malformedPacket }
         switch opcode {
         case 0x89:
             let contents = try CorpseEquipment.decode(packet)
+            contentsContext = contents.serial
             guard corpseLayers[contents.serial] != contents.layers else { return false }
             guard corpseLayers[contents.serial] != nil || corpseLayers.count < 4096 else { throw LoginProtocolError.bufferLimit }
             corpseLayers[contents.serial] = contents.layers
@@ -107,13 +111,14 @@ public struct WorldState {
             return removedItem || removedMobile || oldEquipment != equipment.count || removedContainerItem
         case 0x24:
             openContainer = try OpenContainer.decode(packet)
+            contentsContext = openContainer?.serial
             return true
         case 0x25, 0x3C:
             let incoming = try ContainerItem.decode(packet)
             var updated = containerItems
             if opcode == 0x3C {
                 let parents = Set(incoming.map(\.container))
-                let replaced = incoming.isEmpty ? Set(openContainer.map { [$0.serial] } ?? []) : parents
+                let replaced = incoming.isEmpty ? Set(contentsContext.map { [$0] } ?? []) : parents
                 updated = updated.filter { !replaced.contains($0.value.container) }
             }
             for item in incoming { updated[item.serial] = item }
@@ -124,6 +129,7 @@ public struct WorldState {
                 equipment.removeValue(forKey: item.serial)
             }
             containerItems = updated
+            if opcode == 0x3C { contentsContext = nil }
             return changed
         default: return false
         }

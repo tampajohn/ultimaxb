@@ -20,6 +20,31 @@ final class InteractionTests: XCTestCase {
         XCTAssertEqual(world.containerItems.count, 2)
         XCTAssertEqual(world.containerItems[0x40000001]?.container, 0x4000000B)
     }
+    func testEmptyCorpseSnapshotDoesNotEraseOpenBackpack() throws {
+        var world = WorldState()
+        let bag: UInt32 = 0x40000010, corpse: UInt32 = 0x40000020
+        func contents(_ item: UInt32, parent: UInt32) -> Data {
+            Data([0x25] + LoginPackets.seed(item) + [0x0E,0xED,0,0,1,0,10,0,10] + LoginPackets.seed(parent) + [0,0])
+        }
+        let empty = Data([0x3C,0,5,0,0])
+        let corpseEquipment = Data([0x89,0,8] + LoginPackets.seed(corpse) + [0])
+        try world.apply(Data([0x24] + LoginPackets.seed(bag) + [0,0x3C]))
+        try world.apply(contents(1, parent: bag))
+        for _ in 0..<2 {
+            try world.apply(contents(2, parent: corpse))
+            try world.apply(corpseEquipment) // Repeated identical equipment still identifies the next snapshot.
+            try world.apply(empty)
+            XCTAssertNotNil(world.containerItems[1])
+            XCTAssertNil(world.containerItems[2])
+            XCTAssertEqual(world.openContainer?.serial, bag)
+        }
+        try world.apply(empty) // No new owner context: cannot erase an arbitrary UI container.
+        XCTAssertNotNil(world.containerItems[1])
+        try world.apply(Data([0x24] + LoginPackets.seed(bag) + [0,0x3C]))
+        XCTAssertThrowsError(try world.apply(Data([0x3C,0,5,0])))
+        try world.apply(empty)
+        XCTAssertTrue(world.containerItems.isEmpty, "Explicit empty backpack response must still clear it")
+    }
     func testEquipPacketAndProtectedLayers() throws {
         XCTAssertEqual(try InteractionPackets.equip(serial: 0x40000001, layer: 5, owner: 2), Data([0x13,0x40,0,0,1,5,0,0,0,2]))
         for layer: UInt8 in [0,11,15,16,21,25,29,255] {

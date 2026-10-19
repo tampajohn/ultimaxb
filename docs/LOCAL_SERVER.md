@@ -114,3 +114,10 @@ and targets itself with Lightning. It then checks the death dialog, ghost body,
 corpse, explicit resurrection reply and restored living body. Original player
 accounts and assets are never inputs. Nearby corpse contents must not satisfy the
 backpack-open wait; the test now requires the requested container as well.
+
+Add `UO_VERIFY_CORPSE_LOOT=1` to extend the death fixture through corpse opening
+and loot recovery into its backpack. This extension currently fails because the
+isolated server transmits zero contents for the newly created corpse. The basic
+death/resurrection flow is verified separately; do not treat the recovery
+extension as a passing check. It logs bounded item-count/parent-serial metadata
+for diagnosis, not raw packets or user payloads.

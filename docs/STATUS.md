@@ -654,3 +654,21 @@ container harness verifies cancelling an open quantity dialog, cancelling after
 quantity confirmation, no drop on stale mouse-up, and a successful new split
 interaction afterward. Full live death during each mouse/controller interaction
 has not been exercised; this validation does not establish that broader coverage.
+
+Empty corpse snapshot ownership (2026-10-18): the recovery integration trace
+showed that nearby empty corpses send 0x89 followed by an empty 0x3C. The client
+previously attributed every empty snapshot to the last-opened UI container,
+erasing the open spellbook's 64 entries during death/resurrection. WorldState now
+uses a one-snapshot owner context from 0x24 (open container) or 0x89 (corpse
+appearance), including repeated unchanged corpse equipment. Nonempty snapshots
+use their explicit parents. Ownerless empty snapshots cannot erase an arbitrary
+container, and malformed packets do not consume the pending owner context.
+Unit regressions cover this sequence and genuine empty-backpack responses.
+
+Corpse recovery remains unverified: the new opt-in `UO_VERIFY_CORPSE_LOOT=1`
+extension identifies the newly created corpse at the death coordinates, but the
+local server sends zero contents when opened. This is distinct from the client
+snapshot bug. The fixture records bounded content-count/parent metadata and will
+assert item serial, graphic, backpack and placement on successful recovery.
+Validation: 213 tests, 5 opt-in skips, zero failures; isolated death/resurrection
+plus retained-spellbook assertion passes in 22.2 seconds.
