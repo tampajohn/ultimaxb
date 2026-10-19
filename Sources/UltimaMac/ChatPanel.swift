@@ -4,9 +4,9 @@ import UOCore
 @MainActor
 final class ChatPanel: NSView, NSTextFieldDelegate {
     private let entry = NSTextField(string: "")
-    private let modeLabel = NSTextField(labelWithString:"Say")
-    private let journal = ChatHistoryPreview(wrappingLabelWithString: "")
-    private let historyButton = NSButton(title: "Journal · J", target: nil, action: nil)
+    private let modeLabel:ClassicLabel
+    private let journal:ChatHistoryPreview
+    private let historyButton:ClassicButton
     var onHistoryRequested: ((NSEvent?) -> Void)?
     private(set) var history = Journal()
     var onHistory: ((Journal)->Void)?
@@ -14,30 +14,21 @@ final class ChatPanel: NSView, NSTextFieldDelegate {
     var onDismiss: (() -> Void)?
     override var isFlipped: Bool { true }
     init(assets: ClientAssets) {
+        modeLabel=ClassicLabel("Say",fonts:assets.fonts)
+        journal=ChatHistoryPreview(fonts:assets.fonts)
+        historyButton=ClassicButton("Journal · J",fonts:assets.fonts,target:nil,action:nil)
         super.init(frame: NSRect(x: 12, y: 500, width: 540, height: 125))
         wantsLayer = true; layer?.backgroundColor = NSColor.black.withAlphaComponent(0.65).cgColor
-        layer?.cornerRadius = 6
+        layer?.masksToBounds = true
         historyButton.target = self; historyButton.action = #selector(openHistory)
         historyButton.setAccessibilityLabel("Open chat history journal")
         historyButton.toolTip = "Open the journal (J). Scroll over recent messages to browse history."
-        if let sprite = try? assets.gumps?.sprite(0x82A),
-           let provider = CGDataProvider(data: Data(sprite.rgba) as CFData),
-           let image = CGImage(width: sprite.width, height: sprite.height, bitsPerComponent: 8, bitsPerPixel: 32,
-               bytesPerRow: sprite.width * 4, space: CGColorSpaceCreateDeviceRGB(),
-               bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue), provider: provider,
-               decode: nil, shouldInterpolate: false, intent: .defaultIntent) {
-            historyButton.image = NSImage(cgImage: image, size: NSSize(width: sprite.width, height: sprite.height))
-            historyButton.imagePosition = .imageOnly
-            historyButton.isBordered = false
-        }
         historyButton.frame = NSRect(x: 428, y: 2, width: 104, height: 24)
         addSubview(historyButton)
         journal.onScroll = { [weak self] event in self?.onHistoryRequested?(event) }
         journal.frame = NSRect(x: 8, y: 4, width: 412, height: 70)
-        journal.textColor = .white; journal.font = .systemFont(ofSize: 12)
         entry.frame = NSRect(x: 8, y: 91, width: 524, height: 26)
         modeLabel.frame = NSRect(x:8,y:75,width:524,height:16)
-        modeLabel.font = .systemFont(ofSize:11); modeLabel.textColor = .white
         modeLabel.isHidden = true
         entry.placeholderString = "Say · ; whisper · ! yell · : emote (prefix + space)"
         entry.toolTip = "Enter sends; Escape cancels. Start with ; space to whisper, ! space to yell, or : space to emote."
@@ -80,7 +71,22 @@ final class ChatPanel: NSView, NSTextFieldDelegate {
 }
 
 /// Route history scrolling to the original journal instead of panning the world.
-@MainActor private final class ChatHistoryPreview: NSTextField {
+@MainActor private final class ChatHistoryPreview: NSView {
+    private let text:ClassicText
+    var stringValue="" { didSet { needsDisplay=true; setAccessibilityValue(stringValue) } }
+    override var isFlipped:Bool { true }
+    init(fonts:ClassicFonts?) {
+        text=ClassicText(fonts,font:3,color:(255,255,255)); super.init(frame:.zero)
+        setAccessibilityElement(true); setAccessibilityRole(.staticText)
+    }
+    required init?(coder:NSCoder) { fatalError() }
+    override func draw(_ rect:NSRect) {
+        NSBezierPath(rect:bounds).addClip()
+        let lines=text.lines(stringValue,width:bounds.width-2)
+        let lineHeight=max(18,lines.map { text.size($0).height+2 }.max() ?? 18)
+        let visible=lines.suffix(max(1,Int(bounds.height/lineHeight)))
+        for (index,line) in visible.enumerated() { text.draw(line,at:NSPoint(x:1,y:CGFloat(index)*lineHeight)) }
+    }
     var onScroll: ((NSEvent) -> Void)?
     override func scrollWheel(with event: NSEvent) { onScroll?(event) }
 }

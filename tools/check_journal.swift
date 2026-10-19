@@ -21,7 +21,7 @@ import UOCore
   var requests = 0, scrollRequests = 0
   chat.onHistoryRequested = { event in requests += 1; if event != nil { scrollRequests += 1 } }
   let historyButton = chat.subviews.compactMap { $0 as? NSButton }.first!
-  precondition(historyButton.image != nil, "History control should use original journal artwork")
+  precondition(historyButton is ClassicButton, "History control should use classic bitmap lettering")
   historyButton.performClick(nil)
   chat.scrollWheel(with:wheel)
   let preview = chat.subviews.first { String(describing:type(of:$0)) == "ChatHistoryPreview" }!

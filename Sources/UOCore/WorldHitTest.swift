@@ -23,15 +23,15 @@ public enum WorldHitTest {
         return nil
     }
     public static func mobile(assets: ClientAssets, mobiles: [WorldMobile], presentations: [UInt32: MobilePresentation], camera: WorldCamera,
-                              screenX: Double, screenY: Double, equipment:[EquippedItem] = []) throws -> WorldMobile? {
+                              screenX: Double, screenY: Double, equipment:[EquippedItem] = [], width:Int = 960, height:Int = 720) throws -> WorldMobile? {
         let sorted = mobiles.enumerated().map { DrawEntry.mobile($0.element, presentation: presentations[$0.element.serial], index: $0.offset) }.sorted(by: DrawEntry.precedes)
         for entry in sorted.reversed() {
             let mobile = mobiles[entry.originalIndex], pose = presentations[mobiles[entry.originalIndex].serial]
             let action = try MobileAnimation.action(for:mobile,pose:pose,equipment:equipment,assets:assets)
             guard let frame = try assets.animations?.frame(body: mobile.body, direction: mobile.direction, action: action, frame: pose?.frame ?? 0) else { continue }
             let px = pose?.x ?? Double(mobile.x), py = pose?.y ?? Double(mobile.y), pz = pose?.z ?? Double(mobile.z)
-            let ax = (480 + ((px-camera.x)-(py-camera.y))*22).rounded()
-            let ay = (360 + ((px-camera.x)+(py-camera.y))*22-pz*4).rounded()
+            let ax = (Double(width / 2) + ((px-camera.x)-(py-camera.y))*22).rounded()
+            let ay = (Double(height / 2) + ((px-camera.x)+(py-camera.y))*22-pz*4).rounded()
             let sprite = frame.sprite
             let sx = ax - Double(frame.mirrored ? sprite.width - frame.centerX : frame.centerX)
             let sy = ay + 22 - Double(sprite.height + frame.centerY)
@@ -41,14 +41,14 @@ public enum WorldHitTest {
         }
         return nil
     }
-    public static func location(assets: ClientAssets, animationTime:TimeInterval = 0, camera: WorldCamera, screenX: Double, screenY: Double, visibility: WorldVisibility, additionalTiles:[WorldTile] = []) throws -> TargetSelection? {
-        let region = try assets.region(x: Int(camera.x), y: Int(camera.y), radius: 24)
+    public static func location(assets: ClientAssets, animationTime:TimeInterval = 0, camera: WorldCamera, screenX: Double, screenY: Double, visibility: WorldVisibility, additionalTiles:[WorldTile] = [], width:Int = 960, height:Int = 720) throws -> TargetSelection? {
+        let region = try assets.region(x: Int(camera.x), y: Int(camera.y), radius: min(64,max(24,(width+height)/88+5)))
         let tiles = try (region + additionalTiles).enumerated().map {
             DrawEntry(tile:$0.element,priority:try assets.drawPriority($0.element),originalIndex:$0.offset)
         }.sorted(by:DrawEntry.precedes).map(\.tile)
         for tile in tiles.reversed() {
-            let ax = 480 + ((Double(tile.x)-camera.x)-(Double(tile.y)-camera.y))*22
-            let ay = 360 + ((Double(tile.x)-camera.x)+(Double(tile.y)-camera.y))*22
+            let ax = Double(width / 2) + ((Double(tile.x)-camera.x)-(Double(tile.y)-camera.y))*22
+            let ay = Double(height / 2) + ((Double(tile.x)-camera.x)+(Double(tile.y)-camera.y))*22
             if tile.isStatic {
                 if try assets.isNoDraw(graphic:tile.art-0x4000) { continue }
                 if visibility.hides(z: tile.z, x: tile.x, y: tile.y) { continue }

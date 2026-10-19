@@ -1,4 +1,5 @@
 import AppKit
+import CoreText
 import UOCore
 
 struct Options {
@@ -72,6 +73,7 @@ final class WorldView: NSView {
     private var hoverRestAt: TimeInterval = 0
     private var hoverInspected: UInt32?
     var overheadSpeech = OverheadSpeech()
+    private var speechFonts:[UInt32:ClassicText] = [:]
     func showLabel(_ message: SpeechMessage) {
         overheadSpeech.append(message,at:ProcessInfo.processInfo.systemUptime)
         needsDisplay = true
@@ -85,14 +87,14 @@ final class WorldView: NSView {
     override func mouseExited(with event: NSEvent) { hovered = nil; hoveredMobile = nil; hoverInspected = nil; needsDisplay = true }
     override func mouseMoved(with event: NSEvent) {
         controllerPoint = nil
-        let point = convert(event.locationInWindow, from: nil), scale = imageRect.width / 960
+        let point = convert(event.locationInWindow, from: nil), scale = worldScale
         let previous = hovered?.serial ?? hoveredMobile
-        hovered = imageRect.contains(point) ? try? WorldHitTest.groundItem(assets: assets, animationTime:displayedAnimationTime, items: groundObjects, camera: displayedCamera, screenX: (point.x-imageRect.minX)/scale, screenY: (point.y-imageRect.minY)/scale) : nil
+        hovered = imageRect.contains(point) ? try? WorldHitTest.groundItem(assets: assets, animationTime:displayedAnimationTime, items: groundObjects, camera: displayedCamera, screenX: (point.x-imageRect.minX)/scale, screenY: (point.y-imageRect.minY)/scale, width:displayedWidth, height:displayedHeight) : nil
         hoveredMobile = nil
         if hovered == nil, imageRect.contains(point) {
             hoveredMobile = (try? WorldHitTest.mobile(assets:assets,mobiles:mobiles,
                 presentations:motion.presentations(at:ProcessInfo.processInfo.systemUptime),camera:displayedCamera,
-                screenX:(point.x-imageRect.minX)/scale,screenY:(point.y-imageRect.minY)/scale,equipment:equipment))?.serial
+                screenX:(point.x-imageRect.minX)/scale,screenY:(point.y-imageRect.minY)/scale,equipment:equipment, width:displayedWidth, height:displayedHeight))?.serial
         }
         if previous != (hovered?.serial ?? hoveredMobile) {
             hoverInspected = nil; hoverRestAt = ProcessInfo.processInfo.systemUptime; hoverRestPoint = point
@@ -262,9 +264,9 @@ final class WorldView: NSView {
                 let px = pose?.x ?? Double(player?.x ?? cx), py = pose?.y ?? Double(player?.y ?? cy)
                 let pz = pose?.z ?? Double(player?.z ?? 0)
                 let dx = px - displayedCamera.x, dy = py - displayedCamera.y
-                let scale = imageRect.width / 960
-                let center = NSPoint(x: imageRect.minX + (480 + (dx-dy)*22)*scale,
-                                     y: imageRect.minY + (360 + (dx+dy)*22 - pz*4 + 22)*scale)
+                let scale = worldScale
+                let center = NSPoint(x: imageRect.minX + (worldCenterX + (dx-dy)*22)*scale,
+                                     y: imageRect.minY + (worldCenterY + (dx+dy)*22 - pz*4 + 22)*scale)
                 let angle = atan2(point.y - center.y, point.x - center.x)
                 let direction = UInt8((Int((angle / (.pi / 4)).rounded()) + 1 + 8) % 8)
                 onMove?(direction | (running ? 0x80 : 0))
@@ -322,7 +324,7 @@ final class WorldView: NSView {
             let renderGround = groundItems.filter { tile in !(tile.sourceSerial.map { hiddenCorpses.contains($0) } ?? false) }
             let renderMobiles = mobiles.filter { !deaths.hides($0) } + deaths.mobiles
             let renderPoses = presentations.merging(deaths.presentations(at:renderTime),uniquingKeysWith:{ _,death in death })
-            let frame = try WorldRenderer.render(assets, x: cx, y: cy, statics: rendersStatics, legacyTerrain: legacyTerrain, visibility: visibility, camera: camera, groundItems: renderGround + effects.tiles(at:renderTime,mobiles:mobiles,items:groundObjects,presentations:presentations), mobiles: renderMobiles, equipment: equipment + deaths.equipment, mobilePresentations: renderPoses, lighting:lighting, animationTime:renderTime, outlinedMobiles:Set(mobiles.filter { $0.serial != player?.serial && ($0.isEnemy || $0.serial == combatTarget) }.map(\.serial)))
+            let frame = try WorldRenderer.render(assets, x: cx, y: cy, statics: rendersStatics, width:renderSize.width, height:renderSize.height, legacyTerrain: legacyTerrain, visibility: visibility, camera: camera, groundItems: renderGround + effects.tiles(at:renderTime,mobiles:mobiles,items:groundObjects,presentations:presentations), mobiles: renderMobiles, equipment: equipment + deaths.equipment, mobilePresentations: renderPoses, lighting:lighting, animationTime:renderTime, outlinedMobiles:Set(mobiles.filter { $0.serial != player?.serial && ($0.isEnemy || $0.serial == combatTarget) }.map(\.serial)))
             let now = ProcessInfo.processInfo.systemUptime
             if now - lastRenderDiagnostic >= 5 {
                 Telemetry.shared.record("render_state", ["x":cx, "y":cy, "statics_enabled":rendersStatics,
@@ -365,19 +367,26 @@ final class WorldView: NSView {
             chat.frame.size.width = min(540,max(100,imageRect.width-24))
         }
         window?.invalidateCursorRects(for:self)
+        if frameImage?.width != renderSize.width || frameImage?.height != renderSize.height { refresh() }
         needsDisplay = true
     }
     var imageRect: NSRect {
-        let available = max(1,bounds.width-sidebarWidth)
-        let scale = max(0.01, min(available / 960, max(1, bounds.height - 62) / 720))
-        return NSRect(x: sidebarWidth + (available - 960 * scale) / 2, y: 0, width: 960 * scale, height: 720 * scale)
+        NSRect(x:sidebarWidth,y:0,width:max(1,bounds.width-sidebarWidth),height:max(1,bounds.height-62))
     }
+    private var renderSize: WorldViewport {
+        WorldViewport(availableWidth:Double(imageRect.width),availableHeight:Double(imageRect.height))
+    }
+    private var displayedWidth:Int { frameImage?.width ?? renderSize.width }
+    private var displayedHeight:Int { frameImage?.height ?? renderSize.height }
+    private var worldScale:CGFloat { imageRect.width / CGFloat(displayedWidth) }
+    private var worldCenterX:Double { Double(displayedWidth / 2) }
+    private var worldCenterY:Double { Double(displayedHeight / 2) }
 
     override func draw(_ dirtyRect: NSRect) {
         NSColor(calibratedRed: 0.06, green: 0.08, blue: 0.10, alpha: 1).setFill()
         bounds.fill()
         if let frameImage {
-            let image = NSImage(cgImage: frameImage, size: NSSize(width: 960, height: 720))
+            let image = NSImage(cgImage: frameImage, size: NSSize(width:frameImage.width,height:frameImage.height))
             NSGraphicsContext.current?.imageInterpolation = .none
             image.draw(in: imageRect, from: .zero, operation: .copy, fraction: 1,
                        respectFlipped: true, hints: nil)
@@ -392,14 +401,19 @@ final class WorldView: NSView {
             NSGraphicsContext.restoreGraphicsState()
         }
         if targeting {
-            ("Select a target — T targets yourself · Escape cancels" as NSString).draw(at: NSPoint(x: imageRect.minX + 16, y: 16),
-                withAttributes: [.font: NSFont.boldSystemFont(ofSize: 16), .foregroundColor: NSColor.white, .backgroundColor: NSColor.black])
+            ClassicText(assets.fonts,font:3).draw("Select a target - T targets yourself - Escape cancels",at:NSPoint(x:imageRect.minX+16,y:16))
         }
-        let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.lightGray]
-        ((status + (controllerInput.connected ? "   Controller connected" : "")) as NSString).draw(at: NSPoint(x: 12, y: bounds.height - 46), withAttributes: attrs)
-        ((controllerInput.connected && player != nil ? "Controller: stick/D-pad walk · RT run · R-stick aim · A use/target · B cancel · X bag · Y character · LB tool · Mouse/keys still active" : player == nil ? "Drag / arrows: pan   T: statics   R: Britain   Command-L: login" : "Arrows: walk / combine for diagonals   Shift/Caps: run   Right-hold: move   Space: use   U: equipped tool   P: character   K: skills   J: journal   S: spells   M: map   B: backpack   H: recenter   Enter: chat   Command-L: connection") as NSString)
-            .draw(at: NSPoint(x: 12, y: bounds.height - 25), withAttributes: attrs)
+        func debugText(_ text:String,at point:NSPoint) {
+            guard let context=NSGraphicsContext.current?.cgContext else { return }
+            let attributes:[NSAttributedString.Key:Any] = [
+                NSAttributedString.Key(kCTFontAttributeName as String):CTFontCreateWithName("Menlo" as CFString,11,nil),
+                NSAttributedString.Key(kCTForegroundColorAttributeName as String):NSColor.lightGray.cgColor]
+            let line=CTLineCreateWithAttributedString(NSAttributedString(string:text,attributes:attributes))
+            context.saveGState(); context.translateBy(x:point.x,y:point.y+11); context.scaleBy(x:1,y:-1)
+            context.textMatrix = .identity; context.textPosition = .zero; CTLineDraw(line,context); context.restoreGState()
+        }
+        debugText(status + (controllerInput.connected ? "   Controller connected" : ""),at:NSPoint(x:12,y:bounds.height-46))
+        debugText(controllerInput.connected && player != nil ? "Controller: stick/D-pad walk · RT run · R-stick aim · A use/target · B cancel · X bag · Y character · LB tool · Mouse/keys still active" : player == nil ? "Drag / arrows: pan   T: statics   R: Britain   Command-L: login" : "Arrows: walk / combine for diagonals   Shift/Caps: run   Right-hold: move   Space: use   U: equipped tool   P: character   K: skills   J: journal   S: spells   M: map   B: backpack   H: recenter   Enter: chat   Command-L: connection",at:NSPoint(x:12,y:bounds.height-25))
     }
 
     override func keyDown(with event: NSEvent) {
@@ -494,8 +508,8 @@ final class WorldView: NSView {
         dragged = false
         dragOrigin = convert(event.locationInWindow, from: nil)
         dragCenter = (cx, cy)
-        let point = convert(event.locationInWindow, from: nil), scale = imageRect.width/960
-        groundDrag = !targeting && imageRect.contains(point) ? try? WorldHitTest.groundItem(assets: assets, animationTime:displayedAnimationTime, items: groundObjects, camera: displayedCamera, screenX: (point.x-imageRect.minX)/scale, screenY: (point.y-imageRect.minY)/scale) : nil
+        let point = convert(event.locationInWindow, from: nil), scale = worldScale
+        groundDrag = !targeting && imageRect.contains(point) ? try? WorldHitTest.groundItem(assets: assets, animationTime:displayedAnimationTime, items: groundObjects, camera: displayedCamera, screenX: (point.x-imageRect.minX)/scale, screenY: (point.y-imageRect.minY)/scale, width:displayedWidth, height:displayedHeight) : nil
     }
     override func mouseDragged(with event: NSEvent) {
         guard let origin = dragOrigin else { return }
@@ -506,13 +520,13 @@ final class WorldView: NSView {
                 let preview = ItemDragPreview(frame: bounds); preview.sprite = sprite
                 preview.autoresizingMask = [.width,.height]; addSubview(preview, positioned: .above, relativeTo: nil); groundPreview = preview
             }
-            let scale = imageRect.width/960
+            let scale = worldScale
             groundPreview?.destination = NSRect(x: point.x-Double(sprite.width)*scale/2, y: point.y-Double(sprite.height)*scale/2, width: Double(sprite.width)*scale, height: Double(sprite.height)*scale)
             groundPreview?.needsDisplay = true
             return
         }
         guard player == nil || debugCamera else { return }
-        let scale = imageRect.width / 960
+        let scale = worldScale
         let dx = (point.x - origin.x) / scale, dy = (point.y - origin.y) / scale
         let newX = dragCenter.0 - Int(((dx + dy) / 44).rounded())
         let newY = dragCenter.1 - Int(((dy - dx) / 44).rounded())
@@ -520,10 +534,10 @@ final class WorldView: NSView {
     }
     private func drawWalkRoute() {
         guard let player, !walkRoute.isEmpty else { return }
-        let scale = imageRect.width/960
+        let scale = worldScale
         func project(_ x:Double,_ y:Double,_ z:Double)->NSPoint {
-            NSPoint(x:imageRect.minX+(480+(x-y-displayedCamera.x+displayedCamera.y)*22)*scale,
-                    y:imageRect.minY+(360+(x+y-displayedCamera.x-displayedCamera.y)*22-z*4+22)*scale)
+            NSPoint(x:imageRect.minX+(worldCenterX+(x-y-displayedCamera.x+displayedCamera.y)*22)*scale,
+                    y:imageRect.minY+(worldCenterY+(x+y-displayedCamera.x-displayedCamera.y)*22-z*4+22)*scale)
         }
         let pose = motion.presentations(at:ProcessInfo.processInfo.systemUptime)[player.serial]
         let path = NSBezierPath()
@@ -542,12 +556,12 @@ final class WorldView: NSView {
         NSGraphicsContext.restoreGraphicsState()
     }
     private func drawObjectFeedback() {
-        let scale = imageRect.width / 960
+        let scale = worldScale
         if let selected = hovered, let item = groundObjects.first(where: { $0.serial == selected.serial }),
            let appearance = try? WorldItemAppearance.load(item,assets:assets,at:displayedAnimationTime) {
             let sprite = appearance.sprite
-            let x = (480 + (Double(item.x-item.y)-displayedCamera.x+displayedCamera.y)*22).rounded() + Double(appearance.offsetX)
-            let y = (360 + (Double(item.x+item.y)-displayedCamera.x-displayedCamera.y)*22-Double(item.z*4)).rounded()+Double(appearance.offsetY)
+            let x = (worldCenterX + (Double(item.x-item.y)-displayedCamera.x+displayedCamera.y)*22).rounded() + Double(appearance.offsetX)
+            let y = (worldCenterY + (Double(item.x+item.y)-displayedCamera.x-displayedCamera.y)*22-Double(item.z*4)).rounded()+Double(appearance.offsetY)
             NSGraphicsContext.saveGraphicsState(); imageRect.clip()
             NSColor.yellow.withAlphaComponent(0.85).setFill()
             func opaque(_ x: Int, _ y: Int) -> Bool {
@@ -571,24 +585,27 @@ final class WorldView: NSView {
             let pose = mobile == nil ? nil : poses[serial]
             let px = pose?.x ?? Double(wx), py = pose?.y ?? Double(wy), pz = pose?.z ?? Double(wz)
             let top = item.flatMap { try? WorldItemAppearance.load($0,assets:assets,at:displayedAnimationTime)?.offsetY } ?? (44-65)
-            let x = imageRect.minX+(480+(px-py-displayedCamera.x+displayedCamera.y)*22)*scale
-            var y = imageRect.minY+(360+(px+py-displayedCamera.x-displayedCamera.y)*22-pz*4+Double(top))*scale-4
-            let style = NSMutableParagraphStyle(); style.alignment = .center
-            let textWidth = min(240,max(1,imageRect.width-8))
+            let x = imageRect.minX+(worldCenterX+(px-py-displayedCamera.x+displayedCamera.y)*22)*scale
+            var y = imageRect.minY+(worldCenterY+(px+py-displayedCamera.x-displayedCamera.y)*22-pz*4+Double(top))*scale-4
+            let textWidth = min(300,max(1,imageRect.width-8))
             for entry in overheadSpeech.entries.filter({ $0.serial == serial }).reversed() {
-                var color = NSColor.white
-                if let palette = try? assets.huePalette(Int(entry.hue)) {
-                    let rgb = palette.color(red:255,green:255,blue:255)
-                    color = NSColor(calibratedRed:CGFloat(rgb.0)/255,green:CGFloat(rgb.1)/255,blue:CGFloat(rgb.2)/255,alpha:1)
+                let key=UInt32(entry.font)<<16 | UInt32(entry.hue)
+                let bitmap:ClassicText
+                if let cached=speechFonts[key] { bitmap=cached }
+                else {
+                    if speechFonts.count>=32 { speechFonts.removeAll() }
+                    var rgb:(UInt8,UInt8,UInt8)=(255,255,255)
+                    if let palette=try? assets.huePalette(Int(entry.hue)) { rgb=palette.color(red:255,green:255,blue:255) }
+                    bitmap=ClassicText(assets.fonts,font:Int(entry.font),color:rgb); speechFonts[key]=bitmap
                 }
-                let attrs:[NSAttributedString.Key:Any] = [.font:NSFont.systemFont(ofSize:14),.foregroundColor:color,
-                    .backgroundColor:NSColor.black.withAlphaComponent(0.8),.paragraphStyle:style]
-                let text = entry.text as NSString
-                let size = text.boundingRect(with:NSSize(width:textWidth,height:100),options:[.usesLineFragmentOrigin,.usesFontLeading],attributes:attrs).size
-                let height = min(100,ceil(size.height))
-                y -= height+2
-                let left = max(imageRect.minX+4,min(imageRect.maxX-textWidth-4,x-textWidth/2))
-                text.draw(with:NSRect(x:left,y:y,width:textWidth,height:height),options:[.usesLineFragmentOrigin,.usesFontLeading],attributes:attrs)
+                let lines=Array(bitmap.lines(entry.text,width:textWidth).prefix(6))
+                let lineHeight=max(18,lines.map { bitmap.size($0).height+2 }.max() ?? 18)
+                y -= CGFloat(lines.count)*lineHeight+2
+                for (index,line) in lines.enumerated() {
+                    let width=bitmap.size(line).width
+                    let left=max(imageRect.minX+4,min(imageRect.maxX-width-4,x-width/2))
+                    bitmap.draw(line,at:NSPoint(x:left,y:y+CGFloat(index)*lineHeight))
+                }
             }
         }
         NSGraphicsContext.restoreGraphicsState()
@@ -597,9 +614,9 @@ final class WorldView: NSView {
     func groundDropLocation(windowPoint:NSPoint)->TargetSelection? {
         let point = convert(windowPoint,from:nil)
         guard let player, imageRect.contains(point), hitTest(superview?.convert(windowPoint,from:nil) ?? point) === self else { return nil }
-        let scale = imageRect.width/960
+        let scale = worldScale
         let visibility = (try? WorldVisibility.around(player:player,assets:assets)) ?? WorldVisibility()
-        guard let location = try? WorldHitTest.location(assets:assets,animationTime:displayedAnimationTime,camera:displayedCamera,screenX:(point.x-imageRect.minX)/scale,screenY:(point.y-imageRect.minY)/scale,visibility:visibility),
+        guard let location = try? WorldHitTest.location(assets:assets,animationTime:displayedAnimationTime,camera:displayedCamera,screenX:(point.x-imageRect.minX)/scale,screenY:(point.y-imageRect.minY)/scale,visibility:visibility, width:displayedWidth, height:displayedHeight),
               max(abs(location.x-player.x),abs(location.y-player.y)) <= 2 else { return nil }
         return location
     }
@@ -613,15 +630,15 @@ final class WorldView: NSView {
     }
     private func clickWorld(at point:NSPoint,clickCount:Int,shift:Bool) {
         guard imageRect.contains(point) else { return }
-        let scale = imageRect.width / 960
+        let scale = worldScale
         do {
             let screenX = (point.x - imageRect.minX) / scale, screenY = (point.y - imageRect.minY) / scale
             if targeting, let mobile = try WorldHitTest.mobile(assets: assets, mobiles: mobiles,
-                presentations: motion.presentations(at: ProcessInfo.processInfo.systemUptime), camera: displayedCamera, screenX: screenX, screenY: screenY, equipment:equipment) {
+                presentations: motion.presentations(at: ProcessInfo.processInfo.systemUptime), camera: displayedCamera, screenX: screenX, screenY: screenY, equipment:equipment, width:displayedWidth, height:displayedHeight) {
                 onTarget?(TargetSelection(serial: mobile.serial, x: mobile.x, y: mobile.y, z: mobile.z, graphic: mobile.body)); return
             }
             if let item = try WorldHitTest.groundItem(assets: assets, animationTime:displayedAnimationTime, items: groundObjects, camera: displayedCamera,
-                screenX: (point.x - imageRect.minX) / scale, screenY: (point.y - imageRect.minY) / scale) {
+                screenX: (point.x - imageRect.minX) / scale, screenY: (point.y - imageRect.minY) / scale, width:displayedWidth, height:displayedHeight) {
                 if targeting {
                     onTarget?(TargetSelection(serial: item.serial, x: item.x, y: item.y, z: item.z, graphic: item.graphic)); return
                 }
@@ -635,13 +652,13 @@ final class WorldView: NSView {
                 } else if !door && clickCount == 2 { onUse?(item.serial) }
             } else if targeting {
                 let visibility = try player.map { try WorldVisibility.around(player: $0, assets: assets, additionalTiles: groundItems) } ?? WorldVisibility()
-                if let location = try WorldHitTest.location(assets: assets, animationTime:displayedAnimationTime, camera: displayedCamera, screenX: screenX, screenY: screenY, visibility: visibility) { onTarget?(location) }
-            } else if let mobile = try WorldHitTest.mobile(assets: assets, mobiles: mobiles, presentations: motion.presentations(at: ProcessInfo.processInfo.systemUptime), camera: displayedCamera, screenX: screenX, screenY: screenY, equipment:equipment) {
+                if let location = try WorldHitTest.location(assets: assets, animationTime:displayedAnimationTime, camera: displayedCamera, screenX: screenX, screenY: screenY, visibility: visibility, width:displayedWidth, height:displayedHeight) { onTarget?(location) }
+            } else if let mobile = try WorldHitTest.mobile(assets: assets, mobiles: mobiles, presentations: motion.presentations(at: ProcessInfo.processInfo.systemUptime), camera: displayedCamera, screenX: screenX, screenY: screenY, equipment:equipment, width:displayedWidth, height:displayedHeight) {
                 if clickCount == 1 { onInspect?(mobile.serial) }
                 if clickCount == 2, (player?.flags ?? 0) & 0x40 != 0 { onAttack?(mobile.serial) }
             } else if clickCount == 1 {
                 let visibility = try player.map { try WorldVisibility.around(player:$0,assets:assets,additionalTiles:groundItems) } ?? WorldVisibility()
-                if let location = try WorldHitTest.location(assets:assets,animationTime:displayedAnimationTime,camera:displayedCamera,screenX:screenX,screenY:screenY,visibility:visibility,additionalTiles:groundItems) {
+                if let location = try WorldHitTest.location(assets:assets,animationTime:displayedAnimationTime,camera:displayedCamera,screenX:screenX,screenY:screenY,visibility:visibility,additionalTiles:groundItems, width:displayedWidth, height:displayedHeight) {
                     onWalkTo?(location,nil,running)
                 }
             }
