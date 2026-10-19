@@ -887,6 +887,14 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                     }
                     if try world.apply(packet) { changed = true; updateTradeItems() }
                     else if transferWasPending && tradeTransfer == nil { onTrade?(trade) }
+                    if let opcode = packet.first, [0x20, 0x77, 0x78].contains(opcode),
+                       let serial = playerSerial {
+                        let update = try WorldMobile.decode(packet)
+                        if update.serial == serial, death.apply(player: update) {
+                            onDeath?(death)
+                            Telemetry.shared.record("death_body_updated", ["body": update.body, "alive": death.phase == .alive])
+                        }
+                    }
                     let positionSerial = packet.first == 0x20 ? try WorldMobile.decode(packet).serial : nil
                     if let serial = playerSerial, let player = world.mobiles[serial],
                        packet.first == 0x21 || packet.first == 0x22 || positionSerial == serial {
@@ -1058,6 +1066,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         Telemetry.shared.record("world_entry", ["x": entry.x, "y": entry.y, "z": entry.z, "body": entry.body])
                         onWorldEntry?(entry)
                         playerSerial = entry.serial
+                        if let player = world.mobiles[entry.serial], death.apply(player: player) { onDeath?(death) }
                         characterStatus = CharacterStatus(serial: entry.serial)
                         characterCreation.isHidden = true; characterSelection.isHidden = true; card.isHidden = false
                         phase = .world

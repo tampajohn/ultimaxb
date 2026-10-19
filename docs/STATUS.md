@@ -604,3 +604,21 @@ pixels, a foreground wall suppresses its light mask exactly, a cutaway restores
 its contribution, and daylight remains unchanged. Existing light-pattern
 harness still passes. The exact indoor screenshot remains visually unconfirmed;
 colored lights, broader light placement and night appearance still need work.
+
+Death/resurrection state correction (2026-10-18): 0x2C action 1 dismisses the
+death dialog; it does not prove resurrection succeeded. OUO sends it before
+ApplyResurrection, which can refuse the request. The client now retains ghost
+state until an authoritative local-player living-body update. Classic ghost
+bodies 402/403 also establish ghost state on login; living updates clear it for
+healer resurrection without a death-dialog packet. Other mobiles and predicted
+movement do not drive this state. Unit tests cover both sexes, pending choice,
+ghost movement, denial/dismissal and both packet orders.
+
+An isolated end-to-end death attempt did not kill its disposable character:
+self-targeted Lightning produced its effect but no damage even at one HP.
+Source inspection confirms spelskil.m Q43E suppresses player spell damage in
+guarded regions. The default Britain fixture therefore cannot establish death
+and resurrection this way. Full integration remains pending a fixture outside
+the guarded region or a dedicated controlled death setup; no passing end-to-end
+death claim is made. User character/server were not changed by this experiment.
+Release validation: 211 tests, 4 opt-in skips, zero failures.
