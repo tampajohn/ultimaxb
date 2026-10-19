@@ -119,6 +119,23 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private var routeSegments = 0
     private var travelActivity:NSObjectProtocol?
     var onRouteCancelled:(()->Void)?
+    private func invalidateInteractionObjects(_ removed:Set<UInt32>) {
+        guard !removed.isEmpty else { return }
+        var affected=false
+        if let action=routeAction {
+            affected=action.serial != 0 && removed.contains(action.serial)
+            if case .toolTarget(_,_,let tool)=action { affected = affected || removed.contains(tool) }
+        }
+        if let waitingDoor { affected = affected || removed.contains(waitingDoor.item.serial) }
+        if affected {
+            cancelRoute()
+            onInventoryMessage?("The target or tool is no longer nearby; route stopped.")
+            Telemetry.shared.record("arrival_route_invalidated",["reason":"object_removed"])
+        }
+        if let tool=equippedTargetTool,removed.contains(tool) {
+            target(nil); equippedTargetTool=nil
+        }
+    }
     func cancelRoute() {
         onRouteCancelled?()
         if let activity=travelActivity { ProcessInfo.processInfo.endActivity(activity); travelActivity=nil }
@@ -1025,6 +1042,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                     }
                     if try world.apply(packet) { changed = true; updateTradeItems() }
                     else if transferWasPending && tradeTransfer == nil { onTrade?(trade) }
+                    invalidateInteractionObjects(world.removedObjects)
                     var invalidWindows=Set<UInt32>()
                     for serial in world.removedObjects { invalidWindows.formUnion(openObjectWindows.removed(serial)) }
                     if !invalidWindows.isEmpty { onObjectWindowsClosed?(invalidWindows) }
@@ -1238,6 +1256,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                 }
                 if let serial = playerSerial {
                     let evicted = world.pruneWorld(around: serial)
+                    invalidateInteractionObjects(world.removedObjects)
                     var invalidWindows=Set<UInt32>()
                     for serial in world.removedObjects { invalidWindows.formUnion(openObjectWindows.removed(serial)) }
                     if !invalidWindows.isEmpty { onObjectWindowsClosed?(invalidWindows) }
