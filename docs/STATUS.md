@@ -1042,3 +1042,8 @@ Validation: release build passed; `tools/check_login_flow.swift` injects offline
 - Moved route construction into HarvestSitePlanner.route using radius 64. Installed-map regression now exercises that exact adapter for each distinct standing point as well as independent path validation: 92 mining sites and 23 lumberjacking sites passed.
 - Explicit inaccessible-target responses, exhausted local approach retries and approach timeouts advance to another site. Depleted sites continue as before; ownership/tool, weight, danger and general refusal remain whole-session stops. No automatic retry of unknown timed-out tool outcomes.
 - Twenty focused core tests and all eighteen offline UI fixtures passed. Region-music work remains pending; local reference evidence identifies optional original regions.txt music assignments, but no music changes are included here.
+
+### 2026-10-19 — Harvest target ownership
+- Starting an already-active workflow is rejected before replacing its outstanding tool request. Unexpected target cursors while walking, paused or cooling down cancel the cursor and stop the workflow, rather than silently swallowing it.
+- Terminal cursor handling clears the approach route immediately and retains a ten-second late-request window before another run can start.
+- Twelve workflow tests and all eighteen offline UI fixtures passed, including unexpected cursors during travel and cooldown and repeated Start while awaiting a tool response. Live movement between sites remains unverified in the newly launched client.

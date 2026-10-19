@@ -100,6 +100,20 @@ final class HarvestWorkflowTests:XCTestCase {
         XCTAssertEqual(w.state,.stopped(.noProgress))
         XCTAssertNil(next(&w,100))
     }
+    func testUnexpectedCursorDuringTravelCancelsInsteadOfBeingSwallowed()throws {
+        var w=try runner([site(11)])
+        XCTAssertEqual(next(&w,0),.route([site(11).standing]))
+        XCTAssertEqual(w.receive(cursor(),time:1),.tool(.cancelTarget(cursor())))
+        XCTAssertEqual(w.state,.stopped(.unexpectedTarget))
+        XCTAssertNil(next(&w,2,position:site(11).standing))
+    }
+    func testUnexpectedCursorDuringCooldownCannotStartAnotherAction()throws {
+        var w=try runner()
+        _=next(&w,0); _=w.receive(cursor(),time:0.1); w.receive(.success,time:0.2)
+        XCTAssertEqual(w.receive(cursor(),time:0.3),.tool(.cancelTarget(cursor())))
+        XCTAssertEqual(w.state,.stopped(.unexpectedTarget))
+        XCTAssertEqual(w.successfulActions,1)
+    }
     func testInvalidConfigurationAndLeavingZone()throws {
         XCTAssertThrowsError(try HarvestWorkflow.Zone(x1:0,y1:0,x2:200,y2:0))
         XCTAssertThrowsError(try runner([site(14)]))

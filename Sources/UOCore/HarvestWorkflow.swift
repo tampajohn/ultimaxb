@@ -128,7 +128,14 @@ public struct HarvestWorkflow {
     }
     public mutating func receive(_ request:TargetRequest,time:TimeInterval)->Command? {
         if case .stopped = state { return request.flags==3 ? nil : .tool(.cancelTarget(request)) }
-        guard state == .working else { return nil }
+        guard state == .working else {
+            switch state {
+            case .ready,.travelling,.coolingDown,.paused:
+                stop(request.flags == 3 ? .serverCancelled : .unexpectedTarget)
+                return request.flags == 3 ? nil : .tool(.cancelTarget(request))
+            default: return nil
+            }
+        }
         let command=action.receive(request,at:time)
         if case .stopped(let reason)=action.state { stop(reason) }
         return command.map(Command.tool)

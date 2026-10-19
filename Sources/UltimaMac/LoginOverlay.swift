@@ -211,6 +211,9 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     }
     @discardableResult func startHarvest(zone:HarvestWorkflow.Zone,sites:[HarvestWorkflow.Site],kind:HarvestOutcome.Kind,
                                         route:@escaping (WalkPoint,WalkPoint)->[WalkPoint]?)->Bool {
+        guard !harvestActive else {
+            onHarvestStatus?("Harvesting is already running. Stop it before starting another zone."); return false
+        }
         guard harvestNow()>=harvestRestartAfter else {
             onHarvestStatus?("Waiting for the previous tool request to expire. Try Start in a few seconds."); return false
         }
@@ -303,6 +306,12 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         let now=harvestNow()
         guard harvestActive || now<harvestCursorUntil else { return false }
         if let command=harvest?.receive(request,time:now) { harvestCommand(command) }
+        if !harvestActive {
+            harvestOutcome=nil; harvestRoute=nil
+            harvestRestartAfter=max(harvestRestartAfter,now+10)
+            harvestCursorUntil=now+10
+            cancelRoute()
+        }
         publishHarvestStatus()
         return true
     }
