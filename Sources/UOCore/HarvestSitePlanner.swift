@@ -28,6 +28,17 @@ public enum HarvestSitePlanner {
         }
         return ranges.contains { $0.contains(graphic) }
     }
+    /// The live adapter and installed-map regression share this route builder.
+    /// Asset regions allow at most radius 64, sufficient for a 65-tile work zone.
+    public static func route(assets:ClientAssets,zone:HarvestWorkflow.Zone,from start:WalkPoint,to goal:WalkPoint,
+                             additional:[WorldTile]=[])->[WalkPoint]? {
+        guard zone.contains(x:start.x,y:start.y),zone.contains(x:goal.x,y:goal.y),
+              let map=try? NavigationMap(assets:assets,center:start,additional:additional,radius:64) else { return nil }
+        return WalkPath.find(from:start,x:goal.x,y:goal.y,goalZ:goal.z,limit:8192) { point,direction in
+            guard let next=map.step(from:point,direction:direction),zone.contains(x:next.x,y:next.y) else { return nil }
+            return next
+        }
+    }
     /// Installed-map adapter: live blocking items participate in collision but
     /// are not harvested merely because their art resembles a tree or rock.
     public static func discover(assets:ClientAssets,zone:HarvestWorkflow.Zone,kind:HarvestOutcome.Kind,

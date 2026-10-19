@@ -165,8 +165,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             target(nil); equippedTargetTool=nil
         }
     }
-    func cancelRoute() {
-        if harvestActive { stopHarvest(); return }
+    func cancelRoute(preservingHarvest:Bool = false) {
+        if !preservingHarvest && harvestActive { stopHarvest(); return }
         dropGatheredDuringTravel=false; bankGatheredOnArrival=false; bankingRequested=false
         bankingCancelled=true
         onRouteCancelled?()
@@ -251,6 +251,14 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         publishHarvestStatus()
         cancelRoute()
     }
+    private func skipHarvestSite() {
+        guard harvestActive else { return }
+        harvest?.skipCurrentSite(time:harvestNow())
+        harvestOutcome=nil
+        cancelRoute(preservingHarvest:true)
+        Telemetry.shared.record("harvest_site_skipped",["reason":"blocked_route"])
+        publishHarvestStatus()
+    }
     private func publishHarvestStatus() {
         guard let harvest,harvestLastState != harvest.state else { return }
         harvestLastState=harvest.state
@@ -322,8 +330,12 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             (harvestKind == .mining && world.containerItems[harvestTool].map { $0.container==bag } == true)
         let weight=characterStatus?.weight ?? Int.max
         let capacity=40+(characterStatus?.strength ?? 0)*7/2
+        let previousHarvestState=harvest?.state
         let command=harvest?.next(position:.init(x:player.x,y:player.y,z:player.z),ownsTool:owns,
             overweight:weight>=capacity-10,time:harvestNow(),route:{ [weak self] start,goal in self?.harvestRoute?(start,goal) })
+        if previousHarvestState == .travelling && (harvest?.state == .coolingDown || harvest?.state == .completed) {
+            cancelRoute(preservingHarvest:true)
+        }
         if let command { harvestCommand(command) }
         publishHarvestStatus()
         if !harvestActive { harvestOutcome=nil; harvestRoute=nil; cancelRoute() }
@@ -570,7 +582,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             } else if routeRecovery.hasTemporaryBlocks {
                 needsRouteRetry=true // Keep the destination while an animal blocks a narrow passage.
                 routeRecovery.waitForTemporaryBlocks()
-            } else { cancelRoute(); onInventoryMessage?("No clear route around the obstruction.") }
+            } else if harvestActive { skipHarvestSite() }
+            else { cancelRoute(); onInventoryMessage?("No clear route around the obstruction.") }
         }
         if !needsRouteRetry, !movement.awaitingPosition, let serial = playerSerial, let player = world.mobiles[serial], var route = walkRoute {
             let current = WalkPoint(x:player.x,y:player.y,z:player.z)
@@ -1592,7 +1605,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                                     needsRouteRetry = true
                                     onWalkRoute?([])
                                     Telemetry.shared.record("walk_route_retry_pending",["attempt":routeRecovery.attempts,"mobile_attempt":routeRecovery.mobileAttempts,"temporary":mobileBlock,"has_rejected_step":rejected != nil,"x":rejected?.x as Any? ?? NSNull(),"y":rejected?.y as Any? ?? NSNull(),"z":rejected?.z as Any? ?? NSNull()])
-                                } else { cancelRoute(); onInventoryMessage?("Movement was blocked; route stopped.") }
+                                } else if harvestActive { skipHarvestSite() }
+                                else { cancelRoute(); onInventoryMessage?("Movement was blocked; route stopped.") }
                                 connection.send(movement.resynchronize(at:ProcessInfo.processInfo.systemUptime))
                             }
                         }

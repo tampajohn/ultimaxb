@@ -1207,12 +1207,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     start:.init(x:player.x,y:player.y,z:player.z),additional:view.groundItems)
                 guard !plan.sites.isEmpty else { panel?.showResult("No reachable harvest sites in this zone."); return }
                 _=login.startHarvest(zone:zone,sites:plan.sites,kind:kind) { [weak self,weak view] start,goal in
-                    guard let self,let view,
-                          let map=try? NavigationMap(assets:self.assets,center:start,additional:view.groundItems,radius:66) else { return nil }
-                    return WalkPath.find(from:start,x:goal.x,y:goal.y,goalZ:goal.z,limit:8192) { point,direction in
-                        guard let next=map.step(from:point,direction:direction),zone.contains(x:next.x,y:next.y) else { return nil }
-                        return next
-                    }
+                    guard let self,let view else { return nil }
+                    return HarvestSitePlanner.route(assets:self.assets,zone:zone,from:start,to:goal,additional:view.groundItems)
                 }
             } catch { panel?.showResult("Could not prepare the harvest zone.") }
         }

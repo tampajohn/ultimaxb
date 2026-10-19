@@ -1036,3 +1036,9 @@ Validation: release build passed; `tools/check_login_flow.swift` injects offline
 - Stop cancels late target requests; restarting a cancelled working attempt waits ten seconds to avoid consuming its stale cursor as a new request. No automatic restart on reconnect. Zone edits/closing the panel stop the session.
 - Eighteen offline UI fixtures passed in both passes, including packet-level harvest confirmation, depletion, stop, manual interruption and danger. Screenshot inspected for game fonts/layout. This enables live testing; UO1998 resource messages and timing still require user validation.
 - Follow-up requested: verify classic region/terrain music selection for spawn/reconnect, with server music taking precedence. Not implemented in this change.
+
+### 2026-10-19 — Harvest movement and skipped-site recovery
+- Live telemetry confirmed four successful mining gains, then an unreachable stop when changing standing positions. The live route adapter requested radius 66 from an asset reader capped at 64, silently rejecting every movement plan.
+- Moved route construction into HarvestSitePlanner.route using radius 64. Installed-map regression now exercises that exact adapter for each distinct standing point as well as independent path validation: 92 mining sites and 23 lumberjacking sites passed.
+- Explicit inaccessible-target responses, exhausted local approach retries and approach timeouts advance to another site. Depleted sites continue as before; ownership/tool, weight, danger and general refusal remain whole-session stops. No automatic retry of unknown timed-out tool outcomes.
+- Twenty focused core tests and all eighteen offline UI fixtures passed. Region-music work remains pending; local reference evidence identifies optional original regions.txt music assignments, but no music changes are included here.

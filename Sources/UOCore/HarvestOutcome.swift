@@ -52,6 +52,8 @@ public struct HarvestOutcome {
             }
             if text==empty { return finish(.noYield) }
             if depleted.contains(text) { return finish(.depleted) }
+            let unavailable:Set<String>=["That is too far away.","You can't see that.","You can't mine there.","You can't mine that.","You have moved too far away to continue mining.","You can't use an axe on that."]
+            if unavailable.contains(text) { return finish(.unreachableTarget) }
             let refused:Set<String>=["That is too far away.","You can't see that.","You can't mine there.","You can't mine that.","You can't mine while riding.","You can't mine while polymorphed.","You have moved too far away to continue mining.","The axe must me equipped for any serious wood chopping.","You can't use an axe on that.","That wood belongs to someone else."]
             if refused.contains(text) { return finish(.refused) }
             if text==bag { destination = .backpack }

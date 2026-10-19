@@ -15,7 +15,7 @@ public struct AssistantAction {
         case cancelled, disconnected, timeout, unexpectedTarget, serverCancelled
         case invalidSelection, refused, depleted, overweight, missingTool, unreachable, noProgress
     }
-    public enum Result:Equatable { case success, noYield, refused, depleted }
+    public enum Result:Equatable { case success, noYield, refused, depleted, unreachableTarget }
     public enum Command:Equatable {
         case useItem(UInt32)
         case target(TargetRequest,TargetSelection)
@@ -82,6 +82,7 @@ public struct AssistantAction {
         case .noYield: state = .completedWithoutYield
         case .refused: state = .stopped(.refused)
         case .depleted: state = .stopped(.depleted)
+        case .unreachableTarget: state = .stopped(.unreachable)
         }
     }
     public mutating func stop(_ reason:StopReason = .cancelled) {

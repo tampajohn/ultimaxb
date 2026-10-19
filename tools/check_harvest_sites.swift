@@ -13,6 +13,7 @@ import Foundation
             let plan=try HarvestSitePlanner.discover(assets:assets,zone:zone,kind:kind,start:player)
             precondition(!plan.sites.isEmpty,"Installed map should contain reachable work sites")
             precondition(!plan.searchTruncated)
+            var checked=Set<WalkPoint>()
             for site in plan.sites {
                 precondition(zone.contains(x:site.target.x,y:site.target.y))
                 precondition(!ToolReach.needsApproach(playerX:site.standing.x,playerY:site.standing.y,target:site.target))
@@ -21,6 +22,11 @@ import Foundation
                     return next
                 }
                 precondition(path != nil,"Every planned standing tile must be independently reachable")
+                if checked.insert(site.standing).inserted {
+                    let live=HarvestSitePlanner.route(assets:assets,zone:zone,from:player,to:site.standing)
+                    precondition(live != nil && (live!.isEmpty ? player : live!.last!) == site.standing,
+                                 "The exact live route builder must reach each standing surface")
+                }
             }
             print("\(name): \(plan.sites.count) reachable sites, \(plan.reachablePoints) standing points, \(plan.omittedSites) sites beyond display limit")
         }

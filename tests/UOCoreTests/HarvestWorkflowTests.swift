@@ -36,6 +36,16 @@ final class HarvestWorkflowTests:XCTestCase {
         _=w.receive(cursor(),time:6); w.receive(.depleted,time:7)
         XCTAssertEqual(w.state,.completed)
     }
+    func testRejectedSiteAndBlockedApproachAdvance()throws {
+        var w=try runner([site(),site(11),site(12)])
+        _=next(&w,0); _=w.receive(cursor(),time:0.2)
+        w.receive(.unreachableTarget,time:0.3)
+        XCTAssertEqual(next(&w,1.3),.route([site(11).standing]))
+        w.skipCurrentSite(time:2)
+        XCTAssertEqual(w.currentSite,site(12))
+        XCTAssertNil(next(&w,2.5,position:site(11).standing))
+        XCTAssertEqual(next(&w,3,position:site(11).standing),.route([site(12).standing]))
+    }
     func testZoneRejectsRouteThatLeavesAndReenters()throws {
         var w=try runner([site(11)])
         let command=w.next(position:position,ownsTool:true,overweight:false,time:0,route:{_,end in [.init(x:9,y:10,z:0),end]})
@@ -75,7 +85,7 @@ final class HarvestWorkflowTests:XCTestCase {
         w=try runner(); _=next(&w,0); _=w.receive(cursor(),time:1); w.receive(.refused,time:2)
         XCTAssertEqual(w.state,.stopped(.refused)); XCTAssertNil(next(&w,100))
         w=try runner([site(11)]); _=next(&w,0); _=next(&w,11)
-        XCTAssertEqual(w.state,.stopped(.timeout))
+        XCTAssertEqual(w.state,.completed)
     }
     func testEmptyAttemptsRetryWithCooldownButStopAtBound()throws {
         var w=try runner()

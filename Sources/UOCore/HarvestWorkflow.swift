@@ -67,6 +67,14 @@ public struct HarvestWorkflow {
         default: break
         }
     }
+    /// A confirmed unusable site or failed approach does not revoke the zone.
+    public mutating func skipCurrentSite(time:TimeInterval) {
+        guard state == .travelling || state == .working || state == .ready else { return }
+        action.stop(.unreachable); emptyAttempts=0; index += 1
+        if index>=sites.count { state = .completed; currentSite=nil; return }
+        currentSite=sites[index]; readyAt=time+1
+        state = pauseRequested ? .paused : .coolingDown
+    }
     public mutating func next(position:WalkPoint,ownsTool:Bool,overweight:Bool,time:TimeInterval,
                               route:(WalkPoint,WalkPoint)->[WalkPoint]?)->Command? {
         switch state { case .idle,.completed,.stopped: return nil; default: break }
@@ -81,7 +89,7 @@ public struct HarvestWorkflow {
             return nil
         }
         if state == .travelling {
-            guard time<travelDeadline else { stop(.timeout); return nil }
+            guard time<travelDeadline else { skipCurrentSite(time:time); return nil }
             guard position==currentSite?.standing else { return nil }
             state = pauseRequested ? .paused : .ready
             if state == .paused { return nil }
@@ -135,6 +143,8 @@ public struct HarvestWorkflow {
         case .completedWithoutYield:
             emptyAttempts += 1
             if emptyAttempts>=emptyLimit { stop(.noProgress); return }
+        case .stopped(.unreachable):
+            skipCurrentSite(time:time); return
         case .stopped(.depleted):
             emptyAttempts=0; index += 1
             if index>=sites.count { state = .completed; currentSite=nil; return }

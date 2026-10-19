@@ -49,7 +49,7 @@ final class HarvestOutcomeTests:XCTestCase {
             (.mining,"There is no metal here to mine.",.depleted),
             (.mining,"Someone has gotten to the metal before you.",.depleted),
             (.lumberjacking,"There's not enough wood here to harvest.",.depleted),
-            (.mining,"You can't mine that.",.refused)]
+            (.mining,"You can't mine that.",.unreachableTarget)]
         for (kind,text,result) in cases {
             outcome=HarvestOutcome(kind:kind,backpack:2,position:feet,world:world,time:0)
             XCTAssertEqual(outcome.observe(speech:speech(text),world:world,time:1),result)
