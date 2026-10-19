@@ -40,11 +40,11 @@ public struct AutoPickup {
         beforePickup=contents.filter { $0.container==bag && $0.graphic==item.graphic && $0.hue==item.hue }
         previousAmount=contents.filter { $0.container==bag && $0.graphic==item.graphic && $0.hue==item.hue }.reduce(0) { $0+max(1,$1.amount) }
     }
-    public mutating func receive(_ packet:Data) {
+    public mutating func receive(_ packet:Data,at time:TimeInterval) {
         guard pending != nil else { return }
         if packet.first == 0x27 || packet.first == 0x28 {
             beforePickup=[]
-            pending=nil; nextAt=sentAt+2
+            pending=nil; nextAt=time+2
             stoppedReason="Auto-pickup skipped an item the server refused."
         }
     }
@@ -55,7 +55,7 @@ public struct AutoPickup {
         let amount=contents.filter { $0.container==bag && $0.graphic==graphic && $0.hue==hue }.reduce(0) { $0+max(1,$1.amount) }
         if arrived || amount>=previousAmount+pickedAmount {
             gathered.confirm(graphic:graphic,hue:hue,amount:pickedAmount,bag:bag,before:beforePickup,after:contents)
-            beforePickup=[]; self.pending=nil; nextAt=time+0.5
+            beforePickup=[]; self.pending=nil; nextAt=time+1
         }
         else if time-sentAt>=5 { stop("Auto-pickup stopped: no confirmed inventory update.") }
     }

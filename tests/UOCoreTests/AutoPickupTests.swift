@@ -35,7 +35,7 @@ final class AutoPickupTests:XCTestCase {
         gather.update(contents:[received],at:1); XCTAssertNil(gather.pending)
         XCTAssertEqual(gather.gathered.credits[herb.serial]?.amount,2)
         XCTAssertEqual(gather.mode,.reagents)
-        gather.receive(Data([0x29])); gather.update(contents:[received],at:1.1); XCTAssertNil(gather.pending)
+        gather.receive(Data([0x29]),at:1.1); gather.update(contents:[received],at:1.1); XCTAssertNil(gather.pending)
         XCTAssertEqual(gather.gathered.credits[herb.serial]?.amount,2,"Late acknowledgement must not double-count goods")
         XCTAssertNil(gather.select(items:[herb],player:player,at:2))
     }
@@ -57,11 +57,38 @@ final class AutoPickupTests:XCTestCase {
         XCTAssertEqual(gather.mode,.off); XCTAssertNil(gather.pending)
         XCTAssertTrue(gather.gathered.credits.isEmpty)
         gather.mode = .reagents; gather.begin(item(),bag:2,contents:[],at:6)
-        gather.receive(Data([0x27,0])); XCTAssertEqual(gather.mode,.reagents)
+        gather.receive(Data([0x27,0]),at:6.1); XCTAssertEqual(gather.mode,.reagents)
         XCTAssertNil(gather.pending)
         XCTAssertTrue(gather.gathered.credits.isEmpty)
         XCTAssertNil(gather.select(items:[item()],player:player,at:10))
         XCTAssertEqual(gather.select(items:[item(99)],player:player,at:10)?.serial,99)
+    }
+    func testConfirmedPickupPacesNextCandidateWithoutDisablingGather() {
+        var gather=AutoPickup(); gather.mode = .reagents
+        let player=WorldMobile(serial:1,body:400,x:10,y:10,z:0)
+        let herb=item()
+        gather.begin(herb,bag:2,contents:[],at:0)
+        let received=ContainerItem(serial:herb.serial,graphic:herb.graphic,amount:2,x:0,y:0,container:2,hue:0)
+        gather.update(contents:[received],at:0.1)
+        XCTAssertNil(gather.select(items:[item(99)],player:player,at:0.7))
+        XCTAssertNil(gather.select(items:[item(99)],player:player,at:1.09))
+        XCTAssertEqual(gather.select(items:[item(99)],player:player,at:1.1)?.serial,99)
+        XCTAssertEqual(gather.mode,.reagents)
+    }
+    func testDelayedRefusalWaitsFromReplyAndDoesNotRetryRefusedItem() {
+        var gather=AutoPickup(); gather.mode = .all
+        let player=WorldMobile(serial:1,body:400,x:10,y:10,z:0)
+        let refused=item()
+        gather.begin(refused,bag:2,contents:[],at:0)
+        gather.receive(Data([0x27,255]),at:4)
+        XCTAssertNil(gather.pending)
+        XCTAssertNil(gather.select(items:[refused,item(99)],player:player,at:4.1))
+        // Unrelated/late refusals must not keep extending the cooldown.
+        gather.receive(Data([0x27,255]),at:5)
+        XCTAssertNil(gather.select(items:[refused,item(99)],player:player,at:5.99))
+        XCTAssertEqual(gather.select(items:[refused,item(99)],player:player,at:6)?.serial,99)
+        XCTAssertTrue(gather.gathered.credits.isEmpty)
+        XCTAssertEqual(gather.mode,.all)
     }
     func testMergedStackConfirmsWithoutSeparateAcknowledgement() {
         var gather=AutoPickup(); gather.mode = .reagents

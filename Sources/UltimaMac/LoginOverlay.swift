@@ -1311,7 +1311,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                 for packet in try framer.receive(bytes) {
                     packetContext = GamePacketDiagnostics.summary(packet)
                     let pickupPending=autoPickup.pending != nil
-                    autoPickup.receive(packet)
+                    autoPickup.receive(packet,at:ProcessInfo.processInfo.systemUptime)
                     gatheredDrop?.receive(packet)
                     if packet.first==0x27 || packet.first==0x28 {
                         let reason:UInt8? = packet.first==0x27 && packet.count>1 ? packet[1] : nil
