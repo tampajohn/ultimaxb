@@ -138,4 +138,33 @@ final class HarvestWorkflowTests:XCTestCase {
         var w=try runner(); XCTAssertNil(next(&w,0,position:.init(x:9,y:10,z:0)))
         XCTAssertEqual(w.state,.stopped(.invalidSelection))
     }
+    func testExplicitUseThrottlingIsBoundedAndRequiresPendingCursor() throws {
+        var w=try runner(); var time=0.0
+        for retry in 1...3 {
+            XCTAssertEqual(next(&w,time),.tool(.useItem(22)))
+            XCTAssertTrue(w.throttled(time:time+0.1))
+            XCTAssertFalse(w.throttled(time:time+0.2),"Duplicate feedback cannot restart cooldown")
+            XCTAssertNil(next(&w,time+Double(retry+1)))
+            time += Double(retry+1)+0.1
+        }
+        XCTAssertEqual(next(&w,time),.tool(.useItem(22)))
+        XCTAssertTrue(w.throttled(time:time+0.1)); XCTAssertEqual(w.state,.stopped(.refused))
+        XCTAssertNil(next(&w,time+30))
+        w=try runner(); _=next(&w,0); _=w.receive(cursor(),time:0.1)
+        XCTAssertFalse(w.throttled(time:0.2),"Never replay a tool after its cursor was answered")
+        w=try runner(); _=next(&w,0)
+        XCTAssertFalse(w.throttled(time:10),"An expired request cannot be revived")
+        _=next(&w,10); XCTAssertEqual(w.state,.stopped(.timeout))
+    }
+    func testThrottlePauseAndLateCursor() throws {
+        var w=try runner(); _=next(&w,0); w.pause()
+        XCTAssertTrue(w.throttled(time:0.1)); XCTAssertEqual(w.state,.paused)
+        XCTAssertNil(next(&w,5)); w.resume()
+        XCTAssertEqual(next(&w,5),.tool(.useItem(22)))
+        _=w.receive(cursor(),time:5.1); XCTAssertEqual(w.useRetries,0)
+        w=try runner(); _=next(&w,0); _=w.throttled(time:0.1)
+        XCTAssertEqual(w.receive(cursor(),time:0.2),.tool(.cancelTarget(cursor())))
+        XCTAssertEqual(w.state,.stopped(.unexpectedTarget))
+    }
+
 }

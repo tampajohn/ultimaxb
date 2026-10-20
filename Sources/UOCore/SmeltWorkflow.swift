@@ -10,6 +10,7 @@ public struct SmeltWorkflow {
     public private(set) var skipped=0
     public private(set) var losses=0
     public private(set) var combined=0
+    public private(set) var useRetries=0
     public private(set) var lastObservation:[String:Int]=[:]
     public var combining:Bool { mergePair != nil }
     private var prepare=true
@@ -90,12 +91,21 @@ public struct SmeltWorkflow {
             state = .working; return command
         } catch { stop(.invalidSelection); return nil }
     }
+    @discardableResult public mutating func throttled(time:TimeInterval)->Bool {
+        guard state == .working,action.rejectUse(at:time) else { return false }
+        useRetries += 1
+        guard useRetries<=3 else { stop(.refused); return true }
+        mergePair=nil; mergeTargeted=false; outcome=nil
+        readyAt=time+Double(useRetries+1); state = .coolingDown
+        return true
+    }
     public mutating func receive(_ request:TargetRequest,world:WorldState,position:WalkPoint,time:TimeInterval)->AssistantAction.Command? {
         if case .stopped=state { return request.flags==3 ? nil:.cancelTarget(request) }
         guard state == .working,validForge(world:world,position:position) else {
             stop(.unexpectedTarget); return request.flags==3 ? nil:.cancelTarget(request)
         }
         let command=action.receive(request,at:time)
+        if case .target = command { useRetries=0 }
         if let pair=mergePair {
             guard world.containerItems[pair.0.serial]==pair.0,world.containerItems[pair.1.serial]==pair.1 else { stop(.missingTool); return .cancelTarget(request) }
             if case .target=command { mergeTargeted=true; mergeDeadline=time+10 }

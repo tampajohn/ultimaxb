@@ -136,4 +136,34 @@ final class SmeltWorkflowTests:XCTestCase {
         }
     }
 
+    func testUseThrottleRetriesBeforeCursorOnlyAndPreservesSource() throws {
+        var (world,flow)=try setup()
+        _=flow.next(world:world,position:position,time:0)
+        XCTAssertTrue(flow.throttled(time:0.1))
+        XCTAssertFalse(flow.throttled(time:0.2))
+        XCTAssertNil(flow.next(world:world,position:position,time:2))
+        XCTAssertEqual(flow.next(world:world,position:position,time:2.1),.useItem(0x40000004))
+        _=flow.receive(try cursor(),world:world,position:position,time:2.2)
+        XCTAssertEqual(flow.useRetries,0)
+        XCTAssertFalse(flow.throttled(time:2.3))
+        (_,flow)=try setup(); _=flow.next(world:world,position:position,time:0); _=flow.throttled(time:0.1)
+        try world.apply(item(amount:1))
+        XCTAssertNil(flow.next(world:world,position:position,time:3))
+        XCTAssertEqual(flow.state,.stopped(.missingTool))
+    }
+    func testCombineThrottleAndRetryLimit() throws {
+        let (world,_)=try setup()
+        var flow=SmeltWorkflow()
+        try flow.start(backpack:2,forge:world.items[0x40000009]!,world:world)
+        var time=0.0
+        for retry in 1...4 {
+            XCTAssertEqual(flow.next(world:world,position:position,time:time),.useItem(0x40000004))
+            XCTAssertTrue(flow.combining)
+            XCTAssertTrue(flow.throttled(time:time+0.1))
+            time += Double(retry+1)+0.1
+        }
+        XCTAssertEqual(flow.state,.stopped(.refused)); XCTAssertEqual(flow.combined,0)
+        XCTAssertNil(flow.next(world:world,position:position,time:50))
+    }
+
 }

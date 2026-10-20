@@ -46,6 +46,14 @@ public struct AssistantAction {
         default: break
         }
     }
+    /// An explicit server rejection of item use is retryable only before the
+    /// first cursor. Silence or rejection after targeting does not qualify.
+    public mutating func rejectUse(at time:TimeInterval)->Bool {
+        tick(at:time)
+        guard state == .waitingForTarget(0) else { return false }
+        state = .stopped(.refused)
+        return true
+    }
     /// The adapter calls this only for the active automation's target stream.
     /// Each accepted cursor produces exactly one target response.
     public mutating func receive(_ request:TargetRequest,at time:TimeInterval)->Command? {

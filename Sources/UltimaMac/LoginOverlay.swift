@@ -376,7 +376,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         let text:String
         switch smelt.state {
         case .idle: text="Smelting idle."
-        case .ready,.coolingDown: text="Smelting: \(smelt.successes) piles processed. Waiting before the next pile."
+        case .ready,.coolingDown: text=smelt.useRetries>0 ? "Server is busy. Waiting before retrying the ore action." : "Smelting: \(smelt.successes) piles processed. Waiting before the next pile."
         case .working: text=smelt.combining ? "Combining matching ore; waiting for inventory confirmation." : "Smelting ore; waiting for the server."
         case .completed: text="Smelting finished: \(smelt.successes) successful, \(smelt.losses) failed attempts, \(smelt.skipped) skipped piles."
         case .stopped(.noProgress): text="Smelting stopped after metal loss. Improve Mining before trying again."
@@ -540,7 +540,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         let text:String
         switch harvest.state {
         case .idle: text="Harvesting idle."
-        case .ready,.coolingDown: text="Harvesting: \(harvest.successfulActions) successful attempts. Waiting before the next action."
+        case .ready,.coolingDown: text=harvest.useRetries>0 ? "Server is busy. Waiting before retrying the tool." : "Harvesting: \(harvest.successfulActions) successful attempts. Waiting before the next action."
         case .travelling: text="Walking to the next work site."
         case .working: text="Using tool; waiting for the server."
         case .paused: text="Harvesting paused."
@@ -2045,7 +2045,14 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         Telemetry.shared.record("target_requested", ["cursor": request.cursor, "flags": request.flags, "allows_location": request.allowsLocation])
                     case 0x1C:
                         let speech = try SpeechMessage.decode(packet)
-                        if speech.serial == 0xFFFFFFFF && speech.text == "You must wait to perform another action." {
+                        if speech.serial == 0xFFFFFFFF && speech.type == 6 && speech.text == "You must wait to perform another action." {
+                            if smelt?.throttled(time:harvestNow()) == true {
+                                publishSmeltStatus()
+                                Telemetry.shared.record("smelt_use_throttled",["attempt":smelt?.useRetries ?? 0])
+                            } else if harvest?.throttled(time:harvestNow()) == true {
+                                publishHarvestStatus()
+                                Telemetry.shared.record("harvest_use_throttled",["attempt":harvest?.useRetries ?? 0])
+                            }
                             let now=ProcessInfo.processInfo.systemUptime
                             travelDoor?.wait.throttled(at:now); waitingDoor?.wait.throttled(at:now)
                             if travelDoor != nil || waitingDoor != nil {

@@ -35,6 +35,7 @@ public struct HarvestWorkflow {
     public var workZone:Zone? { zone }
     private var tool:UInt32=0
     private var limit=0
+    public private(set) var useRetries=0
     private var emptyAttempts=0
     private var emptyLimit=5
     private var action=AssistantAction()
@@ -155,6 +156,14 @@ public struct HarvestWorkflow {
         currentSite=nil; stop(.unreachable)
         return nil
     }
+    @discardableResult public mutating func throttled(time:TimeInterval)->Bool {
+        guard state == .working,action.rejectUse(at:time) else { return false }
+        useRetries += 1
+        guard useRetries<=3 else { stop(.refused); return true }
+        readyAt=time+Double(useRetries+1)
+        state = pauseRequested ? .paused : .coolingDown
+        return true
+    }
     public mutating func receive(_ request:TargetRequest,time:TimeInterval)->Command? {
         if case .stopped = state { return request.flags==3 ? nil : .tool(.cancelTarget(request)) }
         guard state == .working else {
@@ -166,6 +175,7 @@ public struct HarvestWorkflow {
             }
         }
         let command=action.receive(request,at:time)
+        if case .target = command { useRetries=0 }
         if case .stopped(let reason)=action.state { stop(reason) }
         return command.map(Command.tool)
     }

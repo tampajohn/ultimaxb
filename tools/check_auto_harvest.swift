@@ -14,9 +14,9 @@ import UOCore
         var now=ProcessInfo.processInfo.systemUptime
         login.harvestNow={now}
         func send(_ packet:Data) { transport.onEvent?(.gameData(packet)) }
-        func speech(_ text:String) {
+        func speech(_ text:String,type:UInt8=6) {
             let bytes=Array(text.utf8)+[UInt8(0)],length=44+bytes.count
-            send(Data([0x1C,UInt8(length>>8),UInt8(length&255),255,255,255,255,255,255,6,0,0,0,3])+Data(repeating:0,count:30)+Data(bytes))
+            send(Data([0x1C,UInt8(length>>8),UInt8(length&255),255,255,255,255,255,255,type,0,0,0,3])+Data(repeating:0,count:30)+Data(bytes))
         }
         func target(_ id:UInt32) { send(Data([0x6C,1])+Data(LoginPackets.seed(id))+Data([0])+Data(repeating:0,count:12)) }
         var entry=Data(repeating:0,count:37); entry[0]=0x1B; entry[4]=1
@@ -37,7 +37,18 @@ import UOCore
         login.tickMovement()
         precondition(login.harvestActive && messages.last!.contains("Using tool"))
         precondition(!login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}),"A second Start cannot replace an outstanding tool request")
+        let beforeOrdinarySpeech=messages.last
+        speech("You must wait to perform another action.",type:0)
+        precondition(messages.last == beforeOrdinarySpeech,"Ordinary speech cannot trigger automatic retries")
+        speech("You must wait to perform another action.")
+        precondition(messages.last!.contains("Server is busy"))
+        now += 1.9; login.tickMovement()
+        precondition(messages.last!.contains("Server is busy"))
+        now += 0.2; login.tickMovement()
+        precondition(messages.last!.contains("Using tool"))
         target(1)
+        speech("You must wait to perform another action.")
+        precondition(messages.last!.contains("Using tool"),"Post-target feedback must not replay the tool")
         precondition(!login.targeting,"Automated cursor must be answered once without exposing manual targeting")
         speech("You dig some ore and put it in your backpack.")
         login.tickMovement()
@@ -86,6 +97,12 @@ import UOCore
         login.followRoute([],action:.smelt(0x40000009),running:false,resolver:{_,_ in []})
         login.tickMovement(); login.tickMovement()
         precondition(login.harvestActive && messages.last!.contains("Smelting ore"))
+        speech("You must wait to perform another action.")
+        precondition(messages.last!.contains("Server is busy"))
+        now += 1.9; login.tickMovement()
+        precondition(messages.last!.contains("Server is busy"))
+        now += 0.2; login.tickMovement()
+        precondition(messages.last!.contains("Smelting ore"))
         target(20)
         speech("You smelt the ore removing the impurities and put the metal in your backpack.")
         login.tickMovement()
