@@ -54,7 +54,7 @@ The repository also includes an experimental **SpacetimeDB-backed UO 1.25.32
 server**. It runs on loopback and uses the installed game assets for authoritative
 terrain checks. The single-player sandbox persists movement, doors, containers,
 equipment, ground items, stack transfers, food, lumberjacking, mining, forge
-smelting, basic equipment recipes, skill progression, and a merchant with finite stock.
+smelting, basic equipment recipes, skill progression, neutral-creature hunting, and a merchant with finite stock.
 
 After installing the server prerequisites:
 
@@ -67,7 +67,7 @@ The starter hatchet gathers logs from map trees; the dagger carves five logs int
 a wooden shield. The pickaxe mines ore; the smith's hammer forges five ingots into
 a nose helm. A persistent nearby forge also supports the client's smelting assistant.
 Mara the provisioner sells apples and buys logs through the classic vendor windows.
-Combat, vendor restocking, multiplayer, and world merging remain future work.
+Creature retaliation/player death, vendor restocking, multiplayer, and world merging remain future work.
 
 See the [server setup and gameplay guide](server/local-spacetime/README.md),
 [verification instructions](server/local-spacetime/README.md#verify), and

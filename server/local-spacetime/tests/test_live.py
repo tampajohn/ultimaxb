@@ -703,6 +703,121 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
         writer.write(cipher.transform(bytes.fromhex('34edededed05')+struct.pack('>I',1)))
         self.assertEqual(await block(reader),wire.skills(self.backend.skills()))
 
+    def relocate_fixture(self,point):
+        current=self.backend.avatar();scene=self.backend.world()[0]
+        while any(current[k]!=point[k] for k in ('x','y','z')):
+            x=current['x']+max(-8,min(8,point['x']-current['x']))
+            y=current['y']+max(-8,min(8,point['y']-current['y']))
+            self.backend.request(self.backend.path+'/call/settle',json.dumps([
+                current['revision'],x,y,point['z'],scene]).encode())
+            current=dict(current,x=x,y=y,z=point['z'],revision=current['revision']+1)
+
+    async def test_b_hunting_weapons_disconnect_death_and_loot(self):
+        start=self.backend.avatar();creature=self.backend.creature()
+        spot=next(p for dx,dy in [(0,1),(1,0),(0,-1),(-1,0)] if
+            (p:=self.navigation.query('stand',dict(x=creature['x']+dx,y=creature['y']+dy,z=creature['z']),objects=self.backend.world()[1])))
+        try:
+            await asyncio.to_thread(self.relocate_fixture,spot)
+            def args():return [self.backend.avatar()['revision'],self.backend.inventory()[0],self.backend.world()[0],self.backend.creature()['revision']]
+            identity=json.loads(self.backend.request('/v1/identity',b''))
+            outsider=Backend(self.backend.endpoint,self.backend.database,identity['token'])
+            with self.assertRaises(BackendError):outsider.request(outsider.path+'/call/strike_creature',json.dumps(args()).encode())
+            before=self.backend.hunting_state()
+            await asyncio.to_thread(self.relocate_fixture,dict(spot,x=spot['x']+8))
+            with self.assertRaises(BackendError):self.backend.request(self.backend.path+'/call/strike_creature',json.dumps(args()).encode())
+            self.assertEqual(self.backend.hunting_state(),before)
+            await asyncio.to_thread(self.relocate_fixture,spot)
+            stale=args();self.assertEqual(self.backend.strike_creature()['health'],19)
+            with self.assertRaises(BackendError):self.backend.request(self.backend.path+'/call/strike_creature',json.dumps(stale).encode())
+            with self.assertRaises(BackendError):self.backend.request(self.backend.path+'/call/strike_creature',json.dumps(args()).encode())
+            dagger=next(i for i in self.backend.inventory()[1] if i['graphic']==0xf51)
+            sword=next(i for i in self.backend.inventory()[1] if i['graphic']==0xf61)
+            self.backend.equip(self.backend.lift(dagger['serial'],1),dagger['serial'],1,1)
+            async def enter():
+                reader,writer,cipher=await self.game(await self.relay());await block(reader)
+                writer.write(cipher.transform(b'\x5d'+bytes.fromhex('edededed')+wire.fixed(start['name'],30)+bytes(38)))
+                self.assertIn(wire.creature_mobile(self.backend.creature()),await block(reader))
+                return reader,writer,cipher
+            reader,writer,cipher=await enter()
+            writer.write(cipher.transform(b'\x05\0\0\0\3'))
+            self.assertEqual(await block(reader),b'\xaa\0\0\0\0')
+            writer.write(cipher.transform(b'\x72\1\x32\0\0'))
+            self.assertEqual(await block(reader),b'\x72\1\x32\0\0')
+            await asyncio.sleep(2.05)
+            writer.write(cipher.transform(b'\x05\0\0\0\3'))
+            self.assertTrue((await block(reader)).startswith(b'\xaa\0\0\0\3'))
+            await asyncio.wait_for(block(reader),2)
+            self.assertEqual(self.backend.creature()['health'],16)
+            writer.write(cipher.transform(b'\x05\0\0\0\3'))
+            await block(reader)
+            self.assertEqual(self.backend.creature()['health'],16)
+            writer.close();await writer.wait_closed()
+            for _ in range(100):
+                if not self.gateway.active:break
+                await asyncio.sleep(.01)
+            await asyncio.sleep(2.1)
+            self.assertEqual(self.backend.creature()['health'],16)
+            self.backend.equip(self.backend.lift(sword['serial'],1),sword['serial'],1,1)
+            reader,writer,cipher=await enter()
+            writer.write(cipher.transform(b'\x05\0\0\0\3'))
+            self.assertEqual(await block(reader),b'\xaa\0\0\0\0')
+            writer.write(cipher.transform(b'\x72\1\x32\0\0'));await block(reader)
+            writer.write(cipher.transform(b'\x05\0\0\0\3'));await block(reader)
+            await asyncio.wait_for(block(reader),2)
+            self.assertEqual(self.backend.creature()['health'],11)
+            writer.write(cipher.transform(b'\x72\0\x32\0\0'));await block(reader)
+            await asyncio.sleep(2.1)
+            self.assertEqual(self.backend.creature()['health'],11)
+            writer.write(cipher.transform(b'\x72\1\x32\0\0'));await block(reader)
+            writer.write(cipher.transform(b'\x05\0\0\0\3'));await block(reader)
+            for _ in range(3):response=await asyncio.wait_for(block(reader),3)
+            self.assertIn(wire.creature_death(),response)
+            self.assertEqual(self.backend.creature()['health'],0)
+            history=self.backend.hunting_state()
+            deaths=[e for e in history['hunting_event'] if e[4]==0]
+            self.assertEqual(len(deaths),1)
+            hits=history['hunting_event']
+            self.assertEqual(sum(e[3] for e in hits),20)
+            self.assertTrue(all(b[6]-a[6]>=2_000_000 for a,b in zip(hits,hits[1:])))
+            self.assertEqual(hits[1][2],dagger['serial'])
+            self.assertEqual(hits[2][2],sword['serial'])
+            loot=next(i for i in self.backend.inventory()[1] if i['serial']==deaths[0][5])
+            self.assertEqual((loot['graphic'],loot['amount'],loot['container']),(0x9f1,2,0))
+            with self.assertRaises(BackendError):self.backend.request(self.backend.path+'/call/strike_creature',json.dumps(args()).encode())
+            self.assertEqual(self.backend.hunting_state(),history)
+            writer.write(cipher.transform(b'\x07'+struct.pack('>IH',loot['serial'],2)))
+            self.assertEqual(await block(reader),wire.remove_item(loot['serial']))
+            writer.write(cipher.transform(b'\x08'+struct.pack('>IHHbI',loot['serial'],65,65,0,BACKPACK)))
+            self.assertIn(wire.container_item(dict(loot,container=BACKPACK,x=65,y=65)),await block(reader))
+            self.assertEqual(sum(i['amount'] for i in self.backend.inventory()[1] if i['graphic']==0x9f1),2)
+            self.assertEqual(self.backend.refresh_creature()['health'],0)
+            self.backend.transfer(self.backend.lift(sword['serial'],1),sword['serial'],BACKPACK,75,75)
+        finally:await asyncio.to_thread(self.relocate_fixture,start)
+
+    async def test_zzzzzz_lazy_respawn_preserves_loot(self):
+        creature=self.backend.creature();start=self.backend.avatar()
+        try:
+            if creature['health']==0:
+                await asyncio.to_thread(self.relocate_fixture,creature)
+                remaining=max(0,creature['respawn_at']/1_000_000-time.time())
+                await asyncio.sleep(remaining+.05)
+                self.assertEqual(self.backend.refresh_creature()['health'],0,'occupied spawn must stay dead')
+                # Other ground-placement fixtures may have left their stack on
+                # this tile. Preserve it, moving it to nearby valid ground.
+                objects=self.backend.world()[1]
+                exit_point=next(p for dx,dy in [(0,1),(1,0),(0,-1),(-1,0)] if
+                    (p:=self.navigation.query('stand',dict(x=creature['x']+dx,y=creature['y']+dy,z=creature['z']),objects=objects)))
+                for item in objects:
+                    if item.get('movable') and (item['x'],item['y'])==(creature['x'],creature['y']):
+                        self.backend.transfer(self.backend.lift(item['serial'],item['amount']),item['serial'],0xffffffff,
+                            exit_point['x'],exit_point['y'],exit_point['z'])
+                await asyncio.to_thread(self.relocate_fixture,exit_point)
+            after=self.backend.refresh_creature()
+            self.assertEqual((after['health'],after['life']),(20,2))
+            self.assertEqual(sum(i['amount'] for i in self.backend.inventory()[1] if i['graphic']==0x9f1),2)
+            self.assertEqual(sum(e[4]==0 for e in self.backend.hunting_state()['hunting_event']),1)
+        finally:await asyncio.to_thread(self.relocate_fixture,start)
+
     async def test_z_food_consumption_is_atomic_and_persistent(self):
         before = self.backend.inventory()
         food = next(i for i in before[1] if i['graphic']==0x9d0 and i['container']==BACKPACK)

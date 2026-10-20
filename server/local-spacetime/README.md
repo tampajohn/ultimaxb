@@ -203,7 +203,7 @@ For codec-only tests without services:
 python3 -m unittest discover -s server/local-spacetime/tests -v
 ```
 
-The fifteen live tests skip unless `ULTIMA_SPACETIME_CONFIG` names a gateway config.
+The seventeen live tests skip unless `ULTIMA_SPACETIME_CONFIG` names a gateway config.
 Live tests deliberately move the demo avatar and append history if pointed at
 an existing database. Prefer `run.py --verify` for an isolated test world.
 
@@ -215,7 +215,7 @@ an existing database. Prefer `run.py --verify` for an isolated test world.
 | --- | --- | --- |
 | 1 — Gathering and a useful recipe (implemented) | Equip the hatchet, target an actual map tree, collect logs, then use the dagger on five backpack logs to carve a wooden shield. | Single-use expiring target cursors; server-validated tree identity and reach; durable cooldown/depletion; lazy resource recovery after idle time; atomic ingredient consumption/output creation; crafted shield equips and persists; real-client target/result decoding. |
 | 2 — Mining, smithing, and progression (core loop and skill progression implemented) | Mine ore, smelt at a forge, craft or repair basic metal equipment. | Asset-validated ore/forge targets; explicit recipes and material costs; durable tool wear and skill progression; no skill/loot gains on rejected or replayed requests; original target/gump protocols. Decide era-faithful rules before expanding the recipe catalogue. |
-| 3 — A small inhabited adventure (merchant purchases and log sales implemented) | Trade with one vendor and fight one creature type near a safe starting area. | Finite vendor stock and money, atomic purchases/sales, deterministic attack cadence and range checks, damage/death/loot/recovery, NPC persistence, pause/resume rules for an empty world, no duplicate loot after reconnect. |
+| 3 — A small inhabited adventure (merchant trading and neutral hunting implemented) | Trade with one vendor and fight one creature type near a safe starting area. | Finite vendor stock and money, atomic purchases/sales, deterministic attack cadence and range checks, damage/death/loot/recovery, NPC persistence, pause/resume rules for an empty world, no duplicate loot after reconnect. |
 | 4 — Shared local world | Two distinct players gather, trade, and fight together. | Real accounts and character ownership, subscription-driven visibility, per-player sessions, contested resource/equipment tests, secure LAN discovery and explicit host selection. Replace proof-of-concept HTTP polling before scaling. |
 | 5 — World branches and reconciliation | Fork a checkpoint, explore independently, preview a merge, and create a new reconciled world. | Stable cross-world entity/event IDs, ancestry/checkpoints, explicit item creation/transfer/consumption history, three-way merge preview, conservation checks, deterministic conflict policies, provenance for overrides, reversible import into a new branch. Never merge solely by timestamps or local revision numbers. |
 
@@ -303,14 +303,40 @@ needed. Verification matches every gain to a committed action revision, checks c
 boundaries, and confirms the real Swift client sees gains and retains them after
 reconnect and database restart.
 
+A neutral cow is seeded once on reachable terrain about four tiles from the
+saved avatar. Enter war mode, move adjacent, and select it as a combat target.
+The server confirms its target and real health (20). A successful strike occurs
+at most every two seconds: unarmed/other tools deal 1 damage, daggers 3, hatchets
+4, and longswords 5. The server reads the currently equipped item and validates
+terrain reach, avatar/inventory/scene/creature revisions, and its durable cooldown.
+Repeated target packets do not grant extra hits. Leaving melee range, entering
+peace mode, or disconnecting stops the attack. Reconnecting always starts in peace.
+
+Death commits once with two raw ribs dropped on the ground, a loot journal entry,
+and the creature's life/death history. Pick up the ribs through normal drag/drop;
+they can be stacked but are not yet cookable or edible. A classic death packet
+plays the installed cow animation; no persistent corpse container is created.
+After sixty seconds, entry/movement/item interactions may lazily respawn the cow
+at its saved location. Occupied or unstandable spawn tiles postpone respawn,
+including uncollected loot on that tile. No attacks or background simulation run
+without a connected player. This first hunting slice has no creature retaliation,
+wandering AI, player damage/death, armor mitigation, or weapon-skill training.
+
+Verification tests real war/target/status/death and loot packets, weapon-dependent
+damage, database cooldown timestamps, replay/authorization/range rejection,
+disconnect and peace-mode cancellation, exactly one loot stack per death, actual
+respawn timing and occupied-site rejection, and database restart persistence
+both while dead and after respawning.
+Swift checks decode target health/death and load original standing/death art.
+
 Hosting and distributed execution follow the shared-world phase: measure idle
 costs, checkpoint durability, wake-up behavior, and authority handoff first.
 Consensus within an active shared world and reconciliation between independently
 played branches are separate problems. A merge must account for spent resources
 and item ownership; choosing a preferred player cannot silently duplicate items.
 
-- One precreated avatar and one stationary merchant; no character creation/deletion,
-  combat or multiplayer visibility.
+- One precreated avatar, one stationary merchant, and one stationary neutral cow;
+  no character creation/deletion or multiplayer visibility.
 - Movement uses the client's conservative collision rules, not a claim of exact
   original-server parity. Mobile blockers, placed houses/boats, mounts, ghost
   movement, and movement cadence remain unimplemented. World fixtures consist of
@@ -321,7 +347,7 @@ and item ownership; choosing a preferred player cannot silently duplicate items.
 - Inventory supports only the seeded backpack/barrel, at most 64 item records,
   and bounded interior coordinates for each gump. There is no weight or
   capacity simulation or nested storage yet. Equipment is limited to the explicit
-  starter catalogue, mining tools, wooden shields, and crafted nose helms; weapons have no combat actions yet.
+  starter catalogue, mining tools, wooden shields, and crafted nose helms.
   Tool use supports lumberjacking, carving, mining, smelting, and one smithing recipe.
   Health, attributes, armor, and weight remain placeholder status values.
   Ground placement uses standable terrain, not arbitrary table/container surfaces.
@@ -334,15 +360,14 @@ and item ownership; choosing a preferred player cannot silently duplicate items.
   there is no background subscription for edits by other sessions.
 - Unsupported packet opcodes close the session instead of guessing frame lengths.
   The Skills window reports the four trained sandbox skills; other skills remain
-  untrained. War-mode requests retain peace mode.
+  untrained. War mode supports the neutral hunting loop described above.
 - The avatar and journal are real persisted state. World forks, global entity
   identities, merge/rebase policies, checkpoint import/export, and cloud hosting
   are not implemented. Local revision numbers are not cross-world event IDs.
 - Protocol and movement decisions use explicit code. No model is in the gameplay
   path. Model-assisted merge proposals can be explored separately later.
 
-Next: rendered-client playtesting, tool wear/repair, vendor restocking and a small creature/combat
-loop. Fork/merge work will need stable cross-world identities and explicit rules
+Next: rendered-client playtesting, tool wear/repair, vendor restocking, cooking, and retaliating combat/player recovery. Fork/merge work will need stable cross-world identities and explicit rules
 for item ownership and consumption; the current local journals are not sufficient.
 
 ## Sources

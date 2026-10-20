@@ -69,9 +69,9 @@ def characters(name):
     return bytes(packet)
 
 
-def position(avatar):
+def position(avatar, war=False):
     return struct.pack('>BIHBHBHHHBb', 0x20, avatar['serial'], 400, 0, 0x83EA,
-                       0, avatar['x'], avatar['y'], 0, avatar['direction'], avatar['z'])
+                       0x40 if war else 0, avatar['x'], avatar['y'], 0, avatar['direction'], avatar['z'])
 
 
 def entry(avatar):
@@ -91,7 +91,7 @@ def status(avatar):
     packet = bytearray(66)
     struct.pack_into('>BHI', packet, 0, 0x11, 66, avatar['serial'])
     packet[7:37] = fixed(avatar['name'], 30)
-    struct.pack_into('>HHBBB', packet, 37, 50, 50, 0, 1, 0)
+    struct.pack_into('>HHBBB', packet, 37, avatar.get('health',50), avatar.get('max_health',50), 0, 1, 0)
     struct.pack_into('>HHHHHHHIHH', packet, 44, 50, 50, 50, 50, 50, 50, 50, avatar.get('gold',0), 0, 0)
     return bytes(packet)
 
@@ -156,6 +156,19 @@ MERCHANT_BAG = 0x7e000100
 MERCHANT_APPLES = 0x7e000101
 
 
+def creature_mobile(creature):
+    payload=struct.pack('>IHHHbBHBB',3,216,creature['x'],creature['y'],creature['z'],3,0,0,3)+bytes(4)
+    return struct.pack('>BH',0x78,len(payload)+3)+payload
+
+
+def creature_status(creature):
+    return status(dict(creature,name='Cow',max_health=20))
+
+
+def creature_death():
+    return struct.pack('>BIII',0xaf,3,0,0)
+
+
 def merchant_mobile(vendor):
     payload=struct.pack('>IHHHbBHBB',MERCHANT,400,vendor['x'],vendor['y'],vendor['z'],3,0x83ea,0,1)
     for serial,graphic,layer in [(0x7e000001,0x170b,3),(0x7e000002,0x152e,4),(0x7e000003,0x1517,5)]:
@@ -194,7 +207,7 @@ def close_merchant():
 # never guessed, and large variable packets are never buffered by this slice.
 LENGTHS = {0x80: 62, 0xa0: 3, 0x91: 65, 0x5d: 73, 0x02: 3,
            0x22: 3, 0x34: 10, 0x73: 2, 0x09: 5, 0x06: 5, 0x72: 5,
-           0x07: 7, 0x08: 14, 0x13: 10, 0x6c: 19}
+           0x07: 7, 0x08: 14, 0x13: 10, 0x6c: 19, 0x05: 5}
 
 
 async def read_packet(reader, cipher):

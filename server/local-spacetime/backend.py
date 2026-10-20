@@ -24,7 +24,7 @@ ITEMS = {
     0x1b76: ('Heater shield',2), 0xf61: ('Longsword',1), 0xf43: ('Hatchet',2),
     0xe86: ('Pickaxe',1), 0x13e3: ("Smith's hammer",1),
     0x19b8: ('Iron ore',None), 0x1bf2: ('Iron ingots',None),
-    0x9d0: ('Apple',None), 0x1bdd: ('Logs',None), 0x1b7a: ('Wooden shield',2),
+    0x9f1: ('Raw ribs',None), 0x9d0: ('Apple',None), 0x1bdd: ('Logs',None), 0x1b7a: ('Wooden shield',2),
 }
 
 
@@ -132,6 +132,58 @@ class Backend:
         self.request(self.path + '/call/seed_mining_kit', b'[]')
         self.prepare_merchant()
         self.prepare_forge()
+        self.prepare_creature()
+
+    def creature(self):
+        rows=json.loads(self.request(self.path+'/sql',b'SELECT * FROM creature',content_type='text/plain'))[0]['rows']
+        return dict(zip(('serial','x','y','z','health','revision','life','next_strike','respawn_at'),rows[0])) if rows else None
+
+    def hunting_state(self):
+        return {table:sorted(json.loads(self.request(self.path+'/sql',('SELECT * FROM '+table).encode(),
+            content_type='text/plain'))[0]['rows']) for table in ('creature','hunting_event')}
+
+    def prepare_creature(self):
+        if self.creature() is not None:return
+        if self.navigation is None:raise BackendError('Creature placement requires assets.')
+        avatar=self.avatar();objects=self.world()[1];vendor=self.merchant()
+        reserved={(o['x'],o['y']) for o in objects}
+        if vendor:reserved.add((vendor['x'],vendor['y']))
+        start=self.navigation.query('settle',avatar,objects=objects)
+        if start is None:raise BackendError('No creature site.')
+        queue,seen=deque([start]),set()
+        for _ in range(400):
+            if not queue:break
+            p=queue.popleft();key=tuple(p[k] for k in ('x','y','z'))
+            if key in seen:continue
+            seen.add(key)
+            distance=max(abs(p['x']-avatar['x']),abs(p['y']-avatar['y']))
+            if distance==4 and (p['x'],p['y']) not in reserved and abs(p['z']-avatar['z'])<=16:
+                self.request(self.path+'/call/seed_creature',json.dumps(list(key)).encode());return
+            for direction in range(8):
+                target=self.navigation.query('step',p,direction,objects=objects)
+                if target and max(abs(target['x']-avatar['x']),abs(target['y']-avatar['y']))<=5:queue.append(target)
+        raise BackendError('No reachable creature site.')
+
+    def refresh_creature(self):
+        creature=self.creature()
+        if creature and creature['health']==0 and int(time.time()*1_000_000)>=creature['respawn_at']:
+            scene,objects=self.world();avatar=self.avatar()
+            occupied=any((o['x'],o['y'])==(creature['x'],creature['y']) for o in objects)
+            if not occupied and (avatar['x'],avatar['y'])!=(creature['x'],creature['y']):
+                if self.navigation and self.navigation.query('stand',creature,objects=objects)=={k:creature[k] for k in ('x','y','z')}:
+                    try:self.request(self.path+'/call/respawn_creature',json.dumps([scene,creature['revision']]).encode())
+                    except BackendError:pass # Never retry an uncertain write.
+                    creature=self.creature()
+        return creature
+
+    def strike_creature(self):
+        avatar=self.avatar();revision,_=self.inventory();scene,objects=self.world();creature=self.creature()
+        if creature is None or creature['health']==0:raise BackendError('Target is dead.')
+        if max(abs(avatar['x']-creature['x']),abs(avatar['y']-creature['y']))>1:raise BackendError('Move closer to strike.')
+        self.check_reach(creature,avatar,objects)
+        if int(time.time()*1_000_000)<creature['next_strike']:return None
+        self.request(self.path+'/call/strike_creature',json.dumps([avatar['revision'],revision,scene,creature['revision']]).encode())
+        return self.creature()
 
     def prepare_forge(self):
         scene,objects=self.world()

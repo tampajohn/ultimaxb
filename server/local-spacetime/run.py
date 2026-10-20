@@ -116,8 +116,30 @@ def serve(args, data):
                             '--port', str(db_port)], cwd=ROOT, check=True)
             if args.verify:
                 env = dict(os.environ, ULTIMA_SPACETIME_CONFIG=str(config), ULTIMA_CLIENT_ASSETS=args.client)
-                subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s',
-                                str(HERE / 'tests'), '-v'], env=env, cwd=ROOT, check=True, timeout=120)
+                env['PYTHONPATH']=str(HERE/'tests')+os.pathsep+env.get('PYTHONPATH','')
+                hunting_test='test_live.LiveTests.test_b_hunting_weapons_disconnect_death_and_loot'
+                subprocess.run([sys.executable,'-m','unittest','-v',hunting_test],env=env,cwd=ROOT,check=True,timeout=60)
+                dead=load_backend(config).hunting_state()
+                dead_inventory=load_backend(config).inventory()
+                if load_backend(config).creature()['health']!=0:
+                    raise RuntimeError('Hunting fixture must leave a dead creature')
+                stop(db);db=start_db()
+                if load_backend(config).hunting_state()!=dead or load_backend(config).inventory()!=dead_inventory:
+                    raise RuntimeError('Restart changed death, respawn deadline, cooldown, or loot')
+                print('PASS: death, cooldown, respawn deadline, and loot survive restart before respawn',flush=True)
+                # Resume the remaining suite without repeating the first kill.
+                remaining_tests = """import sys,unittest
+suite=unittest.defaultTestLoader.discover(sys.argv[1])
+def flatten(suite):
+    for test in suite:
+        if isinstance(test,unittest.TestSuite):yield from flatten(test)
+        else:yield test
+selected=unittest.TestSuite(t for t in flatten(suite) if t.id()!=sys.argv[2])
+result=unittest.TextTestRunner(verbosity=2).run(selected)
+sys.exit(not result.wasSuccessful())
+"""
+                subprocess.run([sys.executable,'-c',remaining_tests,str(HERE/'tests'),hunting_test],
+                               env=env,cwd=ROOT,check=True,timeout=180)
                 stage_smoke_near_forge(config,args.client)
                 before = load_backend(config).avatar()
                 world_before = load_backend(config).world()
@@ -127,8 +149,11 @@ def serve(args, data):
                 gathering_before = load_backend(config).gathering_state()
                 merchant_before = load_backend(config).merchant_state()
                 skills_before = load_backend(config).skill_state()
+                hunting_before = load_backend(config).hunting_state()
                 stop(db)
                 db = start_db()
+                if load_backend(config).hunting_state()!=hunting_before:
+                    raise RuntimeError('Database restart changed creature or hunting history')
                 if load_backend(config).skill_state() != skills_before:
                     raise RuntimeError('Database restart changed skills or gain history')
                 if load_backend(config).merchant_state() != merchant_before:
@@ -162,7 +187,9 @@ def serve(args, data):
                 vendor=load_backend(config).merchant()
                 fixture=data/'merchant-packets.bin'
                 fixture.write_bytes(wire.merchant_mobile(vendor)+wire.merchant_offers(vendor)+wire.merchant_sell_offers(
-                    dict(item=dict(serial=0x40000900,graphic=0x1bdd,amount=4))))
+                    dict(item=dict(serial=0x40000900,graphic=0x1bdd,amount=4)))+
+                    wire.creature_mobile(load_backend(config).creature())+b'\xaa\0\0\0\3'+
+                    wire.creature_status(load_backend(config).creature())+wire.creature_death())
                 subprocess.run([str(ROOT / 'build/spacetime-tools/client-smoke'), str(game_port), args.client,str(fixture)],
                                cwd=ROOT, check=True, timeout=30)
                 items = load_backend(config).inventory()[1]

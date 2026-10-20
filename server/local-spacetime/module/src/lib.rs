@@ -1,6 +1,7 @@
 use spacetimedb::{Identity, ReducerContext, Table};
 mod gathering;
 mod skills;
+mod hunting;
 mod merchant;
 
 // Private tables: only the publishing gateway identity can read or mutate them.
@@ -361,7 +362,7 @@ pub fn place_item(ctx: &ReducerContext, expected_inventory: u64, expected_avatar
         let mut target = ctx.db.inventory_item().serial().find(container).ok_or("unknown stack")?;
         check_source(ctx,&avatar,&target)?;
         if serial == target.serial || item.graphic != target.graphic ||
-            ![0xeed,0x9d0,0x1bdd,0x19b8,0x1bf2].contains(&item.graphic) { return Err("incompatible stack".into()); }
+            ![0xeed,0x9d0,0x9f1,0x1bdd,0x19b8,0x1bf2].contains(&item.graphic) { return Err("incompatible stack".into()); }
         target.amount = target.amount.checked_add(amount).ok_or("stack full")?;
         let target_container = target.container;
         let target_z = ctx.db.ground_location().serial().find(target.serial).map_or(0,|l| l.z);

@@ -247,12 +247,21 @@ struct ClientSmoke {
         if CommandLine.arguments.count > 3 {
             let bytes = try Data(contentsOf:URL(fileURLWithPath:CommandLine.arguments[3]))
             var framer=GamePacketFramer(), world=WorldState()
+            var combat=CombatTarget()
+            var sawCreatureHealth=false, sawDeath=false
             var contents:[ContainerItem]=[], offers:[VendorOffer]=[], saleOffers:[VendorOffer]=[]
             for packet in try framer.receive(bytes) {
                 switch packet[0] {
                 case 0x78,0x24,0x3c:
                     try world.apply(packet)
                     if packet[0]==0x3c { contents=try ContainerItem.decode(packet) }
+                case 0xaa: _ = try combat.apply(packet)
+                case 0x11:
+                    _ = try combat.apply(packet)
+                    sawCreatureHealth = combat.serial==3 && combat.status?.health==20
+                case 0xaf:
+                    guard try MobileDeath.decode(packet).serial==3 else { throw AssetError("Bad creature death") }
+                    _ = try combat.apply(packet);try world.apply(packet);sawDeath=true
                 case 0x74: offers=try VendorPackets.offers(packet,contents:contents)
                 case 0x9e: saleOffers=try VendorPackets.sellOffers(packet).offers
                 default: throw AssetError("Unexpected merchant packet")
@@ -262,6 +271,11 @@ struct ClientSmoke {
                   offers.count==1,offers[0].price==3,offers[0].item.graphic==0x9d0,
                   offers[0].item.amount==18 else { throw AssetError("Merchant stock or mobile decode failed") }
             let assets=try ClientAssets(directory:URL(fileURLWithPath:CommandLine.arguments[2]))
+            guard sawCreatureHealth,sawDeath,combat.serial==nil,
+                  try assets.animations?.frame(body:216,direction:3,action:2,frame:0) != nil,
+                  try CorpseArt.frame(body:216,direction:3,assets:assets) != nil else {
+                throw AssetError("Creature status, death, or original animation missing")
+            }
             let layers=try Paperdoll.layers(assets:assets,body:400,hue:0x83ea,owner:2,equipment:Array(world.equipment.values))
             guard layers.filter({$0.item != nil}).count==3 else { throw AssetError("Merchant clothes missing original art") }
             let buy=try VendorPackets.buy(vendor:2,offers:offers,quantities:[offers[0].item.serial:2])

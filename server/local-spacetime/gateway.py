@@ -42,6 +42,9 @@ class Gateway:
         pending_target = None
         pending_purchase = None
         pending_sale = None
+        war = False
+        attack_target = None
+        read_task = None
 
         async def inventory_updates():
             _, items = await asyncio.to_thread(self.backend.inventory)
@@ -70,8 +73,11 @@ class Gateway:
             vendor = await asyncio.to_thread(self.backend.merchant)
             if vendor and max(abs(vendor['x']-avatar['x']),abs(vendor['y']-avatar['y']))<=18:
                 nearby[vendor['serial']] = dict(vendor,mobile=True)
+            creature = await asyncio.to_thread(self.backend.refresh_creature)
+            if creature and creature['health'] and max(abs(creature['x']-avatar['x']),abs(creature['y']-avatar['y']))<=18:
+                nearby[3] = dict(creature,creature=True)
             changes = b''.join(wire.remove_item(serial) for serial in visible.keys() - nearby.keys())
-            changes += b''.join((wire.merchant_mobile(item) if item.get('mobile') else wire.ground_item(item)) for serial, item in nearby.items()
+            changes += b''.join((wire.creature_mobile(item) if item.get('creature') else wire.merchant_mobile(item) if item.get('mobile') else wire.ground_item(item)) for serial, item in nearby.items()
                                 if visible.get(serial) != item)
             visible.clear()
             visible.update(nearby)
@@ -118,7 +124,25 @@ class Gateway:
                             + await object_updates(avatar) + b'\x4f\0\x55', True)
             sequence = 0
             while True:
-                packet = await asyncio.wait_for(wire.read_packet(reader, cipher), 120)
+                if read_task is None:read_task=asyncio.create_task(wire.read_packet(reader,cipher))
+                done,_=await asyncio.wait({read_task},timeout=0.25 if attack_target else 120)
+                if not done:
+                    if not attack_target:raise TimeoutError('Idle session expired')
+                    if reader.at_eof() or writer.is_closing():break
+                    try:
+                        creature=await asyncio.to_thread(self.backend.strike_creature)
+                        if creature:
+                            data=wire.creature_status(creature)
+                            if creature['health']==0:
+                                attack_target=None
+                                data=wire.creature_death()+data+b'\xaa\0\0\0\0'
+                                data+=await inventory_updates()
+                            await self.send(writer,data,True)
+                    except BackendError as error:
+                        attack_target=None
+                        await self.send(writer,b'\xaa\0\0\0\0'+wire.system_message(str(error))+await inventory_updates(),True)
+                    continue
+                packet=read_task.result();read_task=None
                 opcode = packet[0]
                 if opcode == 0x02:
                     if packet[2] != sequence:
@@ -138,10 +162,13 @@ class Gateway:
                         sequence = 1 if sequence == 255 else sequence + 1
                 elif opcode == 0x22:
                     avatar = await asyncio.to_thread(self.backend.avatar)
-                    await self.send(writer, wire.position(avatar) + await object_updates(avatar), True)
+                    await self.send(writer, wire.position(avatar,war=war) + await object_updates(avatar), True)
                 elif opcode == 0x73:
                     await self.send(writer, packet, True)
                 elif opcode == 0x34:
+                    if struct.unpack_from('>I',packet,6)[0]==3 and 3 in visible and packet[5]==4:
+                        await self.send(writer,wire.creature_status(await asyncio.to_thread(self.backend.creature)),True)
+                        continue
                     if struct.unpack_from('>I', packet, 6)[0] != avatar['serial']:
                         continue
                     if packet[5] == 4:
@@ -207,6 +234,11 @@ class Gateway:
                     await self.send(writer,wire.close_merchant()+wire.system_message(message)+await inventory_updates(),True)
                 elif opcode in (0x09, 0x06):
                     serial = struct.unpack_from('>I', packet, 1)[0]
+                    if serial==3:
+                        if 3 in visible:
+                            await self.send(writer,wire.speech(dict(serial=3,graphic=216,name='Cow'),
+                                'Cow' if opcode==0x09 else 'Enter war mode and select this creature to hunt.'),True)
+                        continue
                     if serial==wire.MERCHANT:
                         if serial not in visible: continue
                         if opcode==0x09:
@@ -349,8 +381,20 @@ class Gateway:
                     # Read after an uncertain write too; never retry a transfer.
                     await self.send(writer,message + await inventory_updates(),True)
                 elif opcode == 0x72:
-                    # Combat isn't implemented; explicitly retain peace mode.
-                    await self.send(writer, b'\x72\0\0\x32\0', True)
+                    if packet[1] not in (0,1):raise wire.ProtocolError('invalid war mode')
+                    war=bool(packet[1])
+                    if not war:attack_target=None
+                    await self.send(writer,bytes([0x72,int(war),0x32,0,0]),True)
+                elif opcode == 0x05:
+                    target=struct.unpack_from('>I',packet,1)[0]
+                    if war and target==3 and 3 in visible:
+                        creature=await asyncio.to_thread(self.backend.creature)
+                        if creature and creature['health']:
+                            attack_target=3
+                            await self.send(writer,b'\xaa\0\0\0\3'+wire.creature_status(creature),True)
+                            continue
+                    attack_target=None
+                    await self.send(writer,b'\xaa\0\0\0\0',True)
                 else:
                     raise wire.ProtocolError(f'unexpected opcode 0x{opcode:02x}')
         except (asyncio.IncompleteReadError, ConnectionError):
@@ -358,6 +402,10 @@ class Gateway:
         except (wire.ProtocolError, BackendError, TimeoutError) as error:
             LOG.warning('%s', error)
         finally:
+            attack_target=None
+            if read_task is not None:
+                read_task.cancel()
+                await asyncio.gather(read_task,return_exceptions=True)
             if owns_session:
                 self.active = False
             self.connections -= 1
