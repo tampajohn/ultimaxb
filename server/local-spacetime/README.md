@@ -225,7 +225,7 @@ an existing database. Prefer `run.py --verify` for an isolated test world.
 | 2 — Mining, smithing, and progression (core loop and skill progression implemented) | Mine ore, smelt at a forge, craft or repair basic metal equipment. | Asset-validated ore/forge targets; explicit recipes and material costs; durable tool wear and skill progression; no skill/loot gains on rejected or replayed requests; original target/gump protocols. Decide era-faithful rules before expanding the recipe catalogue. |
 | 3 — A small inhabited adventure (merchant trading, hunting, cooking, and bounded combat implemented) | Trade with one vendor and fight one creature type near a safe starting area. | Finite vendor stock and money, atomic purchases/sales, deterministic attack cadence and range checks, damage/death/loot/recovery, NPC persistence, pause/resume rules for an empty world, no duplicate loot after reconnect. |
 | 4 — Shared local world (two-player loop implemented) | Two distinct players gather, trade, and fight together. | Persistent identity-bound ownership, per-account sessions, commit-triggered visibility, and contested item/resource tests. Secure LAN discovery and host selection remain planned; use database subscriptions before multiple gateways or scaling. |
-| 5 — World branches and reconciliation | Fork a checkpoint, explore independently, preview a merge, and create a new reconciled world. | Stable cross-world entity/event IDs, ancestry/checkpoints, explicit item creation/transfer/consumption history, three-way merge preview, conservation checks, deterministic conflict policies, provenance for overrides, reversible import into a new branch. Never merge solely by timestamps or local revision numbers. |
+| 5 — World branches and reconciliation (private checkpoints/forks and read-only preview implemented) | Fork a checkpoint, explore independently, and inspect a three-way conflict report; applying reconciliation remains planned. | Checked offline snapshots, branch ancestry, independent stores and ports, exact runtime compatibility, and restart/conservation tests. Later: stable cross-world entity/event IDs, transaction-complete creation/transfer/consumption history, resolution policies, and reconciled import. Never merge solely by timestamps or local revision numbers. |
 
 Phase 1 intentionally uses a small sandbox recipe (five logs → one wooden shield),
 not a claim of original-era crafting fidelity. The resource model is ten logs per
@@ -440,3 +440,20 @@ shared death/loot result, cooking, disconnect/reconnect, and database restart.
 Run `--verify` as well for the original gameplay regressions and real Swift client
 smoke/peer-packet decoding. See [MULTIPLAYER.md](MULTIPLAYER.md) for ownership,
 notification design, migration, and future LAN/hosting boundaries.
+
+## World checkpoints and forks
+
+Offline private checkpoints and independent local forks are implemented.
+See [BRANCHES.md](BRANCHES.md) for commands, the checkpoint format, ancestry,
+and the path toward merge previews and reconciled worlds. Checkpoints contain
+private account credentials and must remain local; public logical exports are a
+later phase. The current shared world need not be stopped to run the disposable
+acceptance suite: `python3 server/local-spacetime/run.py --verify-checkpoint`.
+
+Read-only [three-way merge previews](MERGE_PREVIEW.md) compare an explicit
+ancestor with two verified descendant checkpoints. They identify competing
+consumption, ownership/resource/merchant conflicts, repeated rewards, and new
+items with colliding local serials. The deterministic report excludes credentials
+and leaves every source unchanged. It does not apply a merge or prove
+conservation for a proposed merged world. Run `--verify-merge` for the disposable
+real-fork acceptance scenario.

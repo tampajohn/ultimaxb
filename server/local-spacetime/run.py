@@ -14,6 +14,7 @@ import time
 from urllib.request import urlopen
 from backend import load_backend, FORGE
 from navigation import Navigation
+from world_lock import runner_lock
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
@@ -72,6 +73,23 @@ def stage_smoke_near_forge(config, assets):
 
 def serve(args, data):
     data.mkdir(parents=True, exist_ok=True)
+    with runner_lock(data):
+        return serve_locked(args, data)
+
+
+def serve_locked(args, data):
+    if (data / '.fork-incomplete').exists():
+        raise RuntimeError('Incomplete fork; restore again into a new directory')
+    branch_path = data / 'branch.json'
+    pinned_fork = False
+    if branch_path.exists():
+        from checkpoint import read_json, validate_branch, digest
+        branch = validate_branch(read_json(branch_path))
+        pinned_fork = branch['parent'] is not None
+        if pinned_fork and branch.get('runtime_sha256') != digest(args.standalone):
+            raise RuntimeError('Fork requires its exact checkpoint runtime')
+        if pinned_fork and not (data / 'gateway.json').is_file():
+            raise RuntimeError('Incomplete fork: missing gateway configuration')
     private, public = data / 'jwt-private-pkcs8.pem', data / 'jwt-public.pem'
     if not private.exists() and not public.exists():
         subprocess.run(['openssl', 'genpkey', '-algorithm', 'EC', '-pkeyopt',
@@ -84,6 +102,10 @@ def serve(args, data):
     while args.verify and db_port == game_port:
         game_port = free_port()
     config = data / 'gateway.json'
+    if db_port == game_port:
+        raise RuntimeError('Database and game ports must differ')
+    if config.exists() and load_backend(config).endpoint != f'http://127.0.0.1:{db_port}':
+        raise RuntimeError('Saved endpoint differs; use the original --db-port')
     db_command = [args.standalone, 'start', '--listen-addr', f'127.0.0.1:{db_port}',
                   '--data-dir', str(data), '--jwt-pub-key-path', str(public),
                   '--jwt-priv-key-path', str(private), '--non-interactive']
@@ -110,10 +132,24 @@ def serve(args, data):
                 raise
         try:
             db = start_db()
-            if config.exists() and load_backend(config).endpoint != f'http://127.0.0.1:{db_port}':
-                raise RuntimeError('Saved endpoint differs; use the original --db-port')
-            subprocess.run([sys.executable, str(HERE / 'provision.py'), '--config', str(config),
-                            '--port', str(db_port)], cwd=ROOT, check=True)
+            if pinned_fork:
+                # The physical checkpoint carries the exact published module.
+                # Never replace it with whatever source happens to be built today.
+                load_backend(config).avatar()
+            else:
+                subprocess.run([sys.executable, str(HERE / 'provision.py'), '--config', str(config),
+                                '--port', str(db_port)], cwd=ROOT, check=True)
+            if getattr(args, 'verify_merge', False):
+                from accounts import ensure_local_accounts
+                navigation = Navigation(args.client)
+                try:
+                    backend = load_backend(config)
+                    backend.navigation = navigation
+                    backend.prepare()
+                    ensure_local_accounts(backend, config)
+                finally:
+                    navigation.close()
+                return
             if args.verify_shared:
                 env=dict(os.environ,ULTIMA_SPACETIME_CONFIG=str(config),ULTIMA_CLIENT_ASSETS=args.client)
                 env['PYTHONPATH']=str(HERE/'tests')+os.pathsep+env.get('PYTHONPATH','')
@@ -133,6 +169,9 @@ def serve(args, data):
                 stop(db);db=start_db()
                 if snapshot()!=before:raise RuntimeError('Shared world changed across restart')
                 print('PASS: both players and shared world state survive restart',flush=True)
+                if args.verify_checkpoint:
+                    from checkpoint_checks import snapshot as checkpoint_snapshot
+                    return checkpoint_snapshot(data)
                 return
             if args.verify:
                 env = dict(os.environ, ULTIMA_SPACETIME_CONFIG=str(config), ULTIMA_CLIENT_ASSETS=args.client)
@@ -262,14 +301,21 @@ sys.exit(not result.wasSuccessful())
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--verify-merge', action='store_true',
+                        help='exercise read-only three-way previews using real disposable forks')
+    parser.add_argument('--verify-checkpoint', action='store_true',
+                        help='populate a disposable shared world, fork it, and verify isolation/restarts')
     parser.add_argument('--verify-shared',action='store_true',help='test two-player gameplay in a fresh disposable world')
     parser.add_argument('--verify', action='store_true', help='test a disposable world, including DB restart')
     parser.add_argument('--port', type=int, default=2594)
     parser.add_argument('--db-port', type=int, default=3000)
+    parser.add_argument('--data-dir', type=Path, default=ROOT / 'build/spacetime-data',
+                        help='private world directory; forks require distinct DB and game ports')
     parser.add_argument('--client', default=str(ROOT / 'uo1998-client'), help='UO assets for server collision')
     parser.add_argument('--standalone', default=str(ROOT / 'build/spacetime-tools/spacetimedb-standalone'))
     args = parser.parse_args()
-    args.verify = args.verify or args.verify_shared
+    args.verify_shared = args.verify_shared or args.verify_checkpoint
+    args.verify = args.verify or args.verify_shared or args.verify_merge
     args.client = str(Path(args.client).resolve())
     if not Path(args.standalone).is_file():
         args.standalone = shutil.which('spacetimedb-standalone') or args.standalone
@@ -301,9 +347,17 @@ def main():
     if args.verify:
         subprocess.run([str(tools / 'navigation-checks'), args.client], check=True)
         with tempfile.TemporaryDirectory(prefix='spacetime-verify-', dir=ROOT / 'build') as temporary:
-            serve(args, Path(temporary))
+            if args.verify_checkpoint or args.verify_merge:
+                sys.path.insert(0, str(HERE / 'tests'))
+            expected = serve(args, Path(temporary))
+            if args.verify_checkpoint:
+                from checkpoint_checks import check
+                check(Path(temporary), args.standalone, expected, args.client)
+            if args.verify_merge:
+                from merge_checks import check
+                check(Path(temporary), args.standalone, args.client)
     else:
-        serve(args, ROOT / 'build/spacetime-data')
+        serve(args, args.data_dir.resolve())
 
 
 if __name__ == '__main__':

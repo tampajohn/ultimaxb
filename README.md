@@ -69,6 +69,14 @@ a nose helm. A persistent nearby forge also supports the client's smelting assis
 Mara the provisioner sells apples and buys logs through the classic vendor windows.
 Both players see shared-world changes while idle. Creatures retaliate; defeat preserves belongings, and saying `recover` in peace restores health after thirty seconds without damage. Vendor restocking, classic ghost death, LAN discovery, and world merging remain future work.
 
+Private offline checkpoints can fork the complete world into a separate local
+store with branch ancestry and independent ports. See the [checkpoint and branch
+guide](server/local-spacetime/BRANCHES.md). Checkpoints contain credentials and
+must stay local. A [read-only merge preview](server/local-spacetime/MERGE_PREVIEW.md)
+compares two descendants against their common checkpoint and reports conflicts
+without changing either world. Logical exports and applying reconciliation remain
+later phases.
+
 See the [server setup and gameplay guide](server/local-spacetime/README.md),
 [verification instructions](server/local-spacetime/README.md#verify), and
 [development phases](server/local-spacetime/README.md#development-phases).
