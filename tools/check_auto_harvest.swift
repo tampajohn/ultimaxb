@@ -229,6 +229,32 @@ import UOCore
         login.tickMovement(); login.attack(serial:9)
         precondition(!login.harvestingSessionActive,"Manual attack must not wait for a server combat-target response to stop harvesting")
         target(36); precondition(!login.targeting)
+        // First-use smelting opens unknown inventory and resumes only while owned.
+        for scenario in ["ready","cancelled","timeout"] {
+            let freshTransport=GameConnection()
+            let fresh=LoginOverlay(assets:assets,loginDefaults:defaults,connection:freshTransport)
+            fresh.harvestNow={now}
+            func packet(_ data:Data) { freshTransport.onEvent?(.gameData(data)) }
+            packet(entry+Data([0x55])); packet(status)
+            packet(Data([0x2E,0x40,0,0,2,0x0E,0x75,0,21,0,0,0,1,0,0]))
+            packet(Data([0x1A,0,14,0x40,0,0,9,0x0F,0xB1,0,11,0,10,0]))
+            var result=""
+            fresh.onHarvestStatus={result=$0}
+            precondition(fresh.startSmelting(forge:0x40000009))
+            precondition(fresh.harvestActive && result.contains("Opening"))
+            precondition(!fresh.startSmelting(forge:0x40000009),"Do not duplicate a pending backpack request")
+            if scenario == "cancelled" { fresh.stopHarvest() }
+            if scenario == "timeout" { now += 10.1; fresh.tickMovement() }
+            packet(Data([0x24,0x40,0,0,2,0,0x3C]))
+            packet(Data([0x3C,0,24,0,1,0x40,0,0,4,0x19,0xB7,0,0,14,0,0,0,0,0x40,0,0,2,0,0]))
+            fresh.tickMovement(); fresh.tickMovement()
+            if scenario == "ready" {
+                precondition(fresh.harvestActive && result.contains("Smelting ore"),"Known inventory automatically resumes smelting")
+            } else {
+                precondition(!fresh.harvestActive,"Late inventory cannot restart a cancelled or expired request")
+            }
+            fresh.stopHarvest()
+        }
         print("Harvest adapter confirms resources, advances depleted sites, cancels late cursors and stops for manual actions/danger")
     }
 }

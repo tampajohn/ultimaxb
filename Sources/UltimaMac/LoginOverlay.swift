@@ -307,9 +307,11 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         default: break
         }
     }
+    private var smeltInventoryWait:(forge:UInt32,bag:UInt32,deadline:TimeInterval)?
     private var smelt:SmeltWorkflow?
     private var smeltLastState:SmeltWorkflow.State?
     private var smeltActive:Bool {
+        if smeltInventoryWait != nil { return true }
         guard let smelt else { return false }
         switch smelt.state { case .ready,.working,.coolingDown: return true; default: return false }
     }
@@ -323,8 +325,11 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             onHarvestStatus?("Finish the current action and stand near a forge before smelting."); return false
         }
         guard harvestKnownContents.contains(bag.serial) else {
+            smelt=nil; smeltLastState=nil
+            smeltInventoryWait=(serial,bag.serial,harvestNow()+10)
             connection.send(InteractionPackets.use(serial:bag.serial))
-            onHarvestStatus?("Opening your backpack. Choose Smelt again once its contents arrive."); return false
+            Telemetry.shared.record("smelt_inventory_requested",["bag":bag.serial,"forge":serial])
+            onHarvestStatus?("Opening your backpack before smelting. Waiting for its contents."); return true
         }
         var flow=SmeltWorkflow()
         do { try flow.start(backpack:bag.serial,forge:forge,world:world) }
@@ -468,6 +473,11 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             onHarvestStatus?("Forge approach cancelled."); return
         }
         if smeltActive {
+            if smeltInventoryWait != nil {
+                smeltInventoryWait=nil
+                onHarvestStatus?("Smelting inventory request cancelled.")
+                Telemetry.shared.record("smelt_inventory_cancelled")
+            }
             if smelt?.state == .working { harvestRestartAfter=harvestNow()+10; harvestCursorUntil=harvestNow()+10 }
             smelt?.stop(); publishSmeltStatus(); cancelRoute(preservingHarvest:true); return
         }
@@ -575,6 +585,22 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         if player.isGhost || trade != nil || combatTarget.serial != nil ||
             world.mobiles.values.contains(where:{$0.serial != playerSerial && $0.isEnemy && max(abs($0.x-player.x),abs($0.y-player.y))<=6}) {
             stopHarvest(); onHarvestStatus?("Harvesting stopped: danger or another interaction nearby."); return
+        }
+        if let pending=smeltInventoryWait {
+            let ownsBag=world.equipment[pending.bag].map { $0.owner==playerSerial && $0.layer==21 } == true
+            guard ownsBag,harvestNow()<pending.deadline else {
+                stopHarvest()
+                onHarvestStatus?("Smelting stopped: backpack contents were not confirmed in time.")
+                Telemetry.shared.record("smelt_inventory_unavailable")
+                return
+            }
+            guard harvestKnownContents.contains(pending.bag) else { return }
+            smeltInventoryWait=nil
+            Telemetry.shared.record("smelt_inventory_ready",["bag":pending.bag])
+            if !startSmelting(forge:pending.forge),miningCircuit != nil {
+                endMiningCircuit("Could not begin smelting after opening the backpack.")
+            }
+            return
         }
         if let replacement=harvestReplacement {
             guard !harvestPauseRequested else { return }

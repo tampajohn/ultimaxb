@@ -59,7 +59,7 @@ mining and herding are additional requested UltimaXB workflows.
 - Metadata-only telemetry for workflow state, action type, target IDs, counts,
   timings and stop reasons. No speech text, credentials or private packet payloads.
 
-## Work-zone scheduler implemented, not yet connected to gameplay
+## Work-zone scheduler and live adapter
 
 `HarvestWorkflow` now schedules bounded tool attempts over caller-supplied work
 sites. Both targets and standing positions must lie within a selected rectangular
@@ -75,14 +75,18 @@ Stop is immediate and the adapter must cancel movement. Missing tool, overweight
 leaving the zone, refusal, timeout and disconnect stop execution. Stopped workflows
 cancel late cursors rather than targeting them. No automatic restart occurs.
 
-This is core scheduling only. Zone selection/overlays, owned-tool discovery/equip,
-resource-site discovery, enemy checks, server-result correlation, persistent UI
-controls and gameplay/telemetry adapters are still required before enabling it.
-The classic target protocol does not identify which tool produced a cursor: the
-adapter must isolate manual actions and stop on ambiguous/late responses. A test
-that supplies a correlated result does not establish live resource detection.
+The live adapter now connects zone selection/overlays, owned-tool discovery/equip,
+resource-site discovery, enemy checks, correlated inventory results, persistent
+controls and metadata-only telemetry. Mining can approach the selected zone,
+return to a remembered forge, combine compatible ore, smelt, then resume mining.
+Optional relocation finds fresh neighboring work zones. Local tests cover pause,
+manual interruption, spare-tool replacement and late responses. Live Minoc runs
+have confirmed resource gain, depletion, ore combination and forge round trips.
+The classic target protocol does not identify which tool produced a cursor;
+manual actions must remain isolated from automation. These results do not prove
+herding, crafting, ore hauling or end-to-end output banking.
 
-## Harvest outcome profile, pending live integration
+## Harvest outcome profile
 
 `HarvestOutcome` recognizes the local era `scripts.wombat/mining.m` and
 `bladed.m` system-message forms. It accepts only system speech (type 6, serial
@@ -98,13 +102,12 @@ scheduler retries those attempts after its cooldown, up to a configurable
 consecutive-empty limit (default five); success or moving to a depleted site's
 successor resets the count. Hitting the limit stops with `noProgress`.
 
-These profiles are reference-derived, not validated against live UO1998 text.
-Construct the observer only after the active target response, cancel it on manual
-interference, and isolate concurrent item transfers. Matching system text plus
-inventory changes is evidence, not a protocol transaction ID; unrelated resource
-changes can still be ambiguous. UI/live wiring and metadata-only lifecycle events
-remain unfinished. Ground yield recognition does not implement ground recovery
-or ore hauling.
+These profiles originated in the local reference; live UO1998 mining telemetry
+now confirms success, depletion and no-yield handling. The observer starts only
+after the active target response and is cancelled on manual interference.
+Matching system text plus inventory changes is evidence, not a protocol
+transaction ID; unrelated resource changes can still be ambiguous. Ground yield
+recognition does not implement ground recovery or ore hauling.
 
 ## Installed-map work-site discovery
 
@@ -203,13 +206,13 @@ disconnect, missing tool, overweight and timeout stop the attempt. Late target
 requests for a stopped attempt produce cancellation, never a target selection.
 Tests cover object-then-location targeting even when the server reuses its cursor ID.
 
-No live workflow is connected yet. The adapter must correlate result events and
-route only the owned target stream to this action; it must also handle target
-handoff after cancellation so unrelated manual actions are not consumed. Exact
-duplicate target requests stop the action; same-type cursor reuse across multiple
-phases needs additional protocol evidence. Repetition, pause/resume, zones, tool
-selection and visible controls are still required. Current manual tools are
-foundations, not evidence of automation parity.
+Mining and lumberjacking now use the live action adapter with owned cursor
+routing, repetition, pause/resume, zones, tool selection and visible controls.
+Late cursors after cancellation are cancelled during a bounded handoff window.
+Exact duplicate target requests stop the action; same-type cursor reuse across
+multiple phases still needs protocol evidence. General editable macros, herding
+and crafting orchestration remain outstanding; the mining implementation is not
+evidence of full automation parity.
 
 Ore hauling now has a locally tested single-stack state machine: confirmed drop at
 the current tile, one acknowledged route step, confirmed pickup, then repeat.
