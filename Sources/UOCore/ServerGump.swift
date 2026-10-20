@@ -71,6 +71,7 @@ public struct ServerGump: Equatable {
     public func validatedResponse(button: UInt32, switches: [UInt32], entries: [(UInt16,String)]) throws -> Data {
         var buttons: Set<UInt32> = [], allowedSwitches: Set<UInt32> = [], fields: Set<UInt16> = []
         var group = 0, radioGroups: [UInt32:Int] = [:]
+        var limits:[UInt16:Int] = [:]
         for command in commands {
             let a = command.arguments.compactMap(Int.init)
             guard a.count == command.arguments.count else { continue }
@@ -84,18 +85,35 @@ public struct ServerGump: Equatable {
                     allowedSwitches.insert(id)
                     if command.name == "radio" { radioGroups[id] = group }
                 }
-            case "textentry":
-                if a.count >= 7, let id = UInt16(exactly:a[5]) { fields.insert(id) }
+            case "textentry", "textentrylimited":
+                let limited=command.name == "textentrylimited"
+                if a.count >= (limited ? 8:7), let id = UInt16(exactly:a[5]),
+                   texts.indices.contains(a[6]), !limited || (0...65535).contains(a[7]) {
+                    fields.insert(id)
+                    if limited,a[7]>0 { limits[id]=a[7] }
+                }
             default: break
             }
         }
         let cancel = button == 0 && !commands.contains { $0.name == "noclose" }
         let selectedGroups = switches.compactMap { radioGroups[$0] }
         guard (cancel || buttons.contains(button)), Set(switches).isSubset(of:allowedSwitches),
-              Set(entries.map { $0.0 }) == fields, Set(selectedGroups).count == selectedGroups.count else {
+              Set(entries.map { $0.0 }) == fields, Set(selectedGroups).count == selectedGroups.count,
+              entries.allSatisfy({ $0.1.utf16.count <= (limits[$0.0] ?? 65535) }) else {
             throw LoginProtocolError.malformedPacket
         }
         return try response(button:button,switches:switches,entries:entries)
+    }
+
+    /// Length limits are UTF-16 wire units; never cut a surrogate pair.
+    public static func limitedText(_ text:String,units:Int)->String {
+        var result="",remaining=max(0,units)
+        for scalar in text.unicodeScalars {
+            let count=scalar.value>0xFFFF ? 2:1
+            guard count<=remaining else { break }
+            result.unicodeScalars.append(scalar); remaining -= count
+        }
+        return result
     }
 
     /// Explicit user reply; counts and lengths are checked before encoding.

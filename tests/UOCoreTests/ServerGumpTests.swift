@@ -43,4 +43,25 @@ final class ServerGumpTests: XCTestCase {
         XCTAssertThrowsError(try gump.response(button:1,switches:[],entries:[(1,"a"),(1,"b")]))
         XCTAssertThrowsError(try gump.response(button:1,switches:[],entries:[(1,String(repeating:"x",count:32768))]))
     }
+    func testLimitedEntriesValidateUTF16AndAdvertisedFields() throws {
+        let gump=ServerGump(serial:1,id:2,x:0,y:0,commands:try ServerGump.parseLayout("{ textentrylimited 0 0 100 20 0 4 0 3 }{ button 0 30 1 2 1 0 7 }"),texts:[""])
+        XCTAssertNoThrow(try gump.validatedResponse(button:7,switches:[],entries:[(4,"A😀")]))
+        XCTAssertThrowsError(try gump.validatedResponse(button:7,switches:[],entries:[(4,"AB😀")]))
+        XCTAssertThrowsError(try gump.validatedResponse(button:7,switches:[],entries:[]))
+        XCTAssertThrowsError(try gump.validatedResponse(button:7,switches:[],entries:[(5,"A")]))
+    }
+    func testZeroLimitMatchesUnlimitedReferenceAndInvalidLimitIsIgnored() throws {
+        for limit in [0,-1,65536] {
+            let gump=ServerGump(serial:1,id:2,x:0,y:0,commands:try ServerGump.parseLayout("{ textentrylimited 0 0 100 20 0 4 0 \(limit) }"),texts:[""])
+            if limit==0 { XCTAssertNoThrow(try gump.validatedResponse(button:0,switches:[],entries:[(4,"Longer text")])) }
+            else { XCTAssertThrowsError(try gump.validatedResponse(button:0,switches:[],entries:[(4,"")])) }
+        }
+    }
+    func testLimitedTextPreservesSurrogatePairs() {
+        XCTAssertEqual(ServerGump.limitedText("A😀BC",units:3),"A😀")
+        XCTAssertEqual(ServerGump.limitedText("A😀BC",units:2),"A")
+        XCTAssertEqual(ServerGump.limitedText("😀",units:1),"")
+        XCTAssertEqual(ServerGump.limitedText("Hello",units:0),"")
+    }
+
 }

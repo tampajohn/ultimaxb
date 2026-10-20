@@ -2,12 +2,13 @@ import AppKit
 import UOCore
 
 /// A classic server layout, rendered locally without executing markup.
-@MainActor final class ServerGumpPanel: NSView {
+@MainActor final class ServerGumpPanel: NSView, NSTextFieldDelegate {
     let definition: ServerGump
     private let assets: ClientAssets
     private var pages: [(NSView, Int)] = []
     private var choices: [(NSButton, UInt32, Int?)] = []
     private var entries: [(NSTextField, UInt16)] = []
+    private var entryLimits:[ObjectIdentifier:Int] = [:]
     private var replies: [Int: (Int, UInt32)] = [:]
     private var drag: NSPoint?
     private var movable = true, closable = true
@@ -110,9 +111,16 @@ import UOCore
                 button.image = image(a[2]); button.alternateImage = image(a[3]); button.state = a[4] == 0 ? .off : .on
                 button.frame = rect(a[0],a[1],Int(button.image?.size.width ?? 24),Int(button.image?.size.height ?? 24))
                 choices.append((button,UInt32(a[5]),command.name == "radio" ? group : nil)); add(button)
-            case "textentry":
-                guard valid(7), (0...65535).contains(a[5]), definition.texts.indices.contains(a[6]) else { continue }
+            case "textentry", "textentrylimited":
+                let limited=command.name == "textentrylimited"
+                guard valid(limited ? 8:7), (0...65535).contains(a[5]), definition.texts.indices.contains(a[6]),
+                      !limited || (0...65535).contains(a[7]) else { continue }
                 let field = ClassicEntry(string:definition.texts[a[6]])
+                if limited,a[7]>0 {
+                    entryLimits[ObjectIdentifier(field)]=a[7]
+                    field.stringValue=ServerGump.limitedText(field.stringValue,units:a[7])
+                    field.delegate=self
+                }
                 field.font = ClassicNativeFont.uiFont
                 field.frame = rect(a[0],a[1],a[2],a[3]); field.isBordered = false; field.drawsBackground = false
                 field.textColor = textColor(a[4],increment:false); entries.append((field,UInt16(a[5]))); add(field)
@@ -156,9 +164,25 @@ import UOCore
         guard let choice = choices.first(where: { $0.0 === button }), let group = choice.2 else { return }
         for (other,_,g) in choices where g == group { other.state = other === button ? .on : .off }
     }
+    func controlTextDidChange(_ notification:Notification) {
+        guard let field=notification.object as? NSTextField,let limit=entryLimits[ObjectIdentifier(field)] else { return }
+        let editor=field.currentEditor() as? NSTextView
+        guard editor?.hasMarkedText() != true else { return }
+        let text=ServerGump.limitedText(field.stringValue,units:limit)
+        guard text != field.stringValue else { return }
+        let selection=editor?.selectedRange()
+        field.stringValue=text
+        if let editor {
+            editor.string=text
+            editor.setSelectedRange(NSRange(location:min(selection?.location ?? text.utf16.count,text.utf16.count),length:0))
+        }
+    }
     private func reply(_ id:UInt32) {
         window?.makeFirstResponder(self)
-        onReply?(id,choices.filter { $0.0.state == .on }.map { $0.1 },entries.map { ($0.1,$0.0.stringValue) })
+        onReply?(id,choices.filter { $0.0.state == .on }.map { $0.1 },entries.map { field,id in
+            let text=entryLimits[ObjectIdentifier(field)].map { limit in ServerGump.limitedText(field.stringValue,units:limit) } ?? field.stringValue
+            return (id,text)
+        })
     }
     override func rightMouseDown(with event:NSEvent) { if closable { reply(0) } }
     override func mouseDown(with event:NSEvent) { if movable { drag = event.locationInWindow } }

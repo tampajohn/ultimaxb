@@ -4,12 +4,12 @@ import UOCore
  @MainActor static func main() throws {
   _ = NSApplication.shared
   let assets = try ClientAssets(directory:URL(fileURLWithPath:"uo1998-client"))
-  let layout = "{ page 0 }{ resizepic 0 0 2600 600 240 }{ text 24 20 0 0 }{ tilepic 300 50 3907 }{ tilepichue 300 100 3907 33 }{ htmlgump 360 25 215 190 4 1 1 }{ page 1 }{ checkbox 24 60 210 211 0 9 }{ text 55 60 0 1 }{ textentry 24 100 270 25 0 4 2 }{ button 24 150 2225 2226 0 2 0 }{ page 2 }{ text 24 60 0 3 }{ button 24 100 2225 2226 1 0 7 }"
+  let layout = "{ page 0 }{ resizepic 0 0 2600 600 240 }{ text 24 20 0 0 }{ tilepic 300 50 3907 }{ tilepichue 300 100 3907 33 }{ htmlgump 360 25 215 190 4 1 1 }{ page 1 }{ checkbox 24 60 210 211 0 9 }{ text 55 60 0 1 }{ textentry 24 100 270 25 0 4 2 }{ textentrylimited 24 190 270 25 0 5 5 3 }{ button 24 150 2225 2226 0 2 0 }{ page 2 }{ text 24 60 0 3 }{ button 24 100 2225 2226 1 0 7 }"
   var bytes:[UInt8] = [0xB0,0,0]
   bytes += [0,0,0,1,0,0,0,42,0,0,0,0,0,0,0,0]
   let encoded = Array(layout.utf8)
   bytes += [UInt8(encoded.count >> 8),UInt8(encoded.count & 255)] + encoded
-  let texts = ["Server dialog", "Remember this choice", "Editable text", "Submit your selection", "<center><b>Crafting</b></center><basefont color=#882200>Choose a recipe.</basefont><br>Iron &amp; tools<br><i>Materials stay in your bag.</i><br>" + String(repeating:"More information.<br>",count:12)]
+  let texts = ["Server dialog", "Remember this choice", "Editable text", "Submit your selection", "<center><b>Crafting</b></center><basefont color=#882200>Choose a recipe.</basefont><br>Iron &amp; tools<br><i>Materials stay in your bag.</i><br>" + String(repeating:"More information.<br>",count:12), "A😀extra"]
   bytes += [0,UInt8(texts.count)]
   for text in texts {
    let units = Array(text.utf16); bytes += [UInt8(units.count >> 8),UInt8(units.count & 255)]
@@ -44,7 +44,7 @@ import UOCore
   precondition(samples.count>1,"The texture check must cover actual pattern detail")
   var replies = 0
   panel.onReply = { button,switches,entries in
-   precondition(button == 7 && switches == [9] && entries.count == 1 && entries[0].0 == 4 && entries[0].1 == "Updated 😀")
+   precondition(button == 7 && switches == [9] && entries.count == 2 && entries[0].0 == 4 && entries[0].1 == "Updated 😀" && entries[1].0 == 5 && entries[1].1 == "AB")
    replies += 1
   }
   let buttons = panel.subviews.compactMap { $0 as? NSButton }
@@ -53,6 +53,11 @@ import UOCore
   let field = panel.subviews.compactMap { $0 as? NSTextField }.first { $0.isEditable }!
   precondition(field.font?.fontName == ClassicNativeFont.uiFont.fontName)
   field.stringValue = "Updated 😀"
+  let limited=panel.subviews.compactMap { $0 as? NSTextField }.filter { $0.isEditable }[1]
+  precondition(limited.stringValue == "A😀")
+  limited.stringValue="AB😀"
+  panel.controlTextDidChange(Notification(name:NSText.didChangeNotification,object:limited))
+  precondition(limited.stringValue == "AB","Editing must respect UTF-16 limit without splitting the emoji")
   buttons[1].performClick(nil)
   precondition(replies == 0 && buttons[1].isHidden && !buttons[2].isHidden)
   buttons[2].performClick(nil)
