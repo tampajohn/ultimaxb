@@ -3,6 +3,24 @@ import XCTest
 @testable import UOCore
 
 final class EquipmentMovementTests: XCTestCase {
+    func testMountedCadenceKeepsSingleTilePredictionAndQueueLimit() throws {
+        for running in [false,true] {
+            var movement = PlayerMovement()
+            let direction:UInt8 = running ? 0x82 : 2
+            var player = WorldMobile(serial:1,body:400,x:100,y:100,z:0,direction:direction)
+            let interval = running ? 0.1 : 0.2
+            for n in 0..<5 {
+                let time = Double(n)*interval+0.00001*Double(n)
+                XCTAssertNotNil(movement.request(direction:direction,player:player,at:time,mounted:true))
+                player = try XCTUnwrap(movement.predictedPosition)
+                XCTAssertEqual(player.x,101+n)
+                XCTAssertNil(movement.request(direction:direction,player:player,at:time+interval/2,mounted:true))
+            }
+            XCTAssertNil(movement.request(direction:direction,player:player,at:10,mounted:true))
+            _ = try movement.receive(Data([0x22,0,1]),player:player)
+            XCTAssertNotNil(movement.request(direction:direction,player:player,at:10,mounted:true))
+        }
+    }
     func testMovementAcknowledgementsPreserveNewServerAppearance() throws {
         for flags: UInt8 in [0, 0x80, 0x40, 0x04] {
             var movement = PlayerMovement()

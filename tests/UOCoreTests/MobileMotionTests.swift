@@ -5,6 +5,14 @@ final class MobileMotionTests: XCTestCase {
     private func cat(_ x: Int, _ y: Int = 20, z: Int = 0, direction: UInt8 = 2) -> WorldMobile {
         WorldMobile(serial: 1, body: 201, x: x, y: y, z: z, direction: direction)
     }
+    func testMountedPlayerPaceAndDismountReset() throws {
+        var motion = MobileMotion()
+        motion.update([cat(10,direction:0x82)],at:0,playerSerial:1,mountedSerials:[1])
+        motion.update([cat(11,direction:0x82)],at:1,playerSerial:1,mountedSerials:[1])
+        XCTAssertEqual(motion.presentations(at:1.05)[1]!.x,10.5,accuracy:0.00001)
+        motion.update([cat(12,direction:0x82)],at:1.1,playerSerial:1)
+        XCTAssertEqual(motion.presentations(at:1.2)[1]!.x,11.5,accuracy:0.00001)
+    }
     func testMovementInterpolatesAndStopsAtExactServerPosition() throws {
         var motion = MobileMotion()
         motion.update([cat(10)], at: 0)

@@ -15,6 +15,16 @@ final class MobileAnimationTests: XCTestCase {
             XCTAssertEqual(MobileAnimation.action(body:body,war:true,walking:false,running:false,serverAction:11),11)
         }
     }
+    func testMountedGroupsIgnoreWarAndHandsButPreserveServerActions() {
+        for body in [400,401] {
+            for war in [false,true] {
+                XCTAssertEqual(MobileAnimation.action(body:body,war:war,walking:false,running:false,mounted:true),25)
+                XCTAssertEqual(MobileAnimation.action(body:body,war:war,walking:true,running:false,mounted:true,secondHandAnimation:0x263),23)
+                XCTAssertEqual(MobileAnimation.action(body:body,war:war,walking:true,running:true,mounted:true),24)
+                XCTAssertEqual(MobileAnimation.action(body:body,war:war,walking:false,running:false,mounted:true,serverAction:26),26)
+            }
+        }
+    }
     func testAnimalAndMonsterGroupsUnchanged() {
         XCTAssertEqual(MobileAnimation.action(body:5,war:true,walking:false,running:false),1)
         XCTAssertEqual(MobileAnimation.action(body:200,war:true,walking:false,running:false),2)

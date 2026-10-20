@@ -5,12 +5,13 @@ import Foundation
 public enum MobileAnimation {
     private static let twoHandedStances: Set<Int> = [0x263,0x264,0x265,0x266,0x267,0x268,0x269,0x26D,0x270,0x272,0x274,0x27A,0x27C,0x27F,0x281,0x286,0x288,0x289,0x28B]
     public static func action(body:Int, war:Bool, walking:Bool, running:Bool,
-                              firstHand:Bool = false, secondHandAnimation:Int? = nil,
+                              mounted:Bool = false, firstHand:Bool = false, secondHandAnimation:Int? = nil,
                               serverAction:Int? = nil) -> Int {
         if let serverAction { return serverAction }
         guard body == 400 || body == 401 else {
             return walking ? (running && body >= 200 ? (body >= 400 ? 2 : 1) : 0) : (body < 200 ? 1 : (body < 400 ? 2 : 4))
         }
+        if mounted { return walking ? (running ? 24 : 23) : 25 }
         if walking {
             if war && !running { return 15 }
             return running ? (secondHandAnimation == nil ? 2 : 3) : (secondHandAnimation == nil ? 0 : 1)
@@ -23,7 +24,7 @@ public enum MobileAnimation {
         let second = held.first { $0.layer == 2 }
         let animation = try second.flatMap { try assets.equipmentAnimation(graphic:$0.graphic) }
         return action(body:mobile.body,war:mobile.flags & 0x40 != 0,walking:pose?.walking == true,
-                      running:mobile.direction & 0x80 != 0,firstHand:held.contains { $0.layer == 1 },
+                      running:mobile.direction & 0x80 != 0,mounted:held.contains { $0.layer == 25 },firstHand:held.contains { $0.layer == 1 },
                       secondHandAnimation:animation,serverAction:pose?.action)
     }
 }

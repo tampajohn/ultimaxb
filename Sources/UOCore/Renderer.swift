@@ -137,9 +137,9 @@ public enum WorldRenderer {
                 let mobileAction = try MobileAnimation.action(for:mobile,pose:presentation,equipment:equipment,assets:assets)
                 let outlined = outlinedMobiles.contains(mobile.serial)
                 var silhouette = Set<Int>()
-                func drawAnimation(_ body: Int, hue: Int, art: Int? = nil) throws {
+                func drawAnimation(_ body: Int, hue: Int, art: Int? = nil, action: Int? = nil) throws {
                     guard let frame = try assets.animations?.frame(body: body, direction: mobile.direction,
-                        action: mobileAction, frame: presentation?.frame ?? 0) else {
+                        action: action ?? mobileAction, frame: presentation?.frame ?? 0) else {
                         missing.insert(-body - 1); return
                     }
                     let sprite = frame.sprite
@@ -164,6 +164,15 @@ public enum WorldRenderer {
                             pixels[dest] = color.0; pixels[dest + 1] = color.1; pixels[dest + 2] = color.2
                         }
                     }
+                }
+                if (mobile.body == 400 || mobile.body == 401),
+                   let mount = equipment.first(where: { $0.owner == mobile.serial && $0.layer == 25 }),
+                   let body = try assets.equipmentAnimation(graphic:mount.graphic) {
+                    // Original-era tiledata uses dedicated human-layout mount groups.
+                    // Later animal-layout entries use their own walk/run/stand groups.
+                    let action = body >= 400 ? mobileAction : MobileAnimation.action(body:body,war:false,
+                        walking:presentation?.walking == true,running:mobile.direction & 0x80 != 0)
+                    try drawAnimation(body,hue:mount.hue,action:action)
                 }
                 try drawAnimation(mobile.body, hue: mobile.hue)
                 if mobile.body == 400 || mobile.body == 401 {

@@ -153,7 +153,7 @@ experimental and is not at parity yet.
   version-specific packet support; current appearance UI is not an exact clone.
 - More reliable global path planning, dynamic obstacles and elevation/occlusion
   edge cases. Large barriers can stop segmented routes.
-- Full equipment coverage, mounts, broader death-animation coverage and spell effects.
+- Full equipment coverage, live mount/action validation, broader death-animation coverage and spell effects.
 - Live verification of ghost routes through doors and passable objects.
 - Complete combat, spell, skill, crafting, healer and housing workflows.
 - Live two-party secure-trade validation, live text-prompt validation and remaining
@@ -1238,3 +1238,10 @@ Validation: release build passed; `tools/check_login_flow.swift` injects offline
 - The timing model uses CrossUO's per-frame factors at its nominal 30 ms cadence, converted to elapsed time. Fades expire after delayed rendering, newer requests replace older ones, and disconnect removes the overlay. No world state, input focus or pointer target is changed. This is a nominal reference-timing implementation, not a claim of measured original-client timing on all frame rates.
 - The reference is local `build/crossuo/src/Managers/ScreenEffectManager.cpp` (MIT; `LICENSES/CrossUO-MIT.txt`). Particle-specific C7 rendering and live spell/fade comparisons remain unfinished.
 - Three core timing tests and all 23 offline UI fixtures pass in both runs. Coverage includes protocol dispatch, style clamping, ordinary effect separation, opaque white rendering over the world, replacement timing, resize, pointer pass-through and explicit cancellation. The running client was preserved; live server fade validation is pending.
+
+
+### Original mounted riders and interaction (2026-10-20)
+- Layer-25 equipment now supplies the mount animation from installed tiledata. The selected 1.25.32 assets contain dedicated human-layout mount groups (for example 0x3E9F maps to body 820), rendered behind the rider. Human riders and clothing select mounted stand/walk/run groups 25/23/24; explicit server actions retain priority. Animal-layout mount entries use their own locomotion groups. Mount hue and hidden-mobile tint follow existing appearance handling.
+- Mobile hit testing includes mounted and worn sprites, so horse-only pixels select the rider. Peace-mode creature double-clicks now issue the existing use request; war-mode clicks on another mobile retain attack, while self-use can request dismount. Mount ownership/eligibility and all actual equipment changes remain server-authoritative.
+- Mounted movement uses the classic 200 ms walk / 100 ms run cadence from local CrossUO Constants.h, retaining one tile per request, the five-request queue and authoritative reconciliation. Presentation timing resets its cadence estimate on mount changes rather than inheriting an on-foot duration.
+- Twenty-one focused animation/movement tests and all 24 offline UI fixtures pass. Installed-art checks cover male/female clothed riders, standing/walking/running and all eight facings, plus selection through horse-only pixels. The mounted preview was visually inspected. Live mounting/dismounting, mounted combat and broader mount variants remain unverified; the running client was preserved.

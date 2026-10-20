@@ -28,16 +28,28 @@ public enum WorldHitTest {
         for entry in sorted.reversed() {
             let mobile = mobiles[entry.originalIndex], pose = presentations[mobiles[entry.originalIndex].serial]
             let action = try MobileAnimation.action(for:mobile,pose:pose,equipment:equipment,assets:assets)
-            guard let frame = try assets.animations?.frame(body: mobile.body, direction: mobile.direction, action: action, frame: pose?.frame ?? 0) else { continue }
+            var layers:[(Int,Int)] = [(mobile.body,action)]
+            if mobile.body == 400 || mobile.body == 401 {
+                for item in equipment where item.owner == mobile.serial {
+                    guard item.layer == 25 || EquipmentOrder.sorted([item],direction:mobile.direction).count == 1,
+                          let body = try assets.equipmentAnimation(graphic:item.graphic) else { continue }
+                    let group = item.layer == 25 && body < 400
+                        ? MobileAnimation.action(body:body,war:false,walking:pose?.walking == true,running:mobile.direction & 0x80 != 0) : action
+                    layers.append((body,group))
+                }
+            }
             let px = pose?.x ?? Double(mobile.x), py = pose?.y ?? Double(mobile.y), pz = pose?.z ?? Double(mobile.z)
             let ax = (Double(width / 2) + ((px-camera.x)-(py-camera.y))*22).rounded()
             let ay = (Double(height / 2) + ((px-camera.x)+(py-camera.y))*22-pz*4).rounded()
-            let sprite = frame.sprite
-            let sx = ax - Double(frame.mirrored ? sprite.width - frame.centerX : frame.centerX)
-            let sy = ay + 22 - Double(sprite.height + frame.centerY)
-            let x = Int(floor(screenX-sx)), y = Int(floor(screenY-sy))
-            if x >= 0, y >= 0, x < sprite.width, y < sprite.height,
-               sprite.rgba[(y*sprite.width + (frame.mirrored ? sprite.width-1-x : x))*4+3] != 0 { return mobile }
+            for (body,group) in layers {
+                guard let frame = try assets.animations?.frame(body:body,direction:mobile.direction,action:group,frame:pose?.frame ?? 0) else { continue }
+                let sprite = frame.sprite
+                let sx = ax - Double(frame.mirrored ? sprite.width - frame.centerX : frame.centerX)
+                let sy = ay + 22 - Double(sprite.height + frame.centerY)
+                let x = Int(floor(screenX-sx)), y = Int(floor(screenY-sy))
+                if x >= 0, y >= 0, x < sprite.width, y < sprite.height,
+                   sprite.rgba[(y*sprite.width + (frame.mirrored ? sprite.width-1-x : x))*4+3] != 0 { return mobile }
+            }
         }
         return nil
     }

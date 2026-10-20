@@ -1318,7 +1318,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         let delta = [(0,-1),(1,-1),(1,0),(1,1),(0,1),(-1,1),(-1,0),(-1,-1)][Int(direction & 7)]
         let z = routeStep?.z ?? predictedElevation?(player.x + delta.0, player.y + delta.1, player.z)
         guard let packet = movement.request(direction: direction, player: player,
-            at: ProcessInfo.processInfo.systemUptime, predictedZ: z), let predicted = movement.predictedPosition else { return }
+            at: ProcessInfo.processInfo.systemUptime, predictedZ: z,
+            mounted: world.equipment.values.contains { $0.owner == serial && $0.layer == 25 }), let predicted = movement.predictedPosition else { return }
         Telemetry.shared.record("move_request", ["direction": packet[1], "sequence": packet[2],
             "x": player.x, "y": player.y, "z": player.z, "predicted_x": predicted.x,
             "predicted_y": predicted.y, "predicted_z": predicted.z, "pending": movement.pendingCount])

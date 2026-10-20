@@ -5,6 +5,9 @@ public struct MobilePresentation: Equatable {
     public let walking: Bool
     public let frame: Int
     public var action: Int? = nil
+    public init(x: Double, y: Double, z: Double, walking: Bool, frame: Int, action: Int? = nil) {
+        self.x=x; self.y=y; self.z=z; self.walking=walking; self.frame=frame; self.action=action
+    }
 }
 
 /// Visual interpolation only. Authoritative world positions are never changed.
@@ -18,6 +21,7 @@ public struct MobileMotion {
         var animationStarted: Double
         var grace: Double = 0
         var running: Bool = false
+        var mounted: Bool = false
     }
     private struct ActionTrack {
         let command: MobileAction
@@ -39,7 +43,7 @@ public struct MobileMotion {
     }
     private var tracks: [UInt32: Track] = [:]
     public init() {}
-    public mutating func update(_ mobiles: [WorldMobile], at time: Double, playerSerial: UInt32? = nil) {
+    public mutating func update(_ mobiles: [WorldMobile], at time: Double, playerSerial: UInt32? = nil, mountedSerials: Set<UInt32> = []) {
         let serials = Set(mobiles.map(\.serial))
         actions = actions.filter { serials.contains($0.key) && $0.value.frame(at:time) != nil }
         tracks = tracks.filter { serials.contains($0.key) }
@@ -59,20 +63,21 @@ public struct MobileMotion {
             let distance = max(abs(mobile.x - old.target.x), abs(mobile.y - old.target.y))
             let teleport = distance > 2 || abs(mobile.z - old.target.z) > 20
             let player = mobile.serial == playerSerial
-            let baseDuration = (mobile.direction & 0x80 != 0 ? 0.1 : 0.2) * (player ? 2 : 1)
+            let mounted = mountedSerials.contains(mobile.serial)
+            let baseDuration = (mobile.direction & 0x80 != 0 ? 0.1 : 0.2) * (player ? 2 : 1) * (mounted ? 0.5 : 1)
             let interval = time - old.started
             // A pace change starts a new cadence estimate. Keep the rendered
             // position and animation phase, but never average walking delay into
             // running. Track the moving segment's pace separately from facing-
             // only snapshots, which can replace old.target before the next step.
             let running = mobile.direction & 0x80 != 0
-            let duration = player && old.running == running && old.duration > 0 && interval >= 0.08 && interval <= 0.65
+            let duration = player && old.running == running && old.mounted == mounted && old.duration > 0 && interval >= 0.08 && interval <= 0.65
                 ? max(baseDuration, min(baseDuration + 0.1, old.duration * 0.65 + interval * 0.35)) : baseDuration
             tracks[mobile.serial] = Track(from: teleport ? Self.stationary(mobile) : current,
                                           target: mobile, started: time,
                                           duration: teleport ? 0 : duration,
                                           animationStarted: current.walking ? old.animationStarted : time,
-                                          grace: player && !teleport ? 0.12 : 0, running: running)
+                                          grace: player && !teleport ? 0.12 : 0, running: running, mounted:mounted)
         }
     }
     public func presentations(at time: Double) -> [UInt32: MobilePresentation] {

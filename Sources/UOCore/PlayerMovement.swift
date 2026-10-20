@@ -33,7 +33,7 @@ public struct PlayerMovement {
     private var syncAttempts=0
     public private(set) var positionSyncTimedOut=false
     public init() {}
-    public mutating func request(direction: UInt8, player: WorldMobile, at time: TimeInterval, predictedZ: Int? = nil) -> Data? {
+    public mutating func request(direction: UInt8, player: WorldMobile, at time: TimeInterval, predictedZ: Int? = nil, mounted: Bool = false) -> Data? {
         guard steps.count < 5, !awaitingPosition, time >= nextRequestAt else { return nil }
         let dir = direction & 0x87
         let delta = [(0,-1),(1,-1),(1,0),(1,1),(0,1),(-1,1),(-1,0),(-1,-1)][Int(dir & 7)]
@@ -44,7 +44,7 @@ public struct PlayerMovement {
         let packet = Data([0x02, dir, sequence])
         steps.append(Step(sequence: sequence, predicted: predicted, origin: WalkPoint(x:player.x,y:player.y,z:player.z), sentAt: time))
         sequence = sequence == 255 ? 1 : sequence + 1
-        nextRequestAt = time + (turn ? 0.1 : (dir & 0x80 != 0 ? 0.2 : 0.4))
+        nextRequestAt = time + (turn ? 0.1 : (dir & 0x80 != 0 ? (mounted ? 0.1 : 0.2) : (mounted ? 0.2 : 0.4)))
         return packet
     }
     public mutating func receive(_ packet: Data, player: WorldMobile) throws -> WorldMobile? {

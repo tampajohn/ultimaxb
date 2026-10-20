@@ -186,7 +186,8 @@ final class WorldView: NSView {
     private var wasAnimating = false
     func updateMobiles(_ values: [WorldMobile]) {
         mobiles = values
-        motion.update(values, at: ProcessInfo.processInfo.systemUptime, playerSerial: player?.serial)
+        motion.update(values, at: ProcessInfo.processInfo.systemUptime, playerSerial: player?.serial,
+                      mountedSerials:Set(equipment.filter { $0.layer == 25 }.map(\.owner)))
         wasAnimating = motion.isAnimating(at: ProcessInfo.processInfo.systemUptime)
         refresh()
     }
@@ -679,7 +680,14 @@ final class WorldView: NSView {
                 if let location = try WorldHitTest.location(assets: assets, animationTime:displayedAnimationTime, camera: displayedCamera, screenX: screenX, screenY: screenY, visibility: visibility, width:displayedWidth, height:displayedHeight) { onTarget?(location) }
             } else if let mobile = try WorldHitTest.mobile(assets: assets, mobiles: mobiles, presentations: motion.presentations(at: ProcessInfo.processInfo.systemUptime), camera: displayedCamera, screenX: screenX, screenY: screenY, equipment:equipment, width:displayedWidth, height:displayedHeight) {
                 if clickCount == 1 { onInspect?(mobile.serial) }
-                if clickCount == 2, (player?.flags ?? 0) & 0x40 != 0 { onAttack?(mobile.serial) }
+                if clickCount == 2 {
+                    if (player?.flags ?? 0) & 0x40 != 0 && mobile.serial != player?.serial {
+                        onAttack?(mobile.serial)
+                    } else {
+                        // Server owns mounting, dismounting and NPC/paperdoll use.
+                        onUse?(mobile.serial)
+                    }
+                }
             } else if clickCount == 1 {
                 let visibility = try player.map { try WorldVisibility.around(player:$0,assets:assets,additionalTiles:groundItems) } ?? WorldVisibility()
                 if let location = try WorldHitTest.location(assets:assets,animationTime:displayedAnimationTime,camera:displayedCamera,screenX:screenX,screenY:screenY,visibility:visibility,additionalTiles:groundItems, width:displayedWidth, height:displayedHeight) {
