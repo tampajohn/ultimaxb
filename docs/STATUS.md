@@ -1126,3 +1126,8 @@ Validation: release build passed; `tools/check_login_flow.swift` injects offline
 - Session 97647 confirmed two ore merges at 02:14:27–28 UTC, successful smelting at 02:14:29, return travel at 02:14:30, resumed harvesting with 23 remaining sites at 02:14:36, and another confirmed mining gain at 02:14:48. A subsequent forge trip began at 02:16:03. This verifies that sequence on live UO1998, not every ore shape/metal/route.
 - Manual war-mode toggles and valid attacks now cancel harvesting/travel immediately rather than waiting for a server combat-target response. Late tool cursors still receive cancellation.
 - Release build and all 19 offline UI fixtures pass, including both new manual-combat interruption cases. Active client was left running; combat interruption changes take effect on its next launch.
+
+### Smelting approach and silent inventory confirmation (2026-10-19)
+- Start Smelting now prefers the remembered work-area forge and uses the shared world-travel planner, including its door and route recovery, instead of a separate short-range approach. Visible forges remain a fallback when none is remembered. Approach start, arrival and failure are recorded in telemetry.
+- Live telemetry showed 14 small ore consumed and ingots increasing from 29 to 36, followed by a timeout with no recognized success message. Smelting now accepts exact same-hue ingot output plus consumption of the selected ore, in either packet order. Moved sources, wrong hues and incorrect output amounts do not confirm success.
+- Verification: 14 smelting unit tests and all offline UI fixtures passed. The adapter regression confirms silent conversion returns to the mining zone and resumes tool use. Live verification of the updated approach remains pending.

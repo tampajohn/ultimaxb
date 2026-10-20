@@ -45,4 +45,32 @@ final class SmeltOutcomeTests:XCTestCase {
         var result=try SmeltOutcome(ore:world.containerItems[0x40000004]!,backpack:2,world:world,time:0)
         XCTAssertEqual(result.observe(speech:speech("There is not enough metal-bearing ore in this pile to make an ingot."),world:world,time:1),.insufficientOre)
     }
+    func testLiveSilentConversionInEitherPacketOrder()throws {
+        for removalFirst in [false,true] {
+            var world=WorldState()
+            try world.apply(item(graphic:0x19B7,amount:14))
+            try world.apply(item(5,graphic:0x1BF2,amount:29))
+            var tracker=try SmeltOutcome(ore:world.containerItems[0x40000004]!,backpack:2,world:world,time:0)
+            let removed=Data([0x1D,0x40,0,0,4]),grown=item(5,graphic:0x1BF2,amount:36)
+            try world.apply(removalFirst ? removed:grown)
+            XCTAssertNil(tracker.observe(world:world,time:1))
+            try world.apply(removalFirst ? grown:removed)
+            XCTAssertEqual(tracker.observe(world:world,time:2),.success)
+            XCTAssertEqual(tracker.diagnostics["inventory_confirmed"],1)
+            XCTAssertNil(tracker.observe(world:world,time:3))
+        }
+    }
+    func testSilentSuccessRejectsMovedSourceWrongMetalAndWrongAmount()throws {
+        for variant in 0..<3 {
+            var world=WorldState(); try world.apply(item(graphic:0x19B7,amount:14))
+            var tracker=try SmeltOutcome(ore:world.containerItems[0x40000004]!,backpack:2,world:world,time:0)
+            if variant==0 { try world.apply(item(graphic:0x19B7,amount:14,bag:3)) }
+            else { try world.apply(Data([0x1D,0x40,0,0,4])) }
+            var ingots=item(5,graphic:0x1BF2,amount:variant==2 ? 6:7)
+            if variant==1 { ingots[ingots.count-1]=1 }
+            try world.apply(ingots)
+            XCTAssertNil(tracker.observe(world:world,time:1))
+        }
+    }
+
 }

@@ -1353,30 +1353,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.onSmelt={ [weak self,weak login,weak panel,weak view] in
             guard let self,let login,let view,let player=view.player else { return }
             let start=WalkPoint(x:player.x,y:player.y,z:player.z)
-            guard let map=try? NavigationMap(assets:self.assets,center:start,additional:view.groundItems) else { return }
-            let forges=login.routeItems.filter { SmeltOutcome.isForge($0.graphic) && max(abs($0.x-start.x),abs($0.y-start.y))<=24 }
-                .sorted { max(abs($0.x-start.x),abs($0.y-start.y)) < max(abs($1.x-start.x),abs($1.y-start.y)) }
-            for forge in forges {
-                guard let route=WalkPath.find(from:start,x:forge.x,y:forge.y,adjacent:true,goalZ:forge.z,step:{map.step(from:$0,direction:$1)}) else { continue }
-                login.cancelRoute(); view.followPlayer=true
-                panel?.showResult("Walking to a forge to smelt backpack ore.")
-                login.followRoute(route,action:.smelt(forge.serial),running:false) { [weak self,weak view] position,blocked in
-                    guard let self,let view,let current=try? NavigationMap(assets:self.assets,center:position,additional:view.groundItems) else { return nil }
-                    return WalkPath.find(from:position,x:forge.x,y:forge.y,adjacent:true,goalZ:forge.z) {
-                        guard let next=current.step(from:$0,direction:$1),!blocked.contains(next) else { return nil }; return next
-                    }
-                }
-                return
+            let visible=login.routeItems.filter { SmeltOutcome.isForge($0.graphic) }
+                .min { max(abs($0.x-start.x),abs($0.y-start.y)) < max(abs($1.x-start.x),abs($1.y-start.y)) }
+            guard let destination=self.rememberedMiningForge() ?? visible.map({WalkPoint(x:$0.x,y:$0.y,z:$0.z)}) else {
+                panel?.showResult("Remember a forge at a smithy first, or move within sight of one."); return
             }
-            guard let remembered=self.rememberedMiningForge() else {
-                panel?.showResult("No reachable visible forge. Remember a forge at a smithy first."); return
-            }
-            login.cancelRoute()
-            panel?.showResult("Walking to the remembered forge.")
-            self.miningNavigate(to:remembered,adjacent:true) { [weak login,weak panel] arrived in
-                guard let login,arrived,let forge=login.routeItems.first(where:{SmeltOutcome.isForge($0.graphic) && $0.x==remembered.x && $0.y==remembered.y}) else {
-                    panel?.showResult("Could not reach the remembered forge. Smelting has not started."); return
+            login.cancelRoute(); view.followPlayer=true
+            panel?.showResult("Walking to the work area to smelt backpack ore.")
+            Telemetry.shared.record("smelt_approach_started",["x":destination.x,"y":destination.y,"z":destination.z])
+            self.miningNavigate(to:destination,adjacent:true) { [weak login,weak panel] arrived in
+                guard let login else { return }
+                guard arrived,let forge=login.routeItems.first(where:{SmeltOutcome.isForge($0.graphic) && $0.x==destination.x && $0.y==destination.y}) else {
+                    Telemetry.shared.record("smelt_approach_failed",["arrived":arrived])
+                    panel?.showResult("Could not reach the forge, or travel was cancelled. Smelting has not started."); return
                 }
+                Telemetry.shared.record("smelt_approach_arrived",["serial":forge.serial])
                 _=login.startSmelting(forge:forge.serial)
             }
         }

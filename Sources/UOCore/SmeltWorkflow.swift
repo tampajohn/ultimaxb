@@ -131,7 +131,7 @@ public struct SmeltWorkflow {
         }
         guard var tracker=outcome else { return }
         let result=tracker.observe(speech:speech,world:world,time:time)
-        outcome=tracker
+        outcome=tracker; lastObservation=tracker.diagnostics
         guard let result else { return }
         switch result {
         case .success: successes += 1; pileFailures=0

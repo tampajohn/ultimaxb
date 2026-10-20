@@ -9,11 +9,13 @@ public struct SmeltOutcome {
     private let backpack:UInt32
     private let started:TimeInterval
     private let beforeIngots:Int
+    private let beforeMatchingIngots:Int
+    private var inventoryConfirmed=false
     private var successMessage=false,lossMessage=false,finished=false
     private var observedIngots=0,sourcePresent=false
     public var diagnostics:[String:Int] {
         ["success_message":successMessage ? 1:0,"loss_message":lossMessage ? 1:0,
-         "ingots_before":beforeIngots,"ingots_observed":observedIngots,"source_present":sourcePresent ? 1:0]
+         "ingots_before":beforeIngots,"ingots_observed":observedIngots,"source_present":sourcePresent ? 1:0,"inventory_confirmed":inventoryConfirmed ? 1:0]
     }
     public static func isForge(_ graphic:Int)->Bool { graphic==0xFB1 || (0x197A...0x19A9).contains(graphic) }
     public init(ore:ContainerItem,backpack:UInt32,world:WorldState,time:TimeInterval) throws {
@@ -23,9 +25,10 @@ public struct SmeltOutcome {
         }
         self.ore=ore; self.backpack=backpack; started=time
         beforeIngots=Self.ingots(backpack,world)
+        beforeMatchingIngots=Self.ingots(backpack,world,hue:ore.hue)
     }
-    private static func ingots(_ bag:UInt32,_ world:WorldState)->Int {
-        world.containerItems.values.filter { $0.container==bag && $0.graphic==0x1BF2 }.reduce(0) { $0+max(1,$1.amount) }
+    private static func ingots(_ bag:UInt32,_ world:WorldState,hue:Int? = nil)->Int {
+        world.containerItems.values.filter { $0.container==bag && $0.graphic==0x1BF2 && (hue == nil || $0.hue==hue) }.reduce(0) { $0+max(1,$1.amount) }
     }
     public mutating func observe(speech:SpeechMessage?=nil,world:WorldState,time:TimeInterval)->Result? {
         guard !finished else { return nil }
@@ -43,6 +46,24 @@ public struct SmeltOutcome {
             }
         }
         if successMessage && Self.ingots(backpack,world)>beforeIngots { return finish(.success) }
+        // Some live smelts deliver the complete inventory conversion without
+        // repeating the system message. Require the exact expected same-metal
+        // output AND consumption of this selected source, in either order.
+        let metal=ore.amount*SmeltWorkflow.metalUnits(graphic:ore.graphic)
+        let expected=metal/2
+        let gained=Self.ingots(backpack,world,hue:ore.hue)-beforeMatchingIngots
+        let consumed:Bool
+        if let remainder=world.containerItems[ore.serial] {
+            consumed=remainder.container==backpack && remainder.hue==ore.hue &&
+                SmeltWorkflow.metalUnits(graphic:remainder.graphic)>0 &&
+                remainder.amount*SmeltWorkflow.metalUnits(graphic:remainder.graphic)==metal-expected*2
+        } else {
+            consumed=world.items[ore.serial]==nil && world.equipment[ore.serial]==nil
+        }
+        if !lossMessage,expected>0,gained==expected,consumed {
+            inventoryConfirmed=true
+            return finish(.success)
+        }
         // Loss may leave a smaller pile or remove the source completely. Moving
         // the same serial elsewhere is not evidence that metal was consumed.
         let changed:Bool

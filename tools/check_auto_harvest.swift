@@ -199,6 +199,23 @@ import UOCore
         precondition(messages.last!.contains("Using tool"))
         login.stopHarvest()
 
+        // Live regression: 14 small ore becomes 7 ingots, without success speech.
+        now += 10.1; trips=[]
+        send(Data([0x25,0x40,0,0,4,0x19,0xB7,0,0,14,0,0,0,0,0x40,0,0,2,0,0]))
+        precondition(login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}))
+        login.enableMiningCircuit(forge:.init(x:11,y:10,z:0),zone:zone,sites:[site],relocate:false)
+        send(heavy); login.tickMovement(); arrival?(true); login.tickMovement()
+        target(37)
+        send(Data([0x1D,0x40,0,0,4]))
+        login.tickMovement()
+        precondition(trips.count == 1,"Source removal alone cannot finish smelting")
+        send(Data([0x25,0x40,0,0,6,0x1B,0xF2,0,0,11,0,0,0,0,0x40,0,0,2,0,0]))
+        send(status); login.tickMovement(); now += 1.1; login.tickMovement()
+        precondition(trips.count == 2,"Exact silent conversion must return to the mining zone")
+        arrival?(true); login.tickMovement()
+        precondition(messages.last!.contains("Using tool"))
+        login.stopHarvest()
+
         now += 10.1
         precondition(login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}))
         login.tickMovement(); login.toggleWarMode()
