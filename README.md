@@ -48,6 +48,30 @@ swift run -c release UltimaMac --client uo1998-client \
   --x 2477 --y 411 --render build/minoc.bmp
 ```
 
+## Local Spacetime server
+
+The repository also includes an experimental **SpacetimeDB-backed UO 1.25.32
+server**. It runs on loopback and uses the installed game assets for authoritative
+terrain checks. The single-player sandbox persists movement, doors, containers,
+equipment, ground items, stack transfers, food, lumberjacking, and a wooden-shield
+recipe.
+
+After installing the server prerequisites:
+
+```sh
+python3 server/local-spacetime/run.py
+```
+
+Connect to `127.0.0.1:2594` with the development account `local` / `local`.
+The starter hatchet gathers logs from map trees; the dagger carves five logs into
+a wooden shield. This sandbox does not yet implement combat, vendors, multiplayer,
+or world merging.
+
+See the [server setup and gameplay guide](server/local-spacetime/README.md),
+[verification instructions](server/local-spacetime/README.md#verify), and
+[development phases](server/local-spacetime/README.md#development-phases).
+Runtime data, private credentials, and proprietary assets are excluded from Git.
+
 ## Controls
 
 | Control | Action |
