@@ -22,14 +22,16 @@ import UOCore
         func descendants(_ view:NSView)->[NSView] { [view]+view.subviews.flatMap(descendants) }
         ClassicNativeFont.apply(to:login.view)
         precondition(ClassicNativeFont.font?.fontName == "UltimaXB-ClassicBitmap")
-        let native=ClassicNativeFont.font!
+        for role in [9,4] {
+        let native=ClassicNativeFont.assetFont(role)
         let ct=unsafeBitCast(native,to:CTFont.self)
         for code in 32...255 {
-            let glyph=try assets.fonts!.glyph(Unicode.Scalar(code)!,font:9)!
+            let glyph=try assets.fonts!.glyph(Unicode.Scalar(code)!,font:role)!
             var character=UniChar(code), mapped=CGGlyph(0), advance=CGSize.zero
             precondition(CTFontGetGlyphsForCharacters(ct,&character,&mapped,1))
             CTFontGetAdvancesForGlyphs(ct,.horizontal,&mapped,&advance,1)
             precondition(abs(advance.width-CGFloat(max(1,glyph.sprite.width)))<0.01,"Game glyph advance changed")
+        }
         }
         for id in [0x845,0x846,0x1F,0xD8] {
             precondition(ClassicControlArt.image(id) != nil,"Missing classic scroll sprite")

@@ -39,7 +39,7 @@ import UOCore
         try capture("ordinary-book")
         window.makeFirstResponder(title); title.selectText(nil)
         try capture("ordinary-book-editing")
-        precondition(title.font?.fontName == ClassicNativeFont.uiFont.fontName)
+        precondition(title.font?.fontName == ClassicNativeFont.assetFont(4).fontName)
         title.stringValue="Short title"
         precondition(display.save())
         let right=NSEvent.mouseEvent(with:.rightMouseDown,location:.zero,modifierFlags:[],timestamp:0,windowNumber:window.windowNumber,context:nil,eventNumber:1,clickCount:1,pressure:1)!

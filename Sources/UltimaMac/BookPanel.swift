@@ -5,6 +5,7 @@ import UOCore
     private(set) var book:ClassicBook
     private let art:LoginArtwork
     private let text:ClassicText
+    private let pageText:ClassicText
     private let fonts:ClassicFonts?
     private let titleField=ClassicEntry(frame:.zero), authorField=ClassicEntry(frame:.zero)
     private var editors:[NSTextView]=[], scrolls:[NSScrollView]=[]
@@ -18,10 +19,11 @@ import UOCore
     override var isFlipped:Bool { true }
     init(book:ClassicBook,assets:ClientAssets) {
         self.book=book; fonts=assets.fonts; art=LoginArtwork(assets:assets); text=ClassicText(assets.fonts,color:(45,30,15),outlined:false)
+        pageText=ClassicText(assets.fonts,font:4,color:(45,30,15),outlined:false)
         super.init(frame:NSRect(x:310,y:70,width:420,height:310))
         ClassicNativeFont.install(assets.fonts); ClassicControlArt.install(assets)
         for (field,rect,label) in [(titleField,NSRect(x:41,y:65,width:150,height:32),"Book title"),(authorField,NSRect(x:41,y:160,width:150,height:24),"Book author")] {
-            field.frame=rect; field.drawsBackground=false; field.isEditable=book.writable
+            field.frame=rect; field.font=ClassicNativeFont.assetFont(4); field.drawsBackground=false; field.isEditable=book.writable
             field.setAccessibilityLabel(label); addSubview(field)
         }
         for x in [38,224] {
@@ -29,7 +31,7 @@ import UOCore
             scroll.drawsBackground=false; scroll.hasVerticalScroller=true; scroll.autohidesScrollers=true
             ClassicControlArt.apply(to:scroll)
             let editor=NSTextView(frame:NSRect(x:0,y:0,width:142,height:166))
-            editor.isRichText=false; editor.font=ClassicNativeFont.uiFont; editor.textColor=NSColor(calibratedRed:0.18,green:0.12,blue:0.06,alpha:1)
+            editor.isRichText=false; editor.font=ClassicNativeFont.assetFont(4); editor.textColor=NSColor(calibratedRed:0.18,green:0.12,blue:0.06,alpha:1)
             editor.drawsBackground=false; editor.isVerticallyResizable=true; editor.isHorizontallyResizable=false
             editor.textContainer?.widthTracksTextView=true; editor.textContainerInset = .zero
             editor.minSize=NSSize(width:0,height:166); editor.maxSize=NSSize(width:142,height:CGFloat.greatestFiniteMagnitude)
@@ -91,7 +93,7 @@ import UOCore
                 for paragraph in draft.components(separatedBy:"\n") {
                     var line=""
                     for character in paragraph {
-                        if !line.isEmpty && text.size(line+String(character)).width>135 { lines.append(line); line="" }
+                        if !line.isEmpty && pageText.size(line+String(character)).width>135 { lines.append(line); line="" }
                         line.append(character)
                     }
                     lines.append(line)

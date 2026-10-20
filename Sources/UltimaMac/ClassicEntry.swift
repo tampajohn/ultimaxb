@@ -5,20 +5,24 @@ import AppKit
 /// font's line box, rather than centering that line box alone.
 @MainActor private func centeredEntryRect(_ bounds:NSRect,font:NSFont?,view:NSView,secure:Bool=false)->NSRect {
     guard let font else { return bounds }
-    let line=ceil(font.ascender-font.descender+font.leading)
-    let text=(secure ? "*" : "Ag") as NSString
+    let line=NSLayoutManager().defaultLineHeight(for:font)
+    // Include capitals, descenders and numerals; keep the baseline stable while typing.
+    let text=(secure ? "*" : "Agyp09") as NSString
     let ink=text.boundingRect(with:NSSize(width:1000,height:1000),options:[.usesDeviceMetrics],attributes:[.font:font])
     // Device metrics are relative to the baseline. Height alone loses the
     // glyph's vertical offset and pushes both display and editing too low.
     let optical=line/2-(font.ascender-ink.midY)
-    let shift=max(0,(bounds.height-line)/2)+optical
+    let shift=((bounds.height-line)/2+optical).rounded()
     return NSRect(x:bounds.minX,y:bounds.minY+(view.isFlipped ? shift : -shift),width:bounds.width,height:line)
 }
 @MainActor final class ClassicEntryCell:NSTextFieldCell {
     override func draw(withFrame rect:NSRect,in view:NSView) {
         let background=drawsBackground
         if background { backgroundColor?.setFill(); rect.fill(); drawsBackground=false }
-        super.draw(withFrame:rect,in:view)
+        let source=stringValue.isEmpty ? (placeholderAttributedString ?? NSAttributedString(string:placeholderString ?? "",attributes:[.foregroundColor:NSColor.gray])) : attributedStringValue
+        let value=source.mutableCopy() as! NSMutableAttributedString
+        value.addAttribute(.font,value:font ?? ClassicNativeFont.uiFont,range:NSRange(location:0,length:value.length))
+        value.draw(with:drawingRect(forBounds:rect),options:[.usesLineFragmentOrigin])
         if background { drawsBackground=true }
     }
     override func drawingRect(forBounds rect:NSRect)->NSRect {
@@ -36,7 +40,10 @@ import AppKit
     override func draw(withFrame rect:NSRect,in view:NSView) {
         let background=drawsBackground
         if background { backgroundColor?.setFill(); rect.fill(); drawsBackground=false }
-        super.draw(withFrame:rect,in:view)
+        let source=stringValue.isEmpty ? (placeholderAttributedString ?? NSAttributedString(string:placeholderString ?? "",attributes:[.foregroundColor:NSColor.gray])) : NSAttributedString(string:String(repeating:"*",count:stringValue.count),attributes:[.foregroundColor:textColor ?? NSColor.black])
+        let value=source.mutableCopy() as! NSMutableAttributedString
+        value.addAttribute(.font,value:font ?? ClassicNativeFont.uiFont,range:NSRange(location:0,length:value.length))
+        value.draw(with:drawingRect(forBounds:rect),options:[.usesLineFragmentOrigin])
         if background { drawsBackground=true }
     }
     override func drawingRect(forBounds rect:NSRect)->NSRect {
