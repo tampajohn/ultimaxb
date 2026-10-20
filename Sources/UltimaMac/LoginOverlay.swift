@@ -359,6 +359,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             harvestCursorUntil=harvestNow()+10
         }
         smeltLastState=smelt.state
+        if case .stopped = smelt.state { harvestPauseRequested=false }
         let text:String
         switch smelt.state {
         case .idle: text="Smelting idle."
@@ -368,7 +369,14 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         case .stopped(.noProgress): text="Smelting stopped after metal loss. Improve Mining before trying again."
         case .stopped(let reason): text="Smelting stopped: \(reason)."
         }
-        onHarvestStatus?(text)
+        let displayText:String
+        if harvestPauseRequested {
+            if smelt.state == .working { displayText="Pause requested. Finishing the current ore action." }
+            else if smelt.state == .ready || smelt.state == .coolingDown || smelt.state == .completed {
+                displayText="Smelting paused. Resume to continue the work circuit."
+            } else { displayText=text }
+        } else { displayText=text }
+        onHarvestStatus?(displayText)
         Telemetry.shared.record("smelt_state",["state":String(describing:smelt.state),"successes":smelt.successes,"skipped":smelt.skipped,"losses":smelt.losses,"combined":smelt.combined,"observation":smelt.lastObservation])
     }
     private var harvest:HarvestWorkflow?
@@ -446,14 +454,20 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     func toggleHarvestPause() {
         if harvestPauseRequested {
             harvestPauseRequested=false; harvest?.resume()
-            publishHarvestStatus()
-            onHarvestStatus?("Harvesting resumed.")
+            if smelt != nil { smeltLastState=nil; publishSmeltStatus() }
+            else { publishHarvestStatus(); onHarvestStatus?("Harvesting resumed.") }
             Telemetry.shared.record("harvest_resume")
+            return
+        }
+        if smeltActive,smeltInventoryWait == nil {
+            harvestPauseRequested=true
+            smeltLastState=nil; publishSmeltStatus()
+            Telemetry.shared.record("harvest_pause_requested",["phase":"smelting"])
             return
         }
         guard harvestActive,!smeltActive,miningCircuit?.phase != .travelling,
               harvestAfterEquip == nil,harvestReplacement == nil,harvest != nil else {
-            onHarvestStatus?("Pause is available while harvesting. Use Stop to cancel forge travel or smelting.")
+            onHarvestStatus?("Pause is available while harvesting or smelting. Use Stop to cancel travel or inventory preparation.")
             return
         }
         harvestPauseRequested=true; harvest?.pause()
@@ -607,6 +621,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             guard harvestNow()>=replacement.at else { return }
             harvestReplacement=nil; replacement.resume(); return
         }
+        if harvestPauseRequested,let smelt,smelt.state != .working { return }
         if smeltActive {
             guard movement.pendingCount==0,!movement.awaitingPosition else { return }
             if let command=smelt?.next(world:world,position:.init(x:player.x,y:player.y,z:player.z),time:harvestNow()) { smeltCommand(command) }

@@ -129,11 +129,16 @@ import UOCore
         arrival?(true); login.tickMovement()
         precondition(messages.last!.contains("Smelting ore"))
         target(31)
+        login.toggleHarvestPause()
+        precondition(messages.last!.contains("Finishing the current ore"))
         speech("You smelt the ore removing the impurities and put the metal in your backpack.")
         login.tickMovement()
         precondition(trips.count == 1,"Wait for authoritative ingots before returning")
         send(Data([0x25,0x40,0,0,6,0x1B,0xF2,0,0,4,0,0,0,0,0x40,0,0,2,0,0]))
         send(status); login.tickMovement()
+        now += 2; login.tickMovement()
+        precondition(trips.count == 1 && messages.last!.contains("Smelting paused"),"Pause drains the current smelt and holds the return trip")
+        login.toggleHarvestPause(); login.tickMovement()
         precondition(trips.count == 1,"Allow the completed smelt action to settle before mining again")
         now += 1.1; login.tickMovement()
         precondition(trips.count == 2 && trips[1].x == 10)
@@ -230,7 +235,7 @@ import UOCore
         precondition(!login.harvestingSessionActive,"Manual attack must not wait for a server combat-target response to stop harvesting")
         target(36); precondition(!login.targeting)
         // First-use smelting opens unknown inventory and resumes only while owned.
-        for scenario in ["ready","cancelled","timeout"] {
+        for scenario in ["ready","cancelled","timeout","pauseTimeout"] {
             let freshTransport=GameConnection()
             let fresh=LoginOverlay(assets:assets,loginDefaults:defaults,connection:freshTransport)
             fresh.harvestNow={now}
@@ -247,9 +252,16 @@ import UOCore
             if scenario == "timeout" { now += 10.1; fresh.tickMovement() }
             packet(Data([0x24,0x40,0,0,2,0,0x3C]))
             packet(Data([0x3C,0,24,0,1,0x40,0,0,4,0x19,0xB7,0,0,14,0,0,0,0,0x40,0,0,2,0,0]))
-            fresh.tickMovement(); fresh.tickMovement()
+            fresh.tickMovement()
             if scenario == "ready" {
+                fresh.toggleHarvestPause(); now += 2; fresh.tickMovement()
+                precondition(result.contains("Smelting paused"),"Pause before first use must hold the ready ore action")
+                fresh.toggleHarvestPause(); fresh.tickMovement()
                 precondition(fresh.harvestActive && result.contains("Smelting ore"),"Known inventory automatically resumes smelting")
+            } else if scenario == "pauseTimeout" {
+                fresh.tickMovement(); fresh.toggleHarvestPause()
+                now += 11; fresh.tickMovement()
+                precondition(!fresh.harvestActive && result.contains("timeout"),"Pause must not suppress a tool response timeout")
             } else {
                 precondition(!fresh.harvestActive,"Late inventory cannot restart a cancelled or expired request")
             }
