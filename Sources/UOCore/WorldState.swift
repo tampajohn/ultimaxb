@@ -59,6 +59,17 @@ public struct WorldState {
     // packet supplies the owner; the last UI container may be unrelated.
     private var contentsContext: UInt32?
     public init() {}
+    /// Known inventory ancestry only. Missing parents and cycles are never
+    /// treated as ownership; callers supply the player's actual backpack root.
+    public func isContained(_ serial:UInt32,in root:UInt32)->Bool {
+        guard root != 0,root != .max,serial != root else { return false }
+        var current=serial,seen=Set<UInt32>()
+        while seen.count<64,seen.insert(current).inserted,let item=containerItems[current] {
+            if item.container==root { return true }
+            current=item.container
+        }
+        return false
+    }
     @discardableResult public mutating func apply(_ packet: Data) throws -> Bool {
         removedObjects.removeAll(keepingCapacity:true)
         guard let opcode = packet.first else { throw LoginProtocolError.malformedPacket }

@@ -102,8 +102,9 @@ import UOCore
         precondition(!login.harvestActive && messages.last!.contains("approach cancelled"))
 
         now += 10.1
-        // A lost held pickaxe is replaced only after the server confirms equipping.
-        send(Data([0x25,0x40,0,0,7,0x0E,0x85,0,0,1,0,0,0,0,0x40,0,0,2,0,0]))
+        // A lost held pickaxe is replaced from a known bag inside the backpack.
+        send(Data([0x25,0x40,0,0,8,0x0E,0x76,0,0,1,0,0,0,0,0x40,0,0,2,0,0]))
+        send(Data([0x25,0x40,0,0,7,0x0E,0x85,0,0,1,0,0,0,0,0x40,0,0,8,0,0]))
         precondition(login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}))
         login.enableMiningCircuit(forge:.init(x:11,y:10,z:0),zone:zone,sites:[site],relocate:false)
         send(Data([0x1D,0x40,0,0,3]))

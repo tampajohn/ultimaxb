@@ -419,7 +419,10 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             if let bag { connection.send(InteractionPackets.use(serial:bag)) }
             onHarvestStatus?("Opening your backpack to establish inventory. Press Start once its contents arrive."); return false
         }
-        let carried=world.containerItems.values.filter { $0.container==bag && graphics.contains($0.graphic) }.sorted { $0.serial<$1.serial }.first?.serial
+        let carried=world.containerItems.values.filter { graphics.contains($0.graphic) && world.isContained($0.serial,in:bag) }.sorted {
+            let a=$0.container==bag,b=$1.container==bag
+            return a == b ? $0.serial<$1.serial : a
+        }.first?.serial
         // Equip carried tools through the same confirmed inventory transaction
         // used by the paperdoll; never issue a use before the server accepts it.
         if equipped == nil,let carried,let item=world.containerItems[carried],
@@ -438,7 +441,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         }
         // Mining can still use a carried tool if its era has no equipment layer.
         guard let tool=equipped ?? (kind == .mining ? carried : nil) else {
-            onHarvestStatus?(kind == .mining ? "Equip a pickaxe or shovel, or open the backpack containing one." : "Equip an axe before starting lumberjacking."); return false
+            Telemetry.shared.record("harvest_tool_unavailable",["kind":kind == .mining ? "mining":"lumberjacking"])
+            onHarvestStatus?(kind == .mining ? "No known pickaxe or shovel. Open a carried bag containing a spare, or obtain another tool." : "No known axe. Open a carried bag containing a spare, or equip an axe."); return false
         }
         var runner=HarvestWorkflow()
         do { try runner.start(zone:zone,sites:sites,tool:tool,successfulActions:100,maxConsecutiveEmptyAttempts:20) }
@@ -633,7 +637,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         guard movement.pendingCount==0,!movement.awaitingPosition else { return }
         let bag=world.equipment.values.first { $0.owner==playerSerial && $0.layer==21 }?.serial
         let owns=world.equipment[harvestTool].map { $0.owner==playerSerial && [1,2].contains($0.layer) } == true ||
-            (harvestKind == .mining && world.containerItems[harvestTool].map { $0.container==bag } == true)
+            (harvestKind == .mining && bag.map { world.isContained(harvestTool,in:$0) } == true)
         let weight=characterStatus?.weight ?? Int.max
         let capacity=40+(characterStatus?.strength ?? 0)*7/2
         let previousHarvestState=harvest?.state
