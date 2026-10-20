@@ -236,9 +236,16 @@ public enum WorldRenderer {
                     let dest = ((sy + yy) * width + sx + xx) * 4
                     let r = sprite.rgba[source], g = sprite.rgba[source + 1], b = sprite.rgba[source + 2]
                     let color = hue?.color(red: r, green: g, blue: b) ?? (r, g, b)
-                    pixels[dest] = color.0
-                    pixels[dest + 1] = color.1
-                    pixels[dest + 2] = color.2
+                    if tile.effectAge != nil {
+                        let alpha = sprite.rgba[source + 3]
+                        pixels[dest] = EffectBlend.channel(source:color.0,destination:pixels[dest],alpha:alpha,mode:tile.effectBlendMode)
+                        pixels[dest + 1] = EffectBlend.channel(source:color.1,destination:pixels[dest + 1],alpha:alpha,mode:tile.effectBlendMode)
+                        pixels[dest + 2] = EffectBlend.channel(source:color.2,destination:pixels[dest + 2],alpha:alpha,mode:tile.effectBlendMode)
+                    } else {
+                        pixels[dest] = color.0
+                        pixels[dest + 1] = color.1
+                        pixels[dest + 2] = color.2
+                    }
                 }
             }
         }

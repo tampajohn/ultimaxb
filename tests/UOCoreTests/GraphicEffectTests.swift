@@ -6,6 +6,37 @@ final class GraphicEffectTests: XCTestCase {
         Data([0x70,kind,0,0,0,1,0,0,0,2,0x37,0x6A,
               0x09,0xC4,0x01,0xF4,0xFB,0x09,0xC5,0x01,0xF5,0x80,5,duration,0,0,1,0])
     }
+    func testExtendedEffectsAndFragmentedFraming() throws {
+        var colored = packet(); colored[0] = 0xC0
+        colored += Data([0,0,0,33,0,0,0,9])
+        var particle = colored; particle[0] = 0xC7
+        particle += Data(repeating:0,count:13)
+        for bytes in [colored,particle] {
+            let effect = try GraphicEffect.decode(bytes)
+            XCTAssertEqual(effect.hue,33); XCTAssertEqual(effect.blendMode,2)
+            for n in 0..<bytes.count { XCTAssertThrowsError(try GraphicEffect.decode(bytes.prefix(n))) }
+            XCTAssertThrowsError(try GraphicEffect.decode(bytes+Data([0])))
+            var world = WorldEffects(); world.append(effect,at:0)
+            let tile = world.tiles(at:0,mobiles:[],items:[]).first
+            XCTAssertEqual(tile?.hue,33); XCTAssertEqual(tile?.effectBlendMode,2)
+        }
+        var framer = GamePacketFramer()
+        let stream = colored + particle + packet()
+        var received:[Data] = []
+        for byte in stream { received += try framer.receive(Data([byte])) }
+        XCTAssertEqual(received,[colored,particle,packet()])
+        XCTAssertThrowsError(try framer.receive(Data([0xC1])))
+    }
+    func testBlendFactorsClampAndPreserveTransparentPixels() {
+        let expected:[UInt8] = [100,78,255,255,78,156,82]
+        for mode in UInt32(0)...6 {
+            XCTAssertEqual(EffectBlend.channel(source:100,destination:200,alpha:255,mode:mode),expected[Int(mode)])
+            XCTAssertEqual(EffectBlend.channel(source:100,destination:200,alpha:0,mode:mode),200)
+        }
+        XCTAssertEqual(EffectBlend.channel(source:255,destination:20,alpha:255,mode:6),0)
+        XCTAssertEqual(EffectBlend.channel(source:200,destination:200,alpha:255,mode:5),255)
+        XCTAssertEqual(EffectBlend.channel(source:100,destination:200,alpha:128,mode:0),149)
+    }
     func testDecodeAndValidation() throws {
         let effect = try GraphicEffect.decode(packet())
         XCTAssertEqual(effect.kind,.attached)

@@ -26,10 +26,11 @@ public struct GamePacketFramer {
         var offset = 0
         while offset < pending.count {
             let opcode = Int(pending[offset])
-            guard opcode < Self.lengths.count, Self.lengths[opcode] != 0 else {
+            let extendedLength = opcode == 0xC0 ? 36 : opcode == 0xC7 ? 49 : nil
+            guard extendedLength != nil || (opcode < Self.lengths.count && Self.lengths[opcode] != 0) else {
                 throw LoginProtocolError.unsupportedPacket(UInt8(opcode))
             }
-            var length = Self.lengths[opcode]
+            var length = extendedLength ?? Self.lengths[opcode]
             if length == 32768 {
                 if pending.count - offset < 3 { break }
                 length = Int(pending[offset + 1]) << 8 | Int(pending[offset + 2])

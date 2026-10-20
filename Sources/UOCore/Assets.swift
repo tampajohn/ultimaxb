@@ -100,6 +100,7 @@ public struct WorldTile {
     public var effectFrameInterval: TimeInterval? = nil
     public var effectGump: Int? = nil
     public var effectYOffset: Int = 0
+    public var effectBlendMode: UInt32 = 0
     public var effectAge: TimeInterval? = nil
     public var effectPose: MobilePresentation? = nil
     public var corpseBody:Int? = nil

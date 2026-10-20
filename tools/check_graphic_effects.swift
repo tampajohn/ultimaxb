@@ -1,10 +1,25 @@
-import Foundation
+import AppKit
 import UOCore
 @main struct Check {
-    static func main() throws {
+    @MainActor static func main() throws {
+        _ = NSApplication.shared
         let assets = try ClientAssets(directory:URL(fileURLWithPath:"uo1998-client"))
         let packet = Data([0x70,2,0,0,0,0,0,0,0,0,0x37,0x6A,
             0x09,0xBD,0x01,0xE2,15,0,0,0,0,0,5,40,0,0,1,0])
+        let suite = "com.ultimaxb.effects.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName:suite)!
+        defer { defaults.removePersistentDomain(forName:suite) }
+        defaults.set(false,forKey:"rememberPassword")
+        let connection = GameConnection()
+        let login = LoginOverlay(assets:assets,loginDefaults:defaults,connection:connection)
+        var received:[GraphicEffect] = []
+        login.onGraphicEffect = { received.append($0) }
+        var coloredPacket = packet; coloredPacket[0] = 0xC0
+        coloredPacket += Data([0,0,0,33,0,0,0,2])
+        var particlePacket = coloredPacket; particlePacket[0] = 0xC7
+        particlePacket += Data(repeating:0,count:13)
+        for byte in packet+coloredPacket+particlePacket { connection.onEvent?(.gameData(Data([byte]))) }
+        precondition(received.count == 3 && received[1].hue == 33 && received[2].blendMode == 2)
         var effects = WorldEffects()
         effects.append(try GraphicEffect.decode(packet),at:0)
         let base = try WorldRenderer.render(assets,x:2493,y:482)
@@ -12,6 +27,18 @@ import UOCore
         let later = try WorldRenderer.render(assets,x:2493,y:482,groundItems:effects.tiles(at:0.2,mobiles:[],items:[]))
         precondition(first.missingCount == 0 && later.missingCount == 0)
         precondition(first.rgba != base.rgba && later.rgba != first.rgba, "Effect must render and animate")
+        var extended = packet; extended[0] = 0xC0
+        extended += Data([0,0,0,33,0,0,0,0])
+        var coloredEffects = WorldEffects()
+        coloredEffects.append(try GraphicEffect.decode(extended),at:0)
+        let colored = try WorldRenderer.render(assets,x:2493,y:482,groundItems:coloredEffects.tiles(at:0,mobiles:[],items:[]))
+        precondition(colored.missingCount == 0 && colored.rgba != first.rgba)
+        extended[35] = 2
+        var additiveEffects = WorldEffects()
+        additiveEffects.append(try GraphicEffect.decode(extended),at:0)
+        let additive = try WorldRenderer.render(assets,x:2493,y:482,groundItems:additiveEffects.tiles(at:0,mobiles:[],items:[]))
+        precondition(additive.missingCount == 0 && additive.rgba != colored.rgba)
+        try additive.writeBMP(to:URL(fileURLWithPath:"build/spell-colored-additive.bmp"))
         let expired = try WorldRenderer.render(assets,x:2493,y:482,groundItems:effects.tiles(at:2,mobiles:[],items:[]))
         precondition(expired.rgba == base.rgba)
         let mobile = WorldMobile(serial:1,body:400,x:2493,y:482,z:15)

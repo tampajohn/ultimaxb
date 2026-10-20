@@ -2236,10 +2236,11 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         let sound = try SoundEffect.decode(packet)
                         onSound?(sound)
                         Telemetry.shared.record("sound_received",["id":sound.id,"flags":sound.flags,"x":sound.x,"y":sound.y,"z":sound.z])
-                    case 0x70:
+                    case 0x70, 0xC0, 0xC7:
                         let effect = try GraphicEffect.decode(packet)
                         onGraphicEffect?(effect)
                         Telemetry.shared.record("graphic_effect", ["kind":effect.kind.rawValue,"graphic":effect.graphic,
+                            "hue":effect.hue,"blend_mode":effect.blendMode,"particle_metadata_unsupported":packet.first == 0xC7,
                             "duration_ms":Int(effect.duration*1000),"rendered_kind":effect.kind != .screen])
                     case 0x6E:
                         let animation = try MobileAction.decode(packet)

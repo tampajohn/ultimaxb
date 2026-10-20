@@ -1,6 +1,6 @@
 import Foundation
 
-/// Classic 0x70 graphic-effect envelope. Duration is in 50 ms units.
+/// Classic effect envelope (0x70, hue/blend 0xC0, particle metadata 0xC7). Duration is in 50 ms units.
 public struct GraphicEffect: Equatable, Sendable {
     public enum Kind: UInt8, Sendable { case moving = 0, lightning = 1, ground = 2, attached = 3, screen = 4 }
     public let kind: Kind
@@ -10,9 +10,12 @@ public struct GraphicEffect: Equatable, Sendable {
     public let speed: UInt8
     public let duration: TimeInterval
     public let fixedDirection, explode: Bool
+    public let hue: Int
+    public let blendMode: UInt32
 
     public static func decode(_ packet: Data) throws -> GraphicEffect {
-        guard packet.count == 28, packet.first == 0x70 else { throw LoginProtocolError.malformedPacket }
+        let lengths: [UInt8:Int] = [0x70:28, 0xC0:36, 0xC7:49]
+        guard let opcode = packet.first, let length = lengths[opcode], packet.count == length else { throw LoginProtocolError.malformedPacket }
         var reader = PacketReader(packet, offset: 1)
         guard let kind = Kind(rawValue: try reader.byte()) else { throw LoginProtocolError.malformedPacket }
         let source = try reader.dword(), destination = try reader.dword(), graphic = Int(try reader.word())
@@ -21,9 +24,12 @@ public struct GraphicEffect: Equatable, Sendable {
         let speed = try reader.byte(), duration = Double(try reader.byte()) * 0.05
         _ = try reader.word() // Reserved.
         let fixed = try reader.byte() != 0, explode = try reader.byte() != 0
+        let hue = opcode == 0x70 ? 0 : Int(try reader.dword() & 0xFFFF)
+        let blend = opcode == 0x70 ? 0 : try reader.dword() % 7
+        // C7 particle-specific metadata is not represented by the classic 2D renderer.
         return GraphicEffect(kind: kind, source: source, destination: destination, graphic: graphic,
             x:x,y:y,z:z,destinationX:dx,destinationY:dy,destinationZ:dz,
-            speed:speed,duration:duration,fixedDirection:fixed,explode:explode)
+            speed:speed,duration:duration,fixedDirection:fixed,explode:explode,hue:hue,blendMode:blend)
     }
 }
 
@@ -88,7 +94,8 @@ public struct WorldEffects {
                 if impact != nil && !effect.explode { continue }
                 if impact != nil { position = target }
                 var tile = WorldTile(x:Int(ceil(position.x)),y:Int(ceil(position.y)),z:Int(ceil(position.z)),
-                    art:0x4000+(impact == nil ? effect.graphic : 0x36CB),hue:0)
+                    art:0x4000+(impact == nil ? effect.graphic : 0x36CB),hue:effect.hue)
+                tile.effectBlendMode = effect.blendMode
                 tile.effectAge = time-(impact ?? entries[index].started)
                 tile.effectPose = position
                 if impact != nil { tile.effectFrameInterval = 0.05 }
@@ -106,7 +113,8 @@ public struct WorldEffects {
             var tile = WorldTile(x:pose.map { Int(ceil($0.x)) } ?? mobile?.x ?? item?.x ?? effect.x,
                 y:pose.map { Int(ceil($0.y)) } ?? mobile?.y ?? item?.y ?? effect.y,
                 z:max(mobile?.z ?? item?.z ?? effect.z, pose.map { Int(ceil($0.z)) } ?? -128),
-                art:effect.kind == .lightning ? 0x4000 : effect.graphic+0x4000,hue:0)
+                art:effect.kind == .lightning ? 0x4000 : effect.graphic+0x4000,hue:effect.hue)
+            tile.effectBlendMode = effect.blendMode
             tile.effectAge = time-entry.started
             tile.effectPose = pose
             if effect.kind == .lightning {
