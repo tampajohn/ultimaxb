@@ -210,6 +210,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         let relocate:Bool
         var phase:Phase = .mining
         var smeltReadyAt:TimeInterval?
+        var resumeReadyAt:TimeInterval?
         var visitedZones:Set<String>=[]
         var usedTargets:Set<String>=[]
         var zoneSites:[HarvestWorkflow.Site]
@@ -247,7 +248,15 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         }
     }
     private func resumeCircuitMining() {
+        guard let circuit=miningCircuit else { return }
+        circuit.phase = .mining
+        circuit.resumeReadyAt=harvestNow()+1
+        onHarvestStatus?("Work area reached. Waiting for the tool cooldown before mining.")
+        Telemetry.shared.record("mining_resume_wait",["delay_ms":1000])
+    }
+    private func beginCircuitMining() {
         guard let circuit=miningCircuit,let planner=miningRoute else { return }
+        circuit.resumeReadyAt=nil
         circuit.phase = .mining
         miningInternal=true; defer { miningInternal=false }
         guard startHarvest(zone:circuit.zone,sites:circuit.sites,kind:.mining,route:{ planner(circuit.zone,$0,$1) }) else {
@@ -258,6 +267,10 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         guard let circuit=miningCircuit else { return }
         guard loginComplete,let serial=playerSerial,let player=world.mobiles[serial],!player.isGhost,trade == nil else { endMiningCircuit("Mining circuit stopped for your current state."); return }
         if harvestPauseRequested || circuit.phase == .travelling { return }
+        if let readyAt=circuit.resumeReadyAt {
+            guard harvestNow()>=readyAt else { return }
+            beginCircuitMining(); return
+        }
         if circuit.phase == .smelting {
             guard !smeltActive else { return }
             guard smelt?.state == .completed else { endMiningCircuit("Mining circuit stopped because smelting did not complete."); return }
