@@ -139,6 +139,29 @@ import UOCore
         precondition(messages.last!.contains("Using tool"),"Return resumes the saved mining site")
         login.stopHarvest()
         precondition(!login.harvestingSessionActive)
+
+        now += 10.1
+        precondition(login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}))
+        login.enableMiningCircuit(forge:.init(x:11,y:10,z:0),zone:zone,sites:[site],relocate:false)
+        send(heavy); login.tickMovement()
+        let staleArrival=arrival
+        precondition(login.harvestingSessionActive)
+        login.cancelRoute()
+        send(status); staleArrival?(true); login.tickMovement()
+        precondition(!login.harvestingSessionActive,"A late forge arrival cannot revive a cancelled circuit")
+
+        var relocate:((HarvestWorkflow.Zone,[HarvestWorkflow.Site])->Void)?
+        login.onMiningRelocate={_,_,used,done in
+            precondition(used.contains("11,10,0,1339"))
+            relocate=done
+        }
+        precondition(login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}))
+        login.enableMiningCircuit(forge:.init(x:11,y:10,z:0),zone:zone,sites:[site],relocate:true)
+        login.tickMovement(); target(32); speech("There is no metal here to mine.")
+        login.tickMovement()
+        precondition(relocate != nil && login.harvestingSessionActive)
+        login.stopHarvest(); relocate?(zone,[site]); login.tickMovement()
+        precondition(!login.harvestingSessionActive,"A late zone result cannot restart mining after Stop")
         print("Harvest adapter confirms resources, advances depleted sites, cancels late cursors and stops for manual actions/danger")
     }
 }
