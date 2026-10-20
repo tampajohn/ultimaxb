@@ -214,6 +214,13 @@ multiple phases still needs protocol evidence. General editable macros, herding
 and crafting orchestration remain outstanding; the mining implementation is not
 evidence of full automation parity.
 
+Herding has a locally tested single-action protocol runner (`HerdingAction`):
+animal cursor, destination cursor, correlated server acceptance/refusal, then
+actual animal arrival. A refusal may occur before the second cursor. An accepted
+order is not arrival, and inaccessible destinations time out. This is not yet a
+usable assistant mode: animal/destination selection, crook equip/approach, live
+packet routing and repeated zone herding remain to be integrated.
+
 Ore hauling now has a locally tested single-stack state machine: confirmed drop at
 the current tile, one acknowledged route step, confirmed pickup, then repeat.
 Both transfer acknowledgement and exact destination state are required. Changed
