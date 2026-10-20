@@ -10,6 +10,7 @@ public struct SmeltWorkflow {
     public private(set) var skipped=0
     public private(set) var losses=0
     public private(set) var combined=0
+    public private(set) var lastObservation:[String:Int]=[:]
     public var combining:Bool { mergePair != nil }
     private var prepare=true
     private var mergePair:(ContainerItem,ContainerItem)?
@@ -23,6 +24,11 @@ public struct SmeltWorkflow {
     private var action=AssistantAction()
     private var outcome:SmeltOutcome?
     private var readyAt:TimeInterval=0
+    // Classic mining.m creates 1, 2, or 4 metal units per pile shape.
+    // Combining preserves metal units, not the displayed stack count.
+    public static func metalUnits(graphic:Int)->Int {
+        switch graphic { case 0x19B7: return 1; case 0x19B8,0x19BA: return 2; case 0x19B9: return 4; default: return 0 }
+    }
     public init() {}
     public mutating func start(backpack:UInt32,forge:GroundItem,world:WorldState,combineOre:Bool = true) throws {
         guard state == .idle,backpack != 0,backpack != .max,
@@ -34,7 +40,7 @@ public struct SmeltWorkflow {
     }
     public mutating func stop(_ reason:AssistantAction.StopReason = .cancelled) {
         switch state {
-        case .ready,.working,.coolingDown: action.stop(reason); outcome=nil; state = .stopped(reason)
+        case .ready,.working,.coolingDown: lastObservation=outcome?.diagnostics ?? [:]; action.stop(reason); outcome=nil; state = .stopped(reason)
         default: break
         }
     }
@@ -60,11 +66,11 @@ public struct SmeltWorkflow {
             state = .ready
         }
         if prepare {
-            // Same art and hue means matching visible ore type. Different pile
-            // shapes are left separate: their hidden resource units differ.
+            // Match metal hue across pile shapes; validate the server result
+            // using conserved metal units rather than raw stack amounts.
             for source in piles {
                 guard world.containerItems[source.serial]==source else { stop(.missingTool); return nil }
-                if let destination=piles.first(where:{$0.serial != source.serial && $0.graphic==source.graphic && $0.hue==source.hue && $0.amount+source.amount<=65535}) {
+                if let destination=piles.first(where:{$0.serial != source.serial && $0.hue==source.hue && $0.amount*Self.metalUnits(graphic:$0.graphic)+source.amount*Self.metalUnits(graphic:source.graphic)<=65535}) {
                     mergePair=(source,destination); mergeTargeted=false; action=AssistantAction()
                     do {
                         let command=try action.start(tool:source.serial,targets:[.init(serial:destination.serial,x:destination.x,y:destination.y,z:0,graphic:destination.graphic)],at:time)
@@ -114,8 +120,8 @@ public struct SmeltWorkflow {
             let survivor=a ?? b,removed=a == nil ? pair.0.serial:pair.1.serial
             if (a == nil || b == nil),let survivor,
                world.items[removed]==nil,world.equipment[removed]==nil,
-               survivor.container==bag,survivor.graphic==pair.0.graphic,survivor.hue==pair.0.hue,
-               survivor.amount==pair.0.amount+pair.1.amount {
+               survivor.container==bag,Self.metalUnits(graphic:survivor.graphic)>0,survivor.hue==pair.0.hue,
+               survivor.amount*Self.metalUnits(graphic:survivor.graphic)==pair.0.amount*Self.metalUnits(graphic:pair.0.graphic)+pair.1.amount*Self.metalUnits(graphic:pair.1.graphic) {
                 piles.removeAll { $0.serial==pair.0.serial || $0.serial==pair.1.serial }
                 piles.append(survivor); piles.sort { $0.serial<$1.serial }
                 mergePair=nil; mergeTargeted=false; combined += 1

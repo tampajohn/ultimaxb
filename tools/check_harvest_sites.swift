@@ -1,5 +1,5 @@
 import Foundation
-@testable import UOCore
+import UOCore
 
 @main struct Check {
     static func main() throws {
@@ -13,6 +13,20 @@ import Foundation
             let plan=try HarvestSitePlanner.discover(assets:assets,zone:zone,kind:kind,start:player)
             precondition(!plan.sites.isEmpty,"Installed map should contain reachable work sites")
             precondition(!plan.searchTruncated)
+            let outside=WalkPoint(x:2562,y:502,z:0)
+            if name == "Minoc mountains" {
+                guard let approach=HarvestSitePlanner.approach(assets:assets,zone:zone,from:outside),let entry=approach.last else { fatalError("Must route from forge into work zone") }
+                precondition(zone.contains(x:entry.x,y:entry.y))
+                let approachMap=try NavigationMap(assets:assets,center:outside,additional:[],radius:64)
+                var previous=outside
+                for point in approach {
+                    guard let direction=WalkPath.direction(from:previous,to:point) else { fatalError("Nonadjacent approach step") }
+                    precondition(approachMap.step(from:previous,direction:direction)==point)
+                    previous=point
+                }
+                precondition(HarvestSitePlanner.approach(assets:assets,zone:zone,from:outside,cancelled:{true}) == nil)
+                print("Forge-to-zone approach: \(approach.count) steps")
+            }
             var checked=Set<WalkPoint>()
             for site in plan.sites {
                 precondition(zone.contains(x:site.target.x,y:site.target.y))

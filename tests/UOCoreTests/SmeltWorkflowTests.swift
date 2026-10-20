@@ -118,4 +118,22 @@ final class SmeltWorkflowTests:XCTestCase {
         XCTAssertEqual(flow.next(world:world,position:position,time:12),.useItem(0x40000005))
     }
 
+    func testMixedPileShapesConserveMetalRatherThanItemCount()throws {
+        for removalFirst in [false,true] {
+            var (world,_)=try setup()
+            try world.apply(item(4,graphic:0x19B7,amount:3))
+            try world.apply(item(5,graphic:0x19B9,amount:2))
+            var flow=SmeltWorkflow()
+            try flow.start(backpack:2,forge:world.items[0x40000009]!,world:world)
+            _=flow.next(world:world,position:position,time:0)
+            XCTAssertTrue(flow.combining)
+            _=flow.receive(try cursor(),world:world,position:position,time:0.1)
+            let removed=Data([0x1D,0x40,0,0,5]),grown=item(4,graphic:0x19B7,amount:11)
+            try world.apply(removalFirst ? removed:grown)
+            flow.observe(world:world,time:0.2); XCTAssertEqual(flow.combined,0)
+            try world.apply(removalFirst ? grown:removed)
+            flow.observe(world:world,time:0.3); XCTAssertEqual(flow.combined,1)
+        }
+    }
+
 }

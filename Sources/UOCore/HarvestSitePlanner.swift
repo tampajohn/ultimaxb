@@ -3,6 +3,22 @@ import Foundation
 /// Resource-art rules from the chosen classic era's itemmanip script. These
 /// identify possible targets, not whether the server's resource bank is depleted.
 public enum HarvestSitePlanner {
+    public static func approach(assets:ClientAssets,zone:HarvestWorkflow.Zone,from start:WalkPoint,cancelled:()->Bool = {false})->[WalkPoint]? {
+        guard let map=try? NavigationMap(assets:assets,center:.init(x:(zone.minX+zone.maxX)/2,y:(zone.minY+zone.maxY)/2,z:start.z),additional:[],radius:max(zone.maxX-zone.minX,zone.maxY-zone.minY)/2) else { return nil }
+        var candidates:[WalkPoint]=[]
+        for x in zone.minX...zone.maxX { for y in zone.minY...zone.maxY {
+            if let point=map.standingPoint(x:x,y:y,fromZ:start.z) { candidates.append(point) }
+        } }
+        candidates.sort {
+            let a=max(abs($0.x-start.x),abs($0.y-start.y)),b=max(abs($1.x-start.x),abs($1.y-start.y))
+            return a==b ? ($0.x,$0.y)<($1.x,$1.y):a<b
+        }
+        for point in candidates.prefix(32) {
+            if cancelled() { return nil }
+            if let route=try? WorldTravelPlanner(assets:assets).find(from:start,x:point.x,y:point.y,cancelled:{cancelled()}) { return route }
+        }
+        return nil
+    }
     public struct Plan {
         public let sites:[HarvestWorkflow.Site]
         public let reachablePoints:Int

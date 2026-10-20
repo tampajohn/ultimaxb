@@ -185,6 +185,19 @@ import UOCore
         login.toggleHarvestPause(); login.tickMovement()
         precondition(messages.last!.contains("Using tool"))
         login.stopHarvest()
+
+        now += 10.1; trips=[]
+        precondition(login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}))
+        login.enableMiningCircuit(forge:.init(x:11,y:10,z:0),zone:zone,sites:[site],relocate:false)
+        send(heavy); login.tickMovement(); arrival?(true); login.tickMovement()
+        target(34)
+        speech("There is not enough metal-bearing ore in this pile to make an ingot.")
+        send(status); login.tickMovement()
+        now += 1.1; login.tickMovement()
+        precondition(trips.count == 2,"Undersized leftovers should return to mining when carrying room exists")
+        arrival?(true); login.tickMovement()
+        precondition(messages.last!.contains("Using tool"))
+        login.stopHarvest()
         print("Harvest adapter confirms resources, advances depleted sites, cancels late cursors and stops for manual actions/danger")
     }
 }

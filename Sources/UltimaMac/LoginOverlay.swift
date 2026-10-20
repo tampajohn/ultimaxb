@@ -258,7 +258,11 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         if harvestPauseRequested || circuit.phase == .travelling { return }
         if circuit.phase == .smelting {
             guard !smeltActive else { return }
-            guard smelt?.state == .completed,((smelt?.successes ?? 0)>0 || (smelt?.losses ?? 0)>0) else { endMiningCircuit("Mining circuit stopped because smelting did not complete."); return }
+            guard smelt?.state == .completed else { endMiningCircuit("Mining circuit stopped because smelting did not complete."); return }
+            if (smelt?.successes ?? 0)==0,(smelt?.losses ?? 0)==0,
+               let weight=characterStatus?.weight,let strength=characterStatus?.strength,weight>=40+strength*7/2-10 {
+                endMiningCircuit("Remaining ore is too small to smelt and carrying room is still low. Bank goods before continuing."); return
+            }
             if circuit.smeltReadyAt == nil {
                 circuit.smeltReadyAt=harvestNow()+1
                 onHarvestStatus?("Smelting finished. Returning to the mining zone after the action cooldown.")
@@ -358,7 +362,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         case .stopped(let reason): text="Smelting stopped: \(reason)."
         }
         onHarvestStatus?(text)
-        Telemetry.shared.record("smelt_state",["state":String(describing:smelt.state),"successes":smelt.successes,"skipped":smelt.skipped,"losses":smelt.losses,"combined":smelt.combined])
+        Telemetry.shared.record("smelt_state",["state":String(describing:smelt.state),"successes":smelt.successes,"skipped":smelt.skipped,"losses":smelt.losses,"combined":smelt.combined,"observation":smelt.lastObservation])
     }
     private var harvest:HarvestWorkflow?
     private var harvestAfterEquip:(()->Void)?

@@ -10,6 +10,11 @@ public struct SmeltOutcome {
     private let started:TimeInterval
     private let beforeIngots:Int
     private var successMessage=false,lossMessage=false,finished=false
+    private var observedIngots=0,sourcePresent=false
+    public var diagnostics:[String:Int] {
+        ["success_message":successMessage ? 1:0,"loss_message":lossMessage ? 1:0,
+         "ingots_before":beforeIngots,"ingots_observed":observedIngots,"source_present":sourcePresent ? 1:0]
+    }
     public static func isForge(_ graphic:Int)->Bool { graphic==0xFB1 || (0x197A...0x19A9).contains(graphic) }
     public init(ore:ContainerItem,backpack:UInt32,world:WorldState,time:TimeInterval) throws {
         guard (0x19B7...0x19BA).contains(ore.graphic),ore.container==backpack,
@@ -25,6 +30,7 @@ public struct SmeltOutcome {
     public mutating func observe(speech:SpeechMessage?=nil,world:WorldState,time:TimeInterval)->Result? {
         guard !finished else { return nil }
         guard time.isFinite,time>=started,time-started<10 else { finished=true; return nil }
+        observedIngots=Self.ingots(backpack,world); sourcePresent=world.containerItems[ore.serial] != nil
         if let speech,speech.serial == .max,speech.type==6 {
             switch speech.text {
             case "You smelt the ore removing the impurities and put the metal in your backpack.": successMessage=true
