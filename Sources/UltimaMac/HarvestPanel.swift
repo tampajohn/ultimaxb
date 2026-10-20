@@ -71,14 +71,6 @@ import UOCore
         updateKind()
     }
     required init?(coder:NSCoder) { fatalError() }
-    // NSResponder otherwise forwards background clicks to the world view,
-    // starting routes and cancelling the harvest workflow beneath this panel.
-    override func mouseDown(with event:NSEvent) {}
-    override func mouseDragged(with event:NSEvent) {}
-    override func mouseUp(with event:NSEvent) {}
-    override func rightMouseDown(with event:NSEvent) {}
-    override func rightMouseDragged(with event:NSEvent) {}
-    override func rightMouseUp(with event:NSEvent) {}
     private func updateKind() { mining.title=kind == .mining ? "Mining *" : "Mining"; wood.title=kind == .lumberjacking ? "Lumberjacking *" : "Lumberjacking"; mining.needsDisplay=true; wood.needsDisplay=true }
     @objc func selectMining() { kind = .mining; updateKind(); clear() }
     @objc func selectWood() { kind = .lumberjacking; updateKind(); clear() }

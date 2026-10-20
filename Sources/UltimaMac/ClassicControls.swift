@@ -74,6 +74,16 @@ import UOCore
         wantsLayer=true; layer?.masksToBounds=true
     }
     required init?(coder:NSCoder) { fatalError() }
+    // Panel backgrounds own their pointer gestures. NSView's default responder
+    // forwarding otherwise turns blank UI areas into world movement/pickup.
+    // Child controls still receive their own events and retain native tracking.
+    override func mouseDown(with event:NSEvent) {}
+    override func mouseDragged(with event:NSEvent) {}
+    override func mouseUp(with event:NSEvent) {}
+    override func rightMouseDown(with event:NSEvent) {}
+    override func rightMouseDragged(with event:NSEvent) {}
+    override func rightMouseUp(with event:NSEvent) {}
+    override func scrollWheel(with event:NSEvent) {}
     override func draw(_ rect:NSRect) {
         NSGraphicsContext.current?.imageInterpolation = .none
         NSBezierPath(rect:bounds).addClip()

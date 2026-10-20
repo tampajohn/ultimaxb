@@ -9,6 +9,7 @@ import UOCore
     override func rightMouseDown(with event:NSEvent) { received += 1 }
     override func rightMouseDragged(with event:NSEvent) { received += 1 }
     override func rightMouseUp(with event:NSEvent) { received += 1 }
+    override func scrollWheel(with event:NSEvent) { received += 1 }
 }
 @main struct Check {
     @MainActor static func main() throws {
@@ -20,12 +21,19 @@ import UOCore
         let position=WalkPoint(x:2584,y:482,z:0)
         let panel=HarvestPanel(assets:assets,scope:"fixture:1",position:position,defaults:defaults)
         let worldInput=WorldInputProbe()
-        panel.nextResponder=worldInput
         let click=NSEvent.mouseEvent(with:.leftMouseDown,location:.zero,modifierFlags:[],timestamp:0,windowNumber:0,context:nil,eventNumber:1,clickCount:1,pressure:1)!
-        panel.mouseDown(with:click);panel.mouseDragged(with:click);panel.mouseUp(with:click)
-        panel.rightMouseDown(with:click);panel.rightMouseDragged(with:click);panel.rightMouseUp(with:click)
-        precondition(worldInput.received==0,"Panel backgrounds must not route movement or pickup gestures to the world")
-        panel.nextResponder=nil
+        let overlays:[ClassicPanel]=[panel,ClassicPanel(assets:assets),
+            SkillsPanel(definitions:assets.skills,assets:assets),
+            PlaySidebar(definitions:assets.skills,assets:assets),
+            TravelPanel(assets:assets,scope:"pointer-fixture")]
+        for overlay in overlays {
+            overlay.nextResponder=worldInput
+            overlay.mouseDown(with:click);overlay.mouseDragged(with:click);overlay.mouseUp(with:click)
+            overlay.rightMouseDown(with:click);overlay.rightMouseDragged(with:click);overlay.rightMouseUp(with:click)
+            overlay.scrollWheel(with:click)
+            precondition(worldInput.received==0,"Panel backgrounds must not route movement, pickup or scrolling gestures to the world")
+            overlay.nextResponder=nil
+        }
         var previews=0,clears=0
         panel.onClear={clears += 1}
         panel.onPreview={zone,kind in
