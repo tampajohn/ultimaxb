@@ -79,7 +79,11 @@ import UOCore
                 let xs = [0,left,w-right,w], ys = [0,top,h-bottom,h]
                 for row in 0..<3 { for col in 0..<3 {
                     let view = GumpArtwork(frame:rect(a[0]+xs[col],a[1]+ys[row],xs[col+1]-xs[col],ys[row+1]-ys[row]))
-                    view.image = image(a[2]+row*3+col); add(view)
+                    view.image = image(a[2]+row*3+col)
+                    // Classic resizepic repeats its edges and center at native
+                    // pixel size; stretching blurs and distorts the stonework.
+                    view.tiled = row == 1 || col == 1
+                    add(view)
                 } }
             case "text", "croppedtext":
                 let cropped = command.name == "croppedtext"
@@ -109,6 +113,7 @@ import UOCore
             case "textentry":
                 guard valid(7), (0...65535).contains(a[5]), definition.texts.indices.contains(a[6]) else { continue }
                 let field = ClassicEntry(string:definition.texts[a[6]])
+                field.font = ClassicNativeFont.uiFont
                 field.frame = rect(a[0],a[1],a[2],a[3]); field.isBordered = false; field.drawsBackground = false
                 field.textColor = textColor(a[4],increment:false); entries.append((field,UInt16(a[5]))); add(field)
             default: unsupported += 1

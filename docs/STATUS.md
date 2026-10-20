@@ -160,8 +160,9 @@ experimental and is not at parity yet.
   server packet handlers.
 - Startup music selection when the server sends no music packet; no guessed
   region query or opening-theme fallback is currently used.
-- Built-in assistant, automated mining/herding, zone overlays and workflow controls
-  are required goal work, not implemented yet; see [assistant scope](ASSISTANT.md).
+- Finish the built-in assistant: mining/forge loops and zone controls are implemented,
+  but full herding, ore hauling, crafting, output banking and whole-circuit pause
+  remain incomplete; see [assistant scope](ASSISTANT.md).
 - Xbox rendering/networking/runtime integration and memory/performance validation.
 
 ## Local verification snapshot
@@ -1146,3 +1147,8 @@ Validation: release build passed; `tools/check_login_flow.swift` injects offline
 - Session 7290 lost its equipped pickaxe immediately after a successful harvest at 02:55:59Z; the visible root backpack inventory showed no spare mining tool. Breakage is consistent with this sequence, but telemetry does not retain system-message text.
 - Tool discovery and carried-tool ownership now follow known nested inventory ancestry to the player's backpack. Direct backpack tools remain preferred; known nested spares can be equipped using the existing confirmed inventory transaction. Unknown ancestors, cycles, removed bags and bank/other roots do not qualify. Unopened bag contents are not guessed or automatically discovered.
 - Two ancestry tests and all offline UI fixtures pass. The packet adapter now verifies replacement from a nested carried bag after the equipped tool disappears. Changes are built and queued for the next launch; the user's current session remains running.
+
+### Server dialog texture and typography fidelity (2026-10-19)
+- Server `resizepic` edges and center now repeat original texture tiles instead of stretching them. The local CrossUO resizepic implementation confirms repetition semantics; remaining corner-size and transparency behavior still need broader parity work.
+- Server text-entry fields explicitly use the asset-derived game font. Bold/italic formatted text now applies stroke/obliqueness to that same font rather than requesting unavailable OS family variants.
+- Added the previously standalone server-gump fixture to the regular UI runner. All 20 fixtures pass in both runner modes, including pixel-period checks for center tiling, page switching, choice controls, Unicode replies and formatting attributes. Rendered `build/server-gump.png` was visually inspected. No proprietary assets or generated screenshots were staged; changes await the next client launch.

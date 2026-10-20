@@ -22,6 +22,26 @@ import UOCore
   let bitmap = panel.bitmapImageRepForCachingDisplay(in:panel.bounds)!
   panel.cacheDisplay(in:panel.bounds,to:bitmap)
   try bitmap.representation(using:.png,properties:[:])!.write(to:URL(fileURLWithPath:"build/server-gump.png"))
+  let centerTile = try assets.gumps!.sprite(2604)!
+  let tileLayout=Array("{ resizepic 0 0 2600 1300 800 }".utf8)
+  var tilePacket:[UInt8]=[0xB0,0,0]+Array(bytes[3..<19])
+  tilePacket += [UInt8(tileLayout.count>>8),UInt8(tileLayout.count&255)]+tileLayout+[0,0]
+  tilePacket[1]=UInt8(tilePacket.count>>8); tilePacket[2]=UInt8(tilePacket.count&255)
+  let tilePanel=ServerGumpPanel(definition:try ServerGump.decode(Data(tilePacket)),assets:assets)
+  let tileWindow=NSWindow(contentRect:tilePanel.frame,styleMask:[.borderless],backing:.buffered,defer:false)
+  tileWindow.contentView=tilePanel
+  let tileBitmap=tilePanel.bitmapImageRepForCachingDisplay(in:tilePanel.bounds)!
+  tilePanel.cacheDisplay(in:tilePanel.bounds,to:tileBitmap)
+  let sx=CGFloat(tileBitmap.pixelsWide)/tilePanel.bounds.width,sy=CGFloat(tileBitmap.pixelsHigh)/tilePanel.bounds.height
+  precondition(100+16+centerTile.width<1200)
+  var samples=Set<String>()
+  for dx in 0..<16 {
+   let first=tileBitmap.colorAt(x:Int(CGFloat(100+dx)*sx),y:Int(200*sy))!
+   let repeated=tileBitmap.colorAt(x:Int(CGFloat(100+dx+centerTile.width)*sx),y:Int(200*sy))!
+   precondition(first == repeated,"Resizepic center must repeat at its source texture width")
+   samples.insert(first.description)
+  }
+  precondition(samples.count>1,"The texture check must cover actual pattern detail")
   var replies = 0
   panel.onReply = { button,switches,entries in
    precondition(button == 7 && switches == [9] && entries.count == 1 && entries[0].0 == 4 && entries[0].1 == "Updated 😀")
@@ -31,6 +51,7 @@ import UOCore
   precondition(buttons.count == 3 && buttons[2].isHidden)
   buttons[0].performClick(nil)
   let field = panel.subviews.compactMap { $0 as? NSTextField }.first { $0.isEditable }!
+  precondition(field.font?.fontName == ClassicNativeFont.uiFont.fontName)
   field.stringValue = "Updated 😀"
   buttons[1].performClick(nil)
   precondition(replies == 0 && buttons[1].isHidden && !buttons[2].isHidden)
@@ -39,7 +60,11 @@ import UOCore
   let formatted = GumpText.attributed("<b>Bold</b> &amp; &#x1F600;<br><i>Italic</i><img src='https://invalid.test/x'>",color:.white)
   precondition(formatted.string == "Bold & 😀\nItalic")
   let font = formatted.attribute(.font,at:0,effectiveRange:nil) as! NSFont
-  precondition(NSFontManager.shared.traits(of:font).contains(.boldFontMask))
+  precondition(font.fontName == ClassicNativeFont.uiFont.fontName)
+  precondition((formatted.attribute(.strokeWidth,at:0,effectiveRange:nil) as? Double) == -2)
+  let italicIndex=(formatted.string as NSString).range(of:"Italic").location
+  precondition((formatted.attribute(.obliqueness,at:italicIndex,effectiveRange:nil) as? Double) == 0.2)
+  precondition(formatted.attribute(.strokeWidth,at:italicIndex,effectiveRange:nil) == nil)
   let scroll = panel.subviews.compactMap { $0 as? NSScrollView }.first!
   precondition(scroll.documentView!.frame.height > scroll.contentSize.height)
   precondition((scroll.documentView as! NSTextView).string.contains("Iron & tools"))

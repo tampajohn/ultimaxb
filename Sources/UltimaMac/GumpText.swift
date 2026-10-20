@@ -8,12 +8,16 @@ import AppKit
         var bold = 0, italic = 0, underline = 0, centered = 0
         var colors:[NSColor] = [color]
         func append(_ text:String) {
-            var traits:NSFontTraitMask = []
-            if bold > 0 { traits.insert(.boldFontMask) }
-            if italic > 0 { traits.insert(.italicFontMask) }
-            let font = NSFontManager.shared.convert(ClassicNativeFont.uiFont,toHaveTrait:traits)
             let paragraph = NSMutableParagraphStyle(); paragraph.alignment = centered > 0 ? .center : .left
-            result.append(NSAttributedString(string:entities(text),attributes:[.font:font,.foregroundColor:colors.last ?? color,.paragraphStyle:paragraph,.underlineStyle:underline > 0 ? NSUnderlineStyle.single.rawValue : 0]))
+            // The asset font has no OS bold/italic family variants. Synthetic
+            // styling retains its glyphs rather than requesting another font.
+            var attributes:[NSAttributedString.Key:Any] = [
+                .font:ClassicNativeFont.uiFont,.foregroundColor:colors.last ?? color,
+                .paragraphStyle:paragraph,.underlineStyle:underline > 0 ? NSUnderlineStyle.single.rawValue : 0
+            ]
+            if bold > 0 { attributes[.strokeWidth] = -2.0 }
+            if italic > 0 { attributes[.obliqueness] = 0.2 }
+            result.append(NSAttributedString(string:entities(text),attributes:attributes))
         }
         var cursor = source.startIndex
         while cursor < source.endIndex {
