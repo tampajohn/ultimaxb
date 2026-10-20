@@ -335,18 +335,57 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
               let serial=combatTarget.serial,let target=world.mobiles[serial],!target.isGhost else { return false }
         return max(abs(player.x-target.x),abs(player.y-target.y))<=12
     }
-    @discardableResult func startSmelting(forge serial:UInt32)->Bool {
-        guard !harvestCombatThreat else {
-            onHarvestStatus?("Smelting is blocked by a nearby combat target. Move away or end combat first.")
-            Telemetry.shared.record("smelt_start_blocked",["reason":"nearby_combat"]); return false
+    private func rejectWorkStart(_ workflow:String,_ reason:String,_ message:String)->Bool {
+        onHarvestStatus?(message)
+        Telemetry.shared.record(workflow+"_start_blocked",["reason":reason])
+        return false
+    }
+    private func workStartReady(_ workflow:String,needsStatus:Bool)->Bool {
+        if harvestActive {
+            return rejectWorkStart(workflow,"already_active","Harvesting is already running. Stop it before starting another activity.")
         }
-        guard !harvestActive,harvestNow()>=harvestRestartAfter,loginComplete,
-              let playerSerial,let player=world.mobiles[playerSerial],!player.isGhost,
-              targetRequest==nil,trade==nil,
-              manualTransfer.serial==nil,autoPickup.pending==nil,!inventoryRecoveryBusy,
-              let forge=world.items[serial],max(abs(player.x-forge.x),abs(player.y-forge.y))<=3,
-              let bag=world.equipment.values.first(where:{$0.owner==playerSerial && $0.layer==21}) else {
-            onHarvestStatus?("Finish the current action and stand near a forge before smelting."); return false
+        guard loginComplete,let playerSerial,let player=world.mobiles[playerSerial] else {
+            return rejectWorkStart(workflow,"not_in_world","Connect and enter the world before starting work.")
+        }
+        if player.isGhost {
+            return rejectWorkStart(workflow,"dead","You must be resurrected before starting work.")
+        }
+        if harvestCombatThreat {
+            return rejectWorkStart(workflow,"nearby_combat","Work is blocked by a nearby combat target. Move away or end combat first.")
+        }
+        if harvestNow()<harvestRestartAfter {
+            return rejectWorkStart(workflow,"previous_request","Waiting for the previous tool request to expire. Try Start in a few seconds.")
+        }
+        if targetRequest != nil {
+            return rejectWorkStart(workflow,"target_cursor","Finish or cancel the current target cursor before starting work.")
+        }
+        if trade != nil {
+            return rejectWorkStart(workflow,"trade","Finish or cancel the trade before starting work.")
+        }
+        if manualTransfer.serial != nil {
+            return rejectWorkStart(workflow,"inventory_transfer","Waiting for your item move to be confirmed. Try Start after it finishes.")
+        }
+        if autoPickup.pending != nil {
+            return rejectWorkStart(workflow,"pickup_pending","Waiting for the current pickup to finish before starting work.")
+        }
+        if inventoryRecoveryBusy {
+            return rejectWorkStart(workflow,"inventory_recovery","Wait for banking or weight recovery to finish before starting work.")
+        }
+        if needsStatus && (characterStatus?.weight == nil || characterStatus?.strength == nil) {
+            return rejectWorkStart(workflow,"missing_status","Waiting for strength and weight from the server before harvesting.")
+        }
+        return true
+    }
+    @discardableResult func startSmelting(forge serial:UInt32)->Bool {
+        guard workStartReady("smelt",needsStatus:false),let playerSerial,let player=world.mobiles[playerSerial] else { return false }
+        guard let forge=world.items[serial],SmeltOutcome.isForge(forge.graphic) else {
+            return rejectWorkStart("smelt","forge_unavailable","The selected forge is no longer visible. Choose a visible forge or return to the work area.")
+        }
+        guard max(abs(player.x-forge.x),abs(player.y-forge.y))<=3 else {
+            return rejectWorkStart("smelt","forge_out_of_reach","The forge is still out of reach. Choose Smelt to approach the work area again.")
+        }
+        guard let bag=world.equipment.values.first(where:{$0.owner==playerSerial && $0.layer==21}) else {
+            return rejectWorkStart("smelt","missing_backpack","Waiting for your backpack from the server before smelting.")
         }
         guard harvestKnownContents.contains(bag.serial) else {
             smelt=nil; smeltLastState=nil
@@ -423,22 +462,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     }
     @discardableResult func startHarvest(zone:HarvestWorkflow.Zone,sites:[HarvestWorkflow.Site],kind:HarvestOutcome.Kind,
                                         route:@escaping (WalkPoint,WalkPoint)->[WalkPoint]?)->Bool {
-        guard !harvestCombatThreat else {
-            onHarvestStatus?("Harvesting is blocked by a nearby combat target. Move away or end combat first.")
-            Telemetry.shared.record("harvest_start_blocked",["reason":"nearby_combat"]); return false
-        }
-        guard !harvestActive else {
-            onHarvestStatus?("Harvesting is already running. Stop it before starting another zone."); return false
-        }
-        guard harvestNow()>=harvestRestartAfter else {
-            onHarvestStatus?("Waiting for the previous tool request to expire. Try Start in a few seconds."); return false
-        }
-        guard loginComplete,let playerSerial,let player=world.mobiles[playerSerial],!player.isGhost,
-              targetRequest == nil,trade == nil,
-              manualTransfer.serial == nil,autoPickup.pending == nil,!inventoryRecoveryBusy,
-              characterStatus?.weight != nil,characterStatus?.strength != nil else {
-            onHarvestStatus?("Finish the current action and wait for player status before harvesting."); return false
-        }
+        guard workStartReady("harvest",needsStatus:true),let playerSerial else { return false }
         let graphics:Set<Int> = kind == .mining ? [0xE85,0xE86,0xF39,0xF3A] :
             [0xF43,0xF44,0xF45,0xF46,0xF47,0xF48,0xF49,0xF4A,0xF4B,0xF4C,0xF5E,0xF5F,0x13FA,0x13FB]
         let equipped=world.equipment.values.filter { $0.owner==playerSerial && [1,2].contains($0.layer) && graphics.contains($0.graphic) }.sorted { $0.serial<$1.serial }.first?.serial

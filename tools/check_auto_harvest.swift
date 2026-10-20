@@ -299,12 +299,18 @@ import UOCore
             let freshTransport=GameConnection()
             let fresh=LoginOverlay(assets:assets,loginDefaults:defaults,connection:freshTransport)
             fresh.harvestNow={now}
-            func packet(_ data:Data) { freshTransport.onEvent?(.gameData(data)) }
-            packet(entry+Data([0x55])); packet(status)
-            packet(Data([0x2E,0x40,0,0,2,0x0E,0x75,0,21,0,0,0,1,0,0]))
-            packet(Data([0x1A,0,14,0x40,0,0,9,0x0F,0xB1,0,11,0,10,0]))
             var result=""
             fresh.onHarvestStatus={result=$0}
+            precondition(!fresh.startSmelting(forge:0x40000009) && result.contains("enter the world"))
+            func packet(_ data:Data) { freshTransport.onEvent?(.gameData(data)) }
+            packet(entry+Data([0x55]))
+            precondition(!fresh.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}) && result.contains("strength and weight"))
+            packet(status)
+            precondition(!fresh.startSmelting(forge:0x40000009) && result.contains("no longer visible"))
+            packet(Data([0x2E,0x40,0,0,2,0x0E,0x75,0,21,0,0,0,1,0,0]))
+            packet(Data([0x1A,0,14,0x40,0,0,9,0x0F,0xB1,0,30,0,10,0]))
+            precondition(!fresh.startSmelting(forge:0x40000009) && result.contains("out of reach"))
+            packet(Data([0x1A,0,14,0x40,0,0,9,0x0F,0xB1,0,11,0,10,0]))
             precondition(fresh.startSmelting(forge:0x40000009))
             precondition(fresh.harvestActive && result.contains("Opening"))
             precondition(!fresh.startSmelting(forge:0x40000009),"Do not duplicate a pending backpack request")
