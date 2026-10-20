@@ -74,6 +74,27 @@ import UOCore
         precondition(!login.harvestActive && messages.last!.contains("danger"))
         send(Data([0x1D,0,0,0,9])) // Remove the nearby hostile from the fixture.
         now += 10.1
+        // A broken tool after a resolved dig must not immediately use its spare.
+        login.equipmentLayer={_ in 1}
+        send(Data([0x25,0x40,0,0,7,0x0E,0x85,0,0,1,0,0,0,0,0x40,0,0,2,0,0]))
+        precondition(login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}))
+        login.tickMovement(); target(4)
+        speech("You loosen some rocks but fail to find any useable ore.")
+        // Removal follows the result in the same batch, as in live telemetry.
+        send(Data([0x1D,0x40,0,0,3]))
+        login.tickMovement()
+        precondition(messages.last!.contains("Checking the backpack"))
+        now += 0.9; login.tickMovement()
+        precondition(messages.last!.contains("Checking the backpack"),"Spare equipment must wait for the action cooldown")
+        now += 0.2; login.tickMovement()
+        precondition(messages.last!.contains("Equipping"))
+        send(Data([0x2E,0x40,0,0,7,0x0E,0x85,0,1,0,0,0,1,0,0]))
+        login.tickMovement()
+        precondition(messages.last!.contains("Using tool"),"Confirmed spare resumes after the pacing delay")
+        login.stopHarvest()
+        send(Data([0x1D,0x40,0,0,7]))
+        send(Data([0x2E,0x40,0,0,3,0x0E,0x85,0,1,0,0,0,1,0,0]))
+        now += 10.1
         login.equipmentLayer={_ in 2}
         func carriedAxe() { send(Data([0x25,0x40,0,0,5,0x0F,0x43,0,0,1,0,0,0,0,0x40,0,0,2,0,0])) }
         func equipAxe() { send(Data([0x2E,0x40,0,0,5,0x0F,0x43,0,2,0,0,0,1,0,0])) }
@@ -125,7 +146,7 @@ import UOCore
         precondition(login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}))
         login.enableMiningCircuit(forge:.init(x:11,y:10,z:0),zone:zone,sites:[site],relocate:false)
         send(Data([0x1D,0x40,0,0,3]))
-        login.tickMovement(); login.tickMovement()
+        login.tickMovement(); now += 1.1; login.tickMovement()
         precondition(messages.last!.contains("Equipping") && login.harvestingSessionActive)
         send(Data([0x2E,0x40,0,0,7,0x0E,0x85,0,2,0,0,0,1,0,0]))
         login.tickMovement()

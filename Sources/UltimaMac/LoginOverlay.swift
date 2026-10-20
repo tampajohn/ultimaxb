@@ -664,7 +664,10 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         if harvest?.state == .stopped(.missingTool),let zone=harvest?.workZone,
            let sites=harvest?.remainingSites,!sites.isEmpty,let route=harvestRoute {
             let kind=harvestKind
-            let delay:TimeInterval=previousHarvestState == .working ? 10:0
+            // A tool can break in the same packet batch as a successful dig.
+            // Replacing it must not reset the completed action's cooldown.
+            // An unresolved cursor still needs the full late-response window.
+            let delay:TimeInterval=previousHarvestState == .working ? 10:1
             harvestRestartAfter=max(harvestRestartAfter,harvestNow()+delay)
             harvestCursorUntil=harvestNow()+delay
             harvestOutcome=nil; harvestRoute=nil; cancelRoute(preservingHarvest:true)
