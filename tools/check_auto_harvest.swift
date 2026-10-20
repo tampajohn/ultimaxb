@@ -33,6 +33,10 @@ import UOCore
         login.onHarvestStatus={ messages.append($0) }
         precondition(!login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}),"Require a known backpack baseline")
         send(Data([0x24,0x40,0,0,2,0,0x3C])); send(Data([0x3C,0,5,0,0]))
+        // A remembered server attack object outside the work area is not
+        // current nearby combat and must not permanently lock out harvesting.
+        send(Data([0x77,0,0,0,9,0,0xD9,0,100,0,100,0,0,0,0,0,1]))
+        send(Data([0xAA,0,0,0,9]))
         precondition(login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}))
         login.tickMovement()
         precondition(login.harvestActive && messages.last!.contains("Using tool"))
@@ -72,6 +76,8 @@ import UOCore
         send(Data([0x77,0,0,0,9,0,0xD9,0,11,0,11,0,0,0,0,0,6]))
         login.tickMovement()
         precondition(!login.harvestActive && messages.last!.contains("danger"))
+        precondition(!login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}))
+        precondition(messages.last!.contains("nearby combat target"),"A real nearby target must remain a visible start blocker")
         send(Data([0x1D,0,0,0,9])) // Remove the nearby hostile from the fixture.
         now += 10.1
         // A broken tool after a resolved dig must not immediately use its spare.
@@ -115,6 +121,7 @@ import UOCore
         precondition(!login.harvestActive,"Late equip confirmation after Stop must not restart harvesting")
         now += 10.1
         send(Data([0x1A,0,14,0x40,0,0,9,0x0F,0xB1,0,11,0,10,0]))
+        send(Data([0xAA,0,0,0,8])) // Historical target no longer in the streamed world.
         login.followRoute([],action:.smelt(0x40000009),running:false,resolver:{_,_ in []})
         login.tickMovement(); login.tickMovement()
         precondition(login.harvestActive && messages.last!.contains("Smelting ore"))

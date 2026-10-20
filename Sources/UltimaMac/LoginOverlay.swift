@@ -328,10 +328,21 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         guard let smelt else { return false }
         switch smelt.state { case .ready,.working,.coolingDown: return true; default: return false }
     }
+    // Attack replies retain the last attack object, even after it is no longer
+    // in reach. Do not treat that historical serial as perpetual nearby combat.
+    private var harvestCombatThreat:Bool {
+        guard let playerSerial,let player=world.mobiles[playerSerial],
+              let serial=combatTarget.serial,let target=world.mobiles[serial],!target.isGhost else { return false }
+        return max(abs(player.x-target.x),abs(player.y-target.y))<=12
+    }
     @discardableResult func startSmelting(forge serial:UInt32)->Bool {
+        guard !harvestCombatThreat else {
+            onHarvestStatus?("Smelting is blocked by a nearby combat target. Move away or end combat first.")
+            Telemetry.shared.record("smelt_start_blocked",["reason":"nearby_combat"]); return false
+        }
         guard !harvestActive,harvestNow()>=harvestRestartAfter,loginComplete,
               let playerSerial,let player=world.mobiles[playerSerial],!player.isGhost,
-              targetRequest==nil,trade==nil,combatTarget.serial==nil,
+              targetRequest==nil,trade==nil,
               manualTransfer.serial==nil,autoPickup.pending==nil,!inventoryRecoveryBusy,
               let forge=world.items[serial],max(abs(player.x-forge.x),abs(player.y-forge.y))<=3,
               let bag=world.equipment.values.first(where:{$0.owner==playerSerial && $0.layer==21}) else {
@@ -412,6 +423,10 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     }
     @discardableResult func startHarvest(zone:HarvestWorkflow.Zone,sites:[HarvestWorkflow.Site],kind:HarvestOutcome.Kind,
                                         route:@escaping (WalkPoint,WalkPoint)->[WalkPoint]?)->Bool {
+        guard !harvestCombatThreat else {
+            onHarvestStatus?("Harvesting is blocked by a nearby combat target. Move away or end combat first.")
+            Telemetry.shared.record("harvest_start_blocked",["reason":"nearby_combat"]); return false
+        }
         guard !harvestActive else {
             onHarvestStatus?("Harvesting is already running. Stop it before starting another zone."); return false
         }
@@ -419,7 +434,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             onHarvestStatus?("Waiting for the previous tool request to expire. Try Start in a few seconds."); return false
         }
         guard loginComplete,let playerSerial,let player=world.mobiles[playerSerial],!player.isGhost,
-              targetRequest == nil,trade == nil,combatTarget.serial == nil,
+              targetRequest == nil,trade == nil,
               manualTransfer.serial == nil,autoPickup.pending == nil,!inventoryRecoveryBusy,
               characterStatus?.weight != nil,characterStatus?.strength != nil else {
             onHarvestStatus?("Finish the current action and wait for player status before harvesting."); return false
@@ -613,7 +628,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     }
     private func tickHarvest() {
         guard harvestActive,loginComplete,let playerSerial,let player=world.mobiles[playerSerial] else { return }
-        if player.isGhost || trade != nil || combatTarget.serial != nil ||
+        if player.isGhost || trade != nil || harvestCombatThreat ||
             world.mobiles.values.contains(where:{$0.serial != playerSerial && $0.isEnemy && max(abs($0.x-player.x),abs($0.y-player.y))<=6}) {
             stopHarvest(); onHarvestStatus?("Harvesting stopped: danger or another interaction nearby."); return
         }
