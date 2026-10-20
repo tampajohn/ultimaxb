@@ -4,6 +4,7 @@ import UOCore
 @MainActor
 final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private let connection:GameConnection
+    private let mapWidth:Int,mapHeight:Int
     private var savedLogin:SavedLogin
     private let loginDefaults:UserDefaults
     private let localLoginButton:ClassicButton
@@ -384,6 +385,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     }
     @discardableResult func startSmelting(forge serial:UInt32)->Bool {
         guard workStartReady("smelt",needsStatus:false),let playerSerial,let player=world.mobiles[playerSerial] else { return false }
+        herding=nil
         guard let forge=world.items[serial],SmeltOutcome.isForge(forge.graphic) else {
             return rejectWorkStart("smelt","forge_unavailable","The selected forge is no longer visible. Choose a visible forge or return to the work area.")
         }
@@ -448,6 +450,103 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         onHarvestStatus?(displayText)
         Telemetry.shared.record("smelt_state",["state":String(describing:smelt.state),"successes":smelt.successes,"skipped":smelt.skipped,"losses":smelt.losses,"combined":smelt.combined,"observation":smelt.lastObservation])
     }
+    private var herding:HerdingAction?
+    private var herdAnimal:UInt32=0,herdTool:UInt32=0
+    private var herdLastState:HerdingAction.State?
+    var herdingActive:Bool {
+        guard let state=herding?.state else { return false }
+        switch state {
+        case .requestingAnimal,.requestingDestination,.waitingForResult,.followingOrder: return true
+        default: return false
+        }
+    }
+    @discardableResult func startHerding(animal serial:UInt32,destination:WalkPoint)->Bool {
+        guard workStartReady("herd",needsStatus:false),let playerSerial,let player=world.mobiles[playerSerial] else { return false }
+        guard let animal=world.mobiles[serial],serial != playerSerial,!animal.isGhost else {
+            return rejectWorkStart("herd","animal_unavailable","The selected animal is no longer visible.")
+        }
+        guard (0..<mapWidth).contains(destination.x),(0..<mapHeight).contains(destination.y),(-128...127).contains(destination.z) else {
+            return rejectWorkStart("herd","invalid_destination","Choose a destination on the current map.")
+        }
+        guard max(abs(player.x-animal.x),abs(player.y-animal.y))<=1 else {
+            return rejectWorkStart("herd","out_of_reach","The animal moved out of reach. Choose Herd to approach it again.")
+        }
+        // Classic scripts 3713/3714 and 5108/5109 inherit shepherdscrook.
+        let graphics:Set<Int>=[3713,3714,5108,5109]
+        let held=world.equipment.values.filter { $0.owner==playerSerial && [1,2].contains($0.layer) && graphics.contains($0.graphic) }.sorted { $0.serial<$1.serial }.first
+        if held == nil {
+            guard let bag=world.equipment.values.first(where:{$0.owner==playerSerial && $0.layer==21})?.serial else {
+                return rejectWorkStart("herd","missing_backpack","Waiting for your backpack before selecting a crook.")
+            }
+            guard harvestKnownContents.contains(bag) else {
+                cancelRoute(); harvest=nil; smelt=nil; herding=nil
+                harvestInventoryWait=(bag,harvestNow()+10,{ [weak self] in self?.startHerding(animal:serial,destination:destination) ?? false })
+                connection.send(InteractionPackets.use(serial:bag))
+                onHarvestStatus?("Opening your backpack to find a shepherd's crook.")
+                Telemetry.shared.record("herd_inventory_requested",["bag":bag])
+                return true
+            }
+            guard let carried=world.containerItems.values.filter({ graphics.contains($0.graphic) && world.isContained($0.serial,in:bag) }).sorted(by:{$0.serial<$1.serial}).first,
+                  let layer=equipmentLayer?(carried.graphic),[1,2].contains(layer) else {
+                return rejectWorkStart("herd","missing_crook","Equip a shepherd's crook, or open a carried bag containing one.")
+            }
+            cancelRoute(); harvest=nil; smelt=nil; herding=nil
+            equipItem(serial:carried.serial,layer:layer)
+            guard manualTransfer.serial==carried.serial else { return false }
+            harvestAfterEquip={ [weak self] in _=self?.startHerding(animal:serial,destination:destination) }
+            onHarvestStatus?("Equipping the shepherd's crook; waiting for the server.")
+            Telemetry.shared.record("herd_equipping",["serial":carried.serial])
+            return true
+        }
+        var action=HerdingAction()
+        guard let command=try? action.start(tool:held!.serial,animal:animal,destination:destination,time:harvestNow()) else {
+            return rejectWorkStart("herd","invalid_selection","Choose a visible animal and a valid destination.")
+        }
+        cancelRoute(); harvest=nil; harvestOutcome=nil; smelt=nil
+        herding=action; herdAnimal=serial; herdTool=held!.serial; herdLastState=nil
+        herdCommand(command); publishHerdStatus()
+        Telemetry.shared.record("herd_started",["animal":serial,"tool":herdTool,"x":destination.x,"y":destination.y,"z":destination.z])
+        return true
+    }
+    private func herdCommand(_ command:AssistantAction.Command) {
+        switch command {
+        case .useItem(let serial):
+            harvestCursorUntil=harvestNow()+10
+            connection.send(InteractionPackets.use(serial:serial))
+        case .target(let request,let selection):
+            if let packet=try? request.response(selection) { connection.send(packet) }
+            Telemetry.shared.record("herd_target_sent",["serial":selection.serial,"x":selection.x,"y":selection.y,"z":selection.z])
+        case .cancelTarget(let request):
+            if let packet=try? request.response(nil) { connection.send(packet) }
+        }
+    }
+    private func publishHerdStatus() {
+        guard let state=herding?.state,state != herdLastState else { return }
+        herdLastState=state
+        let text:String
+        switch state {
+        case .idle: text="Choose an animal and a destination."
+        case .requestingAnimal: text="Using the crook; waiting to select the animal."
+        case .requestingDestination: text="Animal selected; waiting to send its destination."
+        case .waitingForResult: text="Destination sent; waiting for the server."
+        case .followingOrder: text="The animal accepted the order. Waiting for it to arrive."
+        case .arrived: text="The animal reached its destination."
+        case .stopped(.refused): text="The server refused the herding attempt. Check the journal for its response."
+        case .stopped(.timeout): text="Herding timed out. The animal may be blocked or the server did not answer."
+        case .stopped(let reason): text="Herding stopped: \(reason)."
+        }
+        if !herdingActive {
+            harvestCursorUntil=harvestNow()+10
+            harvestRestartAfter=max(harvestRestartAfter,harvestCursorUntil)
+        }
+        onHarvestStatus?(text)
+        Telemetry.shared.record("herd_state",["state":String(describing:state),"animal":herdAnimal])
+    }
+    private func observeHerd(_ speech:SpeechMessage?=nil) {
+        let owns=world.equipment[herdTool].map { $0.owner==playerSerial && [1,2].contains($0.layer) } == true
+        herding?.observe(speech:speech,animal:world.mobiles[herdAnimal],ownsTool:owns,time:harvestNow())
+        publishHerdStatus()
+    }
     private var harvest:HarvestWorkflow?
     private var harvestInventoryWait:(bag:UInt32,deadline:TimeInterval,resume:()->Bool)?
     private var harvestAfterEquip:(()->Void)?
@@ -461,7 +560,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private var harvestCursorUntil:TimeInterval=0
     var onHarvestStatus:((String)->Void)?
     var harvestActive:Bool {
-        if smeltActive || harvestPauseRequested { return true }
+        if smeltActive || harvestPauseRequested || herdingActive { return true }
         if case .smelt = routeAction { return true }
         if harvestAfterEquip != nil || harvestReplacement != nil || harvestInventoryWait != nil { return true }
         guard let harvest else { return false }
@@ -470,6 +569,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     @discardableResult func startHarvest(zone:HarvestWorkflow.Zone,sites:[HarvestWorkflow.Site],kind:HarvestOutcome.Kind,
                                         route:@escaping (WalkPoint,WalkPoint)->[WalkPoint]?)->Bool {
         guard workStartReady("harvest",needsStatus:true),let playerSerial else { return false }
+        herding=nil
         let graphics:Set<Int> = kind == .mining ? [0xE85,0xE86,0xF39,0xF3A] :
             [0xF43,0xF44,0xF45,0xF46,0xF47,0xF48,0xF49,0xF4A,0xF4B,0xF4C,0xF5E,0xF5F,0x13FA,0x13FB]
         let equipped=world.equipment.values.filter { $0.owner==playerSerial && [1,2].contains($0.layer) && graphics.contains($0.graphic) }.sorted { $0.serial<$1.serial }.first?.serial
@@ -557,6 +657,9 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         harvestPauseRequested=false
         if !miningInternal,miningCircuit != nil { miningCircuit=nil; cancelRoute(preservingHarvest:true) }
         guard harvestActive else { return }
+        if herdingActive {
+            herding?.stop(); publishHerdStatus(); cancelRoute(preservingHarvest:true); return
+        }
         if harvestInventoryWait != nil {
             harvestInventoryWait=nil
             onHarvestStatus?("Harvesting inventory request cancelled.")
@@ -647,6 +750,14 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private func harvestTarget(_ request:TargetRequest)->Bool {
         let now=harvestNow()
         guard harvestActive || now<harvestCursorUntil else { return false }
+        if herding != nil {
+            if !herdingActive {
+                if request.flags != 3 { herdCommand(.cancelTarget(request)) }
+                return true
+            }
+            if let command=herding?.receive(request,animal:world.mobiles[herdAnimal],time:now) { herdCommand(command) }
+            publishHerdStatus(); return true
+        }
         if smelt != nil,let playerSerial,let player=world.mobiles[playerSerial] {
             if let command=smelt?.receive(request,world:world,position:.init(x:player.x,y:player.y,z:player.z),time:now) { smeltCommand(command) }
             publishSmeltStatus(); return true
@@ -667,6 +778,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         return true
     }
     private func observeHarvest(_ speech:SpeechMessage? = nil) {
+        if herdingActive { observeHerd(speech); return }
         if smeltActive { smelt?.observe(speech:speech,world:world,time:harvestNow()); publishSmeltStatus(); return }
         guard harvestActive,var outcome=harvestOutcome else { return }
         let now=harvestNow()
@@ -684,6 +796,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             world.mobiles.values.contains(where:{$0.serial != playerSerial && $0.isEnemy && max(abs($0.x-player.x),abs($0.y-player.y))<=6}) {
             stopHarvest(); onHarvestStatus?("Harvesting stopped: danger or another interaction nearby."); return
         }
+        if herdingActive { observeHerd(); return }
         if let pending=harvestInventoryWait {
             let ownsBag=world.equipment[pending.bag].map { $0.owner==playerSerial && $0.layer==21 } == true
             guard ownsBag,harvestNow()<pending.deadline else {
@@ -1564,6 +1677,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     var onDismiss: (() -> Void)?
 
     init(assets: ClientAssets, loginDefaults:UserDefaults = UserDefaults(suiteName:"com.ultimaxb.UltimaMac")!, connection:GameConnection? = nil) {
+        mapWidth=assets.width; mapHeight=assets.height
         self.connection=connection ?? GameConnection()
         ClassicControlArt.install(assets)
         ClassicNativeFont.install(assets.fonts)
@@ -1901,7 +2015,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private func reset(_ message: String) {
         introControls.isHidden=true; artwork.mainMenu=false; settings.isHidden=true
         statusRefreshTask?.cancel(); statusRefreshTask = nil
-        stopHarvest(); smelt=nil; smeltLastState=nil; harvest=nil; harvestOutcome=nil; harvestCursorUntil=0; harvestRestartAfter=0; harvestKnownContents=[]
+        stopHarvest(); herding=nil; herdLastState=nil; smelt=nil; smeltLastState=nil; harvest=nil; harvestOutcome=nil; harvestCursorUntil=0; harvestRestartAfter=0; harvestKnownContents=[]
         world = WorldState(); openedTravelDoors=[:]; manualTransfer=ManualInventoryTransfer()
         servers=[]; characters=[]; cities=[]; choices.removeAllItems(); cityChoice.removeAllItems()
         autoPickup = AutoPickup(); gatheredDrop=nil; awaitingDropWeight=nil; dropGatheredDuringTravel=false; banking=nil; bankingRequested=false; bankGatheredOnArrival=false; bankContentsContext=nil; bankTransferUntil=0; onAutoPickupMode?(0)

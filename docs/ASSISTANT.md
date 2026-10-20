@@ -210,16 +210,26 @@ Mining and lumberjacking now use the live action adapter with owned cursor
 routing, repetition, pause/resume, zones, tool selection and visible controls.
 Late cursors after cancellation are cancelled during a bounded handoff window.
 Exact duplicate target requests stop the action; same-type cursor reuse across
-multiple phases still needs protocol evidence. General editable macros, herding
-and crafting orchestration remain outstanding; the mining implementation is not
+multiple phases still needs protocol evidence. General editable macros, repeated
+zone herding and crafting orchestration remain outstanding; the mining implementation is not
 evidence of full automation parity.
 
-Herding has a locally tested single-action protocol runner (`HerdingAction`):
-animal cursor, destination cursor, correlated server acceptance/refusal, then
-actual animal arrival. A refusal may occur before the second cursor. An accepted
-order is not arrival, and inaccessible destinations time out. This is not yet a
-usable assistant mode: animal/destination selection, crook equip/approach, live
-packet routing and repeated zone herding remain to be integrated.
+Herding now has a sidebar panel and client adapter around `HerdingAction`.
+Refresh the visible creature list, choose the animal by its displayed position,
+and enter a destination or use Send to my position. Herd approaches the animal
+with up to three replans if it moves, equips a known carried shepherd's crook,
+and handles the animal cursor followed by the destination cursor. Unknown
+backpack contents are requested before selecting a carried tool. Eligibility
+remains server-authoritative; the list does not assert that a creature is wild,
+unowned, or herdable. Manual actions, Stop, panel close, danger and disconnect
+cancel the workflow. Refusal can arrive before the second cursor; acceptance
+is distinct from actual XYZ arrival, and missing responses/blocked animals time out.
+
+The adapter and game-style controls are covered by offline packet/UI fixtures.
+Live UO1998 herding and approach behavior still need validation. This is one
+explicit animal/order at a time; repeated zone herding, richer animal labels and
+map-picked destinations remain unfinished. The bounded SpacetimeDB sandbox does
+not yet implement herding and is not a behavioral oracle for this workflow.
 
 Ore hauling now has a locally tested single-stack state machine: confirmed drop at
 the current tile, one acknowledged route step, confirmed pickup, then repeat.

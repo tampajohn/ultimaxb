@@ -40,12 +40,14 @@ final class PlaySidebar: ClassicPanel {
         travel.tag=4; travel.frame=NSRect(x:12,y:408,width:256,height:28); addSubview(travel)
         let harvest=ClassicButton("Harvest planning",fonts:assets.fonts,target:self,action:#selector(command(_:)))
         harvest.tag=5; harvest.frame=NSRect(x:12,y:442,width:256,height:28); addSubview(harvest)
+        let herd=ClassicButton("Herding",fonts:assets.fonts,target:self,action:#selector(command(_:)))
+        herd.tag=6; herd.frame=NSRect(x:12,y:476,width:256,height:28); addSubview(herd)
         addSubview(skills)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
     override func layout() {
         super.layout()
-        skills.frame = NSRect(x:0,y:478,width:bounds.width,height:max(80,bounds.height-478))
+        skills.frame = NSRect(x:0,y:512,width:bounds.width,height:max(80,bounds.height-512))
     }
     func updatePickupMode(_ mode:Int) {
         pickupMode=mode; pickupButton?.title=["Gather: off","Gather: reagents","Gather: all"][max(0,min(2,mode))]

@@ -724,6 +724,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mapPanel:MapPanel?
     private var travelPanel:TravelPanel?
     private var harvestPanel:HarvestPanel?
+    private var herdPanel:HerdPanel?
     private var deathPanel:DeathPanel?
     private var textPromptPanel:TextPromptPanel?
     private var tradePanel:TradePanel?
@@ -1154,7 +1155,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 view.window?.invalidateCursorRects(for:view)
                 view.sidebar?.isHidden = player == nil
                 view.sidebar?.updateEquipment(view.equipment, player:player?.serial, assets:view.assets)
-                if player == nil { self?.harvestPanel?.closePanel(); self?.harvestPanel=nil; view.harvestBoundary=[]; view.harvestSites=[]; self?.travelPanel?.removeFromSuperview(); self?.travelPanel=nil; self?.mapPanel?.onPickLocation=nil; view.resetDeathAnimations(); view.effects = WorldEffects(); self?.audio.stop(); self?.spawnMusic.reset(); view.sidebar?.updateStatus(nil); self?.skillsPanel?.update(SkillState()) }
+                if player == nil { self?.herdPanel?.closePanel(); self?.herdPanel=nil; self?.harvestPanel?.closePanel(); self?.harvestPanel=nil; view.harvestBoundary=[]; view.harvestSites=[]; self?.travelPanel?.removeFromSuperview(); self?.travelPanel=nil; self?.mapPanel?.onPickLocation=nil; view.resetDeathAnimations(); view.effects = WorldEffects(); self?.audio.stop(); self?.spawnMusic.reset(); view.sidebar?.updateStatus(nil); self?.skillsPanel?.update(SkillState()) }
                 view.needsLayout = true
                 if player == nil { self?.worldView?.overheadSpeech = OverheadSpeech(); self?.spellShortcuts.values.forEach { $0.removeFromSuperview() }; self?.spellShortcuts.removeAll(); self?.spellbooks.values.forEach { $0.removeFromSuperview() }; self?.spellbooks.removeAll(); self?.chatPanel.reset(); self?.journalPanel?.removeFromSuperview(); self?.characterPanel?.removeFromSuperview(); self?.characterPanel = nil; self?.containerPanels.values.forEach { $0.removeFromSuperview() }; self?.containerPanels.removeAll() }
                 if let player, view.followPlayer, player.x != view.cx || player.y != view.cy {
@@ -1333,8 +1334,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for y in stride(from:zone.maxY-1,through:zone.minY+1,by:-1) { try add(zone.minX,y) }
         return edge
     }
+    private func approachHerd(animal serial:UInt32,destination:WalkPoint,attempts:Int=3) {
+        guard let view=worldView,let login=loginOverlay,let player=view.player,let panel=herdPanel,panel.superview != nil else { return }
+        guard let animal=view.mobiles.first(where:{$0.serial==serial}),!animal.isGhost else { panel.showResult("The selected animal is no longer visible."); return }
+        if max(abs(player.x-animal.x),abs(player.y-animal.y))<=1 {
+            _=login.startHerding(animal:serial,destination:destination); return
+        }
+        guard attempts>0 else { panel.showResult("The animal kept moving out of reach. Choose Herd to try again."); return }
+        panel.showResult("Walking toward the selected animal.")
+        miningNavigate(to:.init(x:animal.x,y:animal.y,z:animal.z),adjacent:true) { [weak self,weak panel] arrived in
+            guard let self,let panel,self.herdPanel === panel,panel.superview != nil else { return }
+            guard arrived else { panel.showResult("Could not reach the animal, or travel was cancelled."); return }
+            self.approachHerd(animal:serial,destination:destination,attempts:attempts-1)
+        }
+    }
+    private func showHerd() {
+        guard let view=worldView,let login=loginOverlay,let player=view.player else { return }
+        harvestPanel?.closePanel(); harvestPanel=nil
+        herdPanel?.closePanel()
+        let panel=HerdPanel(assets:assets,position:.init(x:player.x,y:player.y,z:player.z)); herdPanel=panel
+        panel.onRefresh={ [weak view] in
+            guard let view,let player=view.player else { return [] }
+            return view.mobiles.filter { $0.serial != player.serial && !$0.isGhost }.sorted {
+                let a=max(abs($0.x-player.x),abs($0.y-player.y)),b=max(abs($1.x-player.x),abs($1.y-player.y))
+                return a == b ? $0.serial<$1.serial:a<b
+            }
+        }
+        panel.onPlayerPosition={ [weak view] in view?.player.map { .init(x:$0.x,y:$0.y,z:$0.z) } }
+        panel.onStop={ [weak login] in login?.stopHarvest(); login?.cancelRoute() }
+        panel.isWorking={ [weak self,weak login] in (login?.harvestingSessionActive ?? false) || self?.miningPlanning != nil || self?.miningArrival != nil }
+        panel.onStart={ [weak self,weak login,weak view] serial,destination in
+            login?.cancelRoute(); view?.followPlayer=true
+            self?.approachHerd(animal:serial,destination:destination)
+        }
+        login.onHarvestStatus={ [weak panel] in panel?.showResult($0) }
+        panel.refreshAnimals(); view.addSubview(panel)
+    }
     private func showHarvest() {
         guard let view=worldView,let login=loginOverlay,let player=view.player else { return }
+        herdPanel?.closePanel(); herdPanel=nil
         harvestPanel?.closePanel()
         let panel=HarvestPanel(assets:assets,scope:login.assistantScope,position:.init(x:player.x,y:player.y,z:player.z)); harvestPanel=panel
         panel.onPlayerPosition={ [weak view] in view?.player.map { WalkPoint(x:$0.x,y:$0.y,z:$0.z) } }
@@ -1661,6 +1699,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case 2: self?.loginOverlay?.useEquippedTool()
             case 4: self?.showTravel()
             case 5: self?.showHarvest()
+            case 6: self?.showHerd()
             default: self?.loginOverlay?.toggleWarMode()
             }
             self?.window?.makeFirstResponder(self?.worldView)
