@@ -1318,6 +1318,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let panel=HarvestPanel(assets:assets,scope:login.assistantScope,position:.init(x:player.x,y:player.y,z:player.z)); harvestPanel=panel
         panel.onPlayerPosition={ [weak view] in view?.player.map { WalkPoint(x:$0.x,y:$0.y,z:$0.z) } }
         panel.onStop={ [weak login] in login?.stopHarvest() }
+        panel.onPauseResume={ [weak login] in login?.toggleHarvestPause() }
         panel.onRememberForge={ [weak self,weak panel] in
             if let point=self?.rememberMiningForge() { panel?.showResult("Forge remembered at \(point.x), \(point.y). Mining can return here to smelt.") }
             else { panel?.showResult("Visit a smithy so its forge is visible, then remember it.") }

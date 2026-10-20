@@ -15,6 +15,7 @@ import UOCore
     var onPlayerPosition:(()->WalkPoint?)?
     var onStart:((HarvestWorkflow.Zone,HarvestOutcome.Kind)->Void)?
     var onStop:(()->Void)?
+    var onPauseResume:(()->Void)?
     var onSmelt:(()->Void)?
     var onRememberForge:(()->Void)?
     private(set) var loopEnabled=true,relocateEnabled=true
@@ -27,7 +28,7 @@ import UOCore
         mining=ClassicButton("Mining",fonts:assets.fonts,target:nil,action:nil)
         wood=ClassicButton("Lumberjacking",fonts:assets.fonts,target:nil,action:nil)
         super.init(assets:assets)
-        frame=NSRect(x:310,y:30,width:420,height:600)
+        frame=NSRect(x:310,y:30,width:420,height:642)
         let title=ClassicLabel("Harvest planning",fonts:assets.fonts); title.frame=NSRect(x:20,y:16,width:340,height:25); addSubview(title)
         let close=ClassicButton("X",fonts:assets.fonts,target:self,action:#selector(closePanel)); close.frame=NSRect(x:380,y:12,width:26,height:26); addSubview(close)
         mining.target=self; mining.action=#selector(selectMining); mining.frame=NSRect(x:20,y:52,width:180,height:30); addSubview(mining)
@@ -64,7 +65,9 @@ import UOCore
         let remember=ClassicButton("Remember nearby forge",fonts:assets.fonts,target:self,action:#selector(rememberForge))
         remember.frame=NSRect(x:20,y:410,width:380,height:30); addSubview(remember)
         updateLoopButtons()
-        message.frame=NSRect(x:20,y:458,width:380,height:122); addSubview(message)
+        let pause=ClassicButton("Pause / resume harvesting",fonts:assets.fonts,target:self,action:#selector(pauseResume))
+        pause.frame=NSRect(x:20,y:452,width:380,height:30); addSubview(pause)
+        message.frame=NSRect(x:20,y:500,width:380,height:122); addSubview(message)
         updateKind()
     }
     required init?(coder:NSCoder) { fatalError() }
@@ -99,6 +102,7 @@ import UOCore
         guard isHarvesting?() != true else { showResult("Choose Stop before starting another activity."); return }
         onSmelt?()
     }
+    @objc func pauseResume() { onPauseResume?() }
     @objc func stopHarvesting() { onStop?() }
     @objc func preview() {
         validatedZone=nil; onStop?(); onClear?()

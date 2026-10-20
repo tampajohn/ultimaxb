@@ -162,6 +162,27 @@ import UOCore
         precondition(relocate != nil && login.harvestingSessionActive)
         login.stopHarvest(); relocate?(zone,[site]); login.tickMovement()
         precondition(!login.harvestingSessionActive,"A late zone result cannot restart mining after Stop")
+
+        precondition(login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}))
+        login.enableMiningCircuit(forge:.init(x:11,y:10,z:0),zone:zone,sites:[site],relocate:true)
+        relocate=nil
+        login.tickMovement(); login.toggleHarvestPause()
+        precondition(messages.last!.contains("Pause requested"))
+        target(33); speech("There is no metal here to mine.")
+        login.tickMovement()
+        precondition(relocate == nil,"Paused circuit must not relocate after its final tool response")
+        precondition(!login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}),"Paused zone completion still owns the workflow")
+        login.toggleHarvestPause(); login.tickMovement()
+        precondition(relocate != nil,"Resume may advance a completed zone")
+        login.stopHarvest()
+        precondition(login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}))
+        login.toggleHarvestPause(); login.tickMovement()
+        precondition(messages.last == "Harvesting paused.")
+        now += 2; login.tickMovement()
+        precondition(messages.last == "Harvesting paused.")
+        login.toggleHarvestPause(); login.tickMovement()
+        precondition(messages.last!.contains("Using tool"))
+        login.stopHarvest()
         print("Harvest adapter confirms resources, advances depleted sites, cancels late cursors and stops for manual actions/danger")
     }
 }

@@ -1103,3 +1103,8 @@ Validation: release build passed; `tools/check_login_flow.swift` injects offline
 - Pending mining searches now track both a request identity and the navigation generation. Stop/manual travel invalidation cancels the detached worker on the movement tick; stale results cannot replace a newer planning task.
 - Exhausted-zone relocation redraws the gold boundary using the same terrain elevations as manual preview. Remembered forge coordinates are validated against the installed map before routing.
 - Release build and all 19 offline UI fixtures pass in both modes. Added adapter regressions for late forge-arrival and relocation callbacks after cancellation; these prove the callbacks do not restart mining, not end-to-end live route behavior. Running client left untouched; changes apply on its next launch.
+
+### 2026-10-19 — Harvest pause/resume control
+- Added an asset-font Pause / resume harvesting button. Pause drains the outstanding tool response or local site approach, retains remaining work, and prevents a completed zone from launching relocation until Resume. Stop still cancels immediately.
+- Pause currently applies to harvesting; forge travel, smelting and equipment transactions explicitly direct the player to Stop instead. It is not yet a whole-circuit pause.
+- Offline adapter checks cover pausing before a tool request, draining final-site depletion without relocation, resuming relocation and rejecting a second Start while paused. Release build and all 19 offline UI fixtures pass; live pause timing remains unverified.

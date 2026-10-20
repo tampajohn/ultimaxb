@@ -254,7 +254,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private func tickMiningCircuit() {
         guard let circuit=miningCircuit else { return }
         guard loginComplete,let serial=playerSerial,let player=world.mobiles[serial],!player.isGhost,trade == nil else { endMiningCircuit("Mining circuit stopped for your current state."); return }
-        if circuit.phase == .travelling { return }
+        if harvestPauseRequested || circuit.phase == .travelling { return }
         if circuit.phase == .smelting {
             guard !smeltActive else { return }
             guard smelt?.state == .completed,(smelt?.successes ?? 0)>0 else { endMiningCircuit("Mining circuit stopped because smelting did not complete."); return }
@@ -354,6 +354,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     }
     private var harvest:HarvestWorkflow?
     private var harvestAfterEquip:(()->Void)?
+    private var harvestPauseRequested=false
     private var harvestReplacement:(at:TimeInterval,resume:()->Void)?
     private var harvestOutcome:HarvestOutcome?
     private var harvestKind:HarvestOutcome.Kind = .mining
@@ -363,7 +364,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private var harvestCursorUntil:TimeInterval=0
     var onHarvestStatus:((String)->Void)?
     var harvestActive:Bool {
-        if smeltActive { return true }
+        if smeltActive || harvestPauseRequested { return true }
         if case .smelt = routeAction { return true }
         if harvestAfterEquip != nil || harvestReplacement != nil { return true }
         guard let harvest else { return false }
@@ -423,7 +424,26 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         publishHarvestStatus()
         return true
     }
+    func toggleHarvestPause() {
+        if harvestPauseRequested {
+            harvestPauseRequested=false; harvest?.resume()
+            publishHarvestStatus()
+            onHarvestStatus?("Harvesting resumed.")
+            Telemetry.shared.record("harvest_resume")
+            return
+        }
+        guard harvestActive,!smeltActive,miningCircuit?.phase != .travelling,
+              harvestAfterEquip == nil,harvestReplacement == nil,harvest != nil else {
+            onHarvestStatus?("Pause is available while harvesting. Use Stop to cancel forge travel or smelting.")
+            return
+        }
+        harvestPauseRequested=true; harvest?.pause()
+        publishHarvestStatus()
+        if harvest?.state != .paused { onHarvestStatus?("Pause requested. Finishing the current walk or tool response.") }
+        Telemetry.shared.record("harvest_pause_requested")
+    }
     func stopHarvest() {
+        harvestPauseRequested=false
         if !miningInternal,miningCircuit != nil { miningCircuit=nil; cancelRoute(preservingHarvest:true) }
         guard harvestActive else { return }
         if harvestReplacement != nil {
@@ -469,7 +489,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         case .travelling: text="Walking to the next work site."
         case .working: text="Using tool; waiting for the server."
         case .paused: text="Harvesting paused."
-        case .completed: text="Harvesting finished: \(harvest.successfulActions) successful attempts."
+        case .completed: text=harvestPauseRequested ? "Harvesting paused at the end of this zone. Resume to continue." : "Harvesting finished: \(harvest.successfulActions) successful attempts."
         case .stopped(.overweight): text="Harvesting stopped to leave carrying room. Bank or smelt your resources, then Start again."
         case .stopped(.unreachable): text="No reachable work sites remain in this zone. Move or choose another area."
         case .stopped(.noProgress): text="Harvesting stopped after repeated failed attempts. Try another site or improve the relevant skill."
@@ -543,6 +563,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             stopHarvest(); onHarvestStatus?("Harvesting stopped: danger or another interaction nearby."); return
         }
         if let replacement=harvestReplacement {
+            guard !harvestPauseRequested else { return }
             guard harvestNow()>=replacement.at else { return }
             harvestReplacement=nil; replacement.resume(); return
         }
@@ -552,7 +573,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             publishSmeltStatus(); return
         }
         if case .smelt = routeAction { return }
-        if harvestAfterEquip != nil { return }
+        if harvestAfterEquip != nil || harvest?.state == .paused { return }
         observeHarvest()
         guard movement.pendingCount==0,!movement.awaitingPosition else { return }
         let bag=world.equipment.values.first { $0.owner==playerSerial && $0.layer==21 }?.serial
