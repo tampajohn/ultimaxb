@@ -17,12 +17,37 @@ pub struct SkillEvent {
     after: u16,
 }
 
+#[spacetimedb::table(accessor = player_skill)]
+pub struct PlayerSkill {
+    #[primary_key] key:String,
+    player:u32, id:u16, value:u16, actions:u64,
+}
+
+#[spacetimedb::table(accessor = player_skill_event)]
+pub struct PlayerSkillEvent {
+    #[primary_key] revision:u64,
+    player:u32, skill:u16, before:u16, after:u16,
+}
+
 fn next_value(value: u16) -> u16 { value.saturating_add(1).min(1000) }
 
 // Deliberately not a reducer: clients and the gateway cannot award arbitrary
 // gains. Call only within the inventory transaction that performs the action.
 pub(super) fn gain(ctx: &ReducerContext, revision: u64, id: u16) -> Result<(),String> {
     if ![7,11,44,45].contains(&id) { return Err("unsupported skill".into()); }
+    let player=players::actor(ctx)?;
+    if player!=1 {
+        let key=format!("{player}:{id}");
+        let old=ctx.db.player_skill().key().find(&key);
+        let before=old.as_ref().map_or(0,|s|s.value);
+        let value=next_value(before);
+        let actions=old.as_ref().map_or(0,|s|s.actions).checked_add(1).ok_or("skill history exhausted")?;
+        let progress=PlayerSkill {key,player,id,value,actions};
+        if old.is_some() {ctx.db.player_skill().key().update(progress);}
+        else {ctx.db.player_skill().insert(progress);}
+        ctx.db.player_skill_event().insert(PlayerSkillEvent {revision,player,skill:id,before,after:value});
+        return Ok(());
+    }
     let old=ctx.db.skill_progress().id().find(id);
     let before=old.as_ref().map_or(0,|s|s.value);
     let value=next_value(before);

@@ -75,17 +75,17 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0)
         return reader, writer, wire.Cipher(seed)
 
-    async def relay(self):
+    async def relay(self,account='local'):
         reader, writer, cipher = await self.connect(123)
-        writer.write(cipher.transform(b'\x80' + wire.fixed('local', 30) * 2 + b'\0'))
+        writer.write(cipher.transform(b'\x80' + wire.fixed(account, 30) * 2 + b'\0'))
         self.assertEqual(await reader.readexactly(46), wire.server_list())
         writer.write(cipher.transform(b'\xa0\0\0'))
         reply = await reader.readexactly(11)
         return struct.unpack_from('>I', reply, 7)[0]
 
-    async def game(self, token):
+    async def game(self, token, account='local'):
         reader, writer, cipher = await self.connect(token)
-        writer.write(cipher.transform(b'\x91' + struct.pack('>I', token) + wire.fixed('local', 30) + bytes(30)))
+        writer.write(cipher.transform(b'\x91' + struct.pack('>I', token) + wire.fixed(account, 30) + bytes(30)))
         return reader, writer, cipher
 
     async def test_relay_replay_and_duplicate_session_rejected(self):
@@ -102,7 +102,7 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
         writer.write(cipher.transform(b'\x80' + wire.fixed('local', 30) + wire.fixed('wrong', 30) + b'\0'))
         self.assertEqual(await reader.readexactly(2), b'\x82\x03')
         token = await self.relay()
-        self.gateway.relays[token] = 0
+        self.gateway.relays[token] = (0,'local')
         reader, _, _ = await self.game(token)
         self.assertEqual(await reader.read(), b'')
 
@@ -991,6 +991,157 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(BackendError):
             self.backend.request(self.backend.path+'/call/recover_player',json.dumps([vital['revision']]).encode())
         with self.assertRaises(BackendError):self.backend.recover()
+
+    async def test_zzzzzzzzzz_player_registration_preserves_original(self):
+        original=self.backend.avatar()
+        scene,objects=self.backend.world()
+        spot=next(p for dx,dy in [(0,1),(1,0),(0,-1),(-1,0)] if
+            (p:=self.navigation.query('stand',dict(x=original['x']+dx,y=original['y']+dy,z=original['z']),objects=objects)))
+        inventory=self.backend.inventory()
+        equipment=self.backend.equipment()
+        state=[self.backend.nutrition(),self.backend.skill_state(),self.backend.combat_state(),
+               self.backend.gathering_state(),self.backend.merchant_state(),self.backend.hunting_state()]
+        accounts=self.backend.player_accounts()
+        self.assertEqual(len(accounts),1)
+        self.assertEqual((accounts[0][0],accounts[0][1],accounts[0][3]),(1,'local',BACKPACK))
+        identity=json.loads(self.backend.request('/v1/identity',b''))
+        outsider=Backend(self.backend.endpoint,self.backend.database,identity['token'])
+        args=[identity['identity'],spot['x'],spot['y'],spot['z']]
+        with self.assertRaises(BackendError):
+            outsider.request(outsider.path+'/call/register_second_player',json.dumps(args).encode())
+        with self.assertRaises(BackendError):
+            self.backend.request(self.backend.path+'/call/register_second_player',json.dumps(
+                [identity['identity'],original['x'],original['y'],original['z']]).encode())
+        self.assertEqual(self.backend.inventory(),inventory)
+        self.backend.request(self.backend.path+'/call/register_second_player',json.dumps(args).encode())
+        accounts=sorted(self.backend.player_accounts())
+        self.assertEqual([a[0] for a in accounts],[1,4])
+        self.assertEqual(accounts[1][1],'local2')
+        self.assertNotEqual(accounts[1][3],BACKPACK)
+        after=self.backend.inventory()
+        old_serials={i['serial'] for i in inventory[1]}
+        self.assertEqual([i for i in after[1] if i['serial'] in old_serials],inventory[1])
+        added=[i for i in after[1] if i['serial'] not in old_serials]
+        self.assertEqual(len(added),11)
+        self.assertTrue(all(i['container'] in (4,accounts[1][3]) for i in added))
+        self.assertEqual(self.backend.avatar(),original)
+        self.assertEqual(self.backend.equipment(),equipment)
+        self.assertEqual(self.backend.world(),(scene,objects))
+        self.assertEqual([self.backend.nutrition(),self.backend.skill_state(),self.backend.combat_state(),
+            self.backend.gathering_state(),self.backend.merchant_state(),self.backend.hunting_state()],state)
+        self.backend.request(self.backend.path+'/call/register_second_player',json.dumps(args).encode())
+        self.assertEqual(self.backend.inventory(),after)
+        other=json.loads(self.backend.request('/v1/identity',b''))
+        with self.assertRaises(BackendError):
+            self.backend.request(self.backend.path+'/call/register_second_player',json.dumps(
+                [other['identity'],spot['x'],spot['y'],spot['z']]).encode())
+        self.assertEqual(self.backend.player_accounts(),accounts)
+        from accounts import save_private_config,ensure_local_accounts
+        config=json.loads(Path(CONFIG).read_text())
+        config.setdefault('players',{})['local2']={'identity':identity['identity'],'token':identity['token']}
+        save_private_config(CONFIG,config)
+        ensure_local_accounts(self.backend,CONFIG)
+        second=Backend(self.backend.endpoint,self.backend.database,self.backend.token,
+            navigation=self.navigation,player=4,backpack=accounts[1][3],write_token=identity['token'])
+        self.assertEqual(second.avatar()['serial'],4)
+        self.assertEqual(second.vitality()['health'],50)
+        self.assertEqual(second.skills(),{7:0,11:0,44:0,45:0})
+        player_before=self.backend.avatar()
+        moved=second.walk(second.avatar()['revision'],4)
+        self.assertEqual(moved['revision'],1)
+        self.assertEqual(self.backend.avatar(),player_before)
+        dagger=next(i for i in added if i['graphic']==0xf51)
+        with self.assertRaises(BackendError):self.backend.lift(dagger['serial'],1)
+        mine=next(i for i in inventory[1] if i['container']==BACKPACK)
+        with self.assertRaises(BackendError):
+            second.request(second.path+'/call/place_item',json.dumps([
+                second.inventory()[0],second.avatar()['revision'],second.world()[0],
+                mine['serial'],1,second.backpack,65,85,0]).encode())
+        # Equipping player 4 must not displace player 1's matching layers.
+        primary_equipment=self.backend.equipment()
+        boots=next(i for i in added if i['graphic']==0x170b)
+        second.equip(second.lift(boots['serial'],1),boots['serial'],3,4)
+        second.equip(second.lift(dagger['serial'],1),dagger['serial'],1,4)
+        self.assertEqual(self.backend.equipment(),primary_equipment)
+        self.assertTrue(any(i['serial']==dagger['serial'] for i in second.equipment()))
+        with self.assertRaises(BackendError):
+            second.request(second.path+'/call/equip_item',json.dumps([
+                second.inventory()[0],second.avatar()['revision'],second.world()[0],
+                dagger['serial'],1,1]).encode())
+        primary_nutrition=self.backend.nutrition()
+        apple=next(i for i in added if i['graphic']==0x9d0)
+        second.eat(second.lift(apple['serial'],1))
+        self.assertEqual(second.nutrition()[0][0:2],[4,4])
+        self.assertEqual(self.backend.nutrition(),primary_nutrition)
+        with self.assertRaises(BackendError):
+            second.request(second.path+'/call/seed_inventory',b'[]')
+        with self.assertRaises(BackendError):
+            second.request(second.path+'/call/seed_starter_kit',b'[]')
+
+    async def test_zzzzzzzzzzz_two_clients_visibility_and_ownership(self):
+        from accounts import ensure_local_accounts
+        accounts=ensure_local_accounts(self.backend,CONFIG)
+        second=accounts['local2']
+        self.gateway.accounts=accounts
+        second.on_change=self.gateway.feed.publish
+        def mobile(bound):
+            return wire.player_mobile(dict(bound.avatar(),equipment=bound.equipment(),
+                backpack=bound.backpack,war=False))
+        async def until(reader,expected):
+            for _ in range(16):
+                data=await asyncio.wait_for(block(reader),3)
+                if expected in data:return data
+            self.fail('Expected shared-world update was not delivered')
+        async def enter(name,bound):
+            reader,writer,cipher=await self.game(await self.relay(name),name)
+            await block(reader)
+            writer.write(cipher.transform(b'\x5d'+bytes.fromhex('edededed')+
+                wire.fixed(bound.avatar()['name'],30)+bytes(38)))
+            entry=await asyncio.wait_for(block(reader),3)
+            self.assertIn(wire.entry(bound.avatar()),entry)
+            self.assertIn(wire.backpack(bound.backpack,bound.player),entry)
+            return reader,writer,cipher,entry
+        first_reader,first_writer,first_cipher,_=await enter('local',self.backend)
+        reader,writer,cipher,entry=await enter('local2',second)
+        self.assertIn(mobile(self.backend),entry)
+        await until(first_reader,mobile(second))
+        self.assertEqual(self.gateway.active,{1,4})
+        duplicate,_,_=await self.game(await self.relay('local2'),'local2')
+        self.assertEqual(await duplicate.read(),b'')
+        # A ticket for one account cannot be used to select the other's avatar.
+        wrong,_,_=await self.game(await self.relay('local2'),'local')
+        self.assertEqual(await wrong.read(),b'')
+        start=second.avatar()
+        direction=next(d for d in range(8) if self.navigation.query('step',start,d,objects=second.world()[1]))
+        sequence=0
+        if start['direction']&7!=direction:
+            writer.write(cipher.transform(bytes([2,direction,sequence])))
+            await until(reader,bytes([0x22,sequence,1]))
+            await until(first_reader,mobile(second))
+            sequence+=1
+        writer.write(cipher.transform(bytes([2,direction,sequence])))
+        await until(reader,bytes([0x22,sequence,1]))
+        self.assertNotEqual((second.avatar()['x'],second.avatar()['y']),(start['x'],start['y']))
+        await until(first_reader,mobile(second))
+        helm=next(i for i in second.inventory()[1] if i['container']==second.backpack and i['graphic']==0x140e)
+        writer.write(cipher.transform(b'\x06'+struct.pack('>I',helm['serial'])))
+        await until(reader,wire.equipped(dict(helm,container=4,layer=6),4))
+        await until(first_reader,mobile(second))
+        inventory=self.backend.inventory()
+        private=next(i for i in inventory[1] if i['container']==1)
+        writer.write(cipher.transform(b'\x06'+struct.pack('>I',private['serial'])))
+        await until(reader,b'You cannot use that item now')
+        self.assertEqual(self.backend.inventory(),inventory)
+        writer.close();await writer.wait_closed()
+        await until(first_reader,wire.remove_item(4))
+        for _ in range(100):
+            if 4 not in self.gateway.active:break
+            await asyncio.sleep(.01)
+        self.assertNotIn(4,self.gateway.active)
+        # Re-entry retains position/equipment and announces the player again.
+        _,_,_,entry=await enter('local2',second)
+        self.assertIn(wire.equipped(dict(helm,container=4,layer=6),4),entry)
+        await until(first_reader,mobile(second))
 
     async def test_z_food_consumption_is_atomic_and_persistent(self):
         before = self.backend.inventory()

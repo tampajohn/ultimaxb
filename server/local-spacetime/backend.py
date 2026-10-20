@@ -1,5 +1,5 @@
-"""Small HTTP transport for the protocol proof; replace with SDK subscriptions
-before multiplayer. No fallback store: a database failure fails the operation.
+"""HTTP transport for one owner gateway with commit-triggered session notifications.
+Multiple gateways will require DB subscriptions. A database failure fails the operation.
 """
 import json
 import time
@@ -29,18 +29,22 @@ ITEMS = {
 
 
 class Backend:
-    def __init__(self, endpoint, database, token, navigation=None):
+    def __init__(self, endpoint, database, token, navigation=None, player=1, backpack=BACKPACK, write_token=None):
         parsed = urlparse(endpoint)
         if parsed.scheme != 'http' or parsed.hostname != '127.0.0.1':
             raise ValueError('this prototype requires a loopback SpacetimeDB endpoint')
         self.endpoint = endpoint.rstrip('/')
         self.database = database
         self.token = token
+        self.write_token = write_token or token
+        self.player = player
+        self.backpack = backpack
         self.navigation = navigation
+        self.on_change = None
 
     def request(self, path, data=None, method='POST', content_type='application/json'):
         req = Request(self.endpoint + path, data=data, method=method,
-                      headers={'Authorization': 'Bearer ' + self.token,
+                      headers={'Authorization': 'Bearer ' + (self.write_token if '/call/' in path else self.token),
                                'Content-Type': content_type})
         try:
             with urlopen(req, timeout=5) as response:
@@ -52,6 +56,9 @@ class Backend:
             raise BackendError(f'SpacetimeDB rejected request (HTTP {code})') from None
         except OSError:
             raise BackendError('SpacetimeDB unavailable') from None
+        finally:
+            if '/call/' in path and self.on_change is not None:
+                self.on_change(self.player)
 
     @property
     def path(self):
@@ -59,7 +66,7 @@ class Backend:
 
     def avatar(self):
         result = json.loads(self.request(self.path + '/sql',
-            b'SELECT serial, name, x, y, z, direction, revision FROM avatar WHERE serial = 1',
+            f'SELECT serial, name, x, y, z, direction, revision FROM avatar WHERE serial = {self.player}'.encode(),
             content_type='text/plain'))
         rows = result[0]['rows']
         if len(rows) != 1:
@@ -102,7 +109,27 @@ class Backend:
             return self.avatar()
         return avatar
 
+    def _revision(self,table):
+        rows=json.loads(self.request(self.path+'/sql',
+            f'SELECT revision FROM {table} WHERE id = 0'.encode(),content_type='text/plain'))[0]['rows']
+        return rows[0][0] if rows else 0
+
+    def stable_snapshot(self,table,read):
+        # Multiple SQL requests can straddle a committed transfer. Retry reads
+        # only when a revision proves that happened; never replay a mutation.
+        for _ in range(5):
+            before=self._revision(table)
+            try:result=read()
+            except BackendError:
+                if self._revision(table)!=before:continue
+                raise
+            if self._revision(table)==before:return result
+        raise BackendError('The world changed repeatedly. Try again.')
+
     def world(self):
+        return self.stable_snapshot('scene',self._world_snapshot)
+
+    def _world_snapshot(self):
         # Read revision BEFORE geometry. A concurrent change either appears in
         # this snapshot or causes the reducer's expected_scene check to fail.
         result = json.loads(self.request(self.path + '/sql',
@@ -126,6 +153,8 @@ class Backend:
         return revision, sorted(objects, key=lambda item: item['serial'])
 
     def prepare(self):
+        if self.player!=1:
+            raise BackendError('Only the administrator initializes world fixtures.')
         self.prepare_objects()
         self.request(self.path + '/call/seed_inventory', b'[]')
         self.request(self.path + '/call/seed_starter_kit', b'[]')
@@ -134,14 +163,38 @@ class Backend:
         self.prepare_forge()
         self.prepare_creature()
         self.request(self.path+'/call/seed_vitality',b'[]')
+        self.request(self.path+'/call/seed_player_accounts',b'[]')
+
+    def avatars(self):
+        return sorted(json.loads(self.request(self.path+'/sql',b'SELECT * FROM avatar',content_type='text/plain'))[0]['rows'])
+
+    def multiplayer_state(self):
+        tables=('player_account','player_presence','avatar','nutrition','vitality','harvest_clock','melee_clock',
+                'player_skill','player_skill_event','player_movement','player_combat_event',
+                'inventory_actor','hunting_actor')
+        return {table:sorted(json.loads(self.request(self.path+'/sql',('SELECT * FROM '+table).encode(),
+            content_type='text/plain'))[0]['rows']) for table in tables}
+
+    def player_accounts(self):
+        return json.loads(self.request(self.path+'/sql',b'SELECT * FROM player_account',content_type='text/plain'))[0]['rows']
 
     def vitality(self):
-        rows=json.loads(self.request(self.path+'/sql',b'SELECT * FROM vitality',content_type='text/plain'))[0]['rows']
+        rows=json.loads(self.request(self.path+'/sql',f'SELECT * FROM vitality WHERE serial = {self.player}'.encode(),content_type='text/plain'))[0]['rows']
         return dict(zip(('serial','health','revision','recover_at'),rows[0]))
 
     def combat_state(self):
-        return {table:sorted(json.loads(self.request(self.path+'/sql',('SELECT * FROM '+table).encode(),
-            content_type='text/plain'))[0]['rows']) for table in ('vitality','combat_event')}
+        queries={
+            'vitality':f'SELECT * FROM vitality WHERE serial = {self.player}',
+            'combat_event':('SELECT * FROM combat_event' if self.player==1 else
+                f'SELECT revision, kind, creature_revision, protection, damage, remaining, at FROM player_combat_event WHERE player = {self.player}')}
+        return {name:sorted(json.loads(self.request(self.path+'/sql',sql.encode(),
+            content_type='text/plain'))[0]['rows']) for name,sql in queries.items()}
+
+    def melee_deadline(self):
+        rows=json.loads(self.request(self.path+'/sql',
+            f'SELECT next_strike FROM melee_clock WHERE player = {self.player}'.encode(),
+            content_type='text/plain'))[0]['rows']
+        return rows[0][0] if rows else (self.creature()['next_strike'] if self.player==1 else 0)
 
     def recover(self):
         vital=self.vitality()
@@ -195,7 +248,7 @@ class Backend:
         if creature is None or creature['health']==0:raise BackendError('Target is dead.')
         if max(abs(avatar['x']-creature['x']),abs(avatar['y']-creature['y']))>1:raise BackendError('Move closer to strike.')
         self.check_reach(creature,avatar,objects)
-        if int(time.time()*1_000_000)<creature['next_strike']:return None
+        if int(time.time()*1_000_000)<self.melee_deadline():return None
         self.request(self.path+'/call/strike_creature',json.dumps([avatar['revision'],revision,scene,creature['revision']]).encode())
         return self.creature()
 
@@ -284,7 +337,7 @@ class Backend:
         vendor=self.merchant()
         if vendor is None: raise BackendError('Merchant unavailable.')
         self.check_reach(vendor,self.avatar(),self.world()[1])
-        logs=sorted((i for i in items if i['container']==BACKPACK and i['graphic']==0x1bdd),key=lambda i:i['serial'])
+        logs=sorted((i for i in items if i['container']==self.backpack and i['graphic']==0x1bdd),key=lambda i:i['serial'])
         item=dict(logs[0],amount=min(logs[0]['amount'],vendor['gold'])) if logs and vendor['gold'] else None
         return dict(inventory=revision,vendor=vendor,item=item)
 
@@ -338,6 +391,9 @@ class Backend:
         raise BackendError('No safe neighboring door/barrel sites found')
 
     def inventory(self):
+        return self.stable_snapshot('inventory_state',self._inventory_snapshot)
+
+    def _inventory_snapshot(self):
         result = json.loads(self.request(self.path + '/sql',
             b'SELECT revision FROM inventory_state WHERE id = 0', content_type='text/plain'))
         if not result[0]['rows']:
@@ -363,7 +419,7 @@ class Backend:
         return dict(result[0]['rows'])
 
     def check_container(self, serial, avatar, objects):
-        if serial == BACKPACK:
+        if serial == self.backpack:
             return
         if serial != BARREL or self.navigation is None:
             raise BackendError('Unsupported container')
@@ -397,17 +453,20 @@ class Backend:
         return [item for item in self.inventory()[1] if item['container'] == serial]
 
     def equipment(self):
+        return self.stable_snapshot('inventory_state',self._equipment_snapshot)
+
+    def _equipment_snapshot(self):
         result = json.loads(self.request(self.path + '/sql',
             b'SELECT serial, layer FROM equipment_slot',content_type='text/plain'))
         slots = dict(result[0]['rows'])
         return [dict(item,layer=slots[item['serial']]) for item in self.inventory()[1]
-                if item['container']==1 and item['serial'] in slots]
+                if item['container']==self.player and item['serial'] in slots]
 
     def check_source(self, item, avatar, objects):
         if item['container'] == 0:
             self.check_reach(item,avatar,objects)
             return
-        if item['container'] == 1:
+        if item['container'] == self.player:
             return
         self.check_container(item['container'],avatar,objects)
 
@@ -438,11 +497,11 @@ class Backend:
                 raise BackendError('No supported ground at requested height')
             self.check_reach(target,avatar,others)
             z = target['z']
-        elif container in (BACKPACK,BARREL):
+        elif container in (self.backpack,BARREL):
             self.check_container(container,avatar,objects)
             if x == 0xffff and y == 0xffff:
                 x,y = 65,65
-            bounds = (44,140,65,140) if container == BACKPACK else (33,98,36,139)
+            bounds = (44,140,65,140) if container == self.backpack else (33,98,36,139)
             if not (bounds[0] <= x <= bounds[1] and bounds[2] <= y <= bounds[3]):
                 raise BackendError('Place the item inside the container')
             z = 0
@@ -456,7 +515,7 @@ class Backend:
             lift['revision'],avatar['revision'],scene,serial,lift['amount'],container,x,y,z]).encode())
 
     def equip(self, lift, serial, layer, owner):
-        if serial != lift['item']['serial'] or lift['amount'] != 1 or owner != 1:
+        if serial != lift['item']['serial'] or lift['amount'] != 1 or owner != self.player:
             raise BackendError('Invalid equipment request')
         avatar = self.avatar()
         scene, objects = self.world()
@@ -472,7 +531,7 @@ class Backend:
             lift['revision'],avatar['revision'],scene,lift['item']['serial']]).encode())
 
     def nutrition(self):
-        result = json.loads(self.request(self.path + '/sql',b'SELECT serial, fullness, movement_revision FROM nutrition',
+        result = json.loads(self.request(self.path + '/sql',f'SELECT serial, fullness, movement_revision FROM nutrition WHERE serial = {self.player}'.encode(),
                                         content_type='text/plain'))
         return result[0]['rows']
 
@@ -481,15 +540,19 @@ class Backend:
         avatar['health']=self.vitality()['health']
         avatar['max_health']=50
         avatar['gold'] = sum(item['amount'] for item in self.inventory()[1]
-                             if item['container']==BACKPACK and item['graphic']==0xeed)
+                             if item['container']==self.backpack and item['graphic']==0xeed)
         return avatar
 
     def skill_state(self):
-        return {table:sorted(json.loads(self.request(self.path+'/sql',('SELECT * FROM '+table).encode(),
-                content_type='text/plain'))[0]['rows']) for table in ('skill_progress','skill_event')}
+        queries={'skill_progress':'SELECT * FROM skill_progress','skill_event':'SELECT * FROM skill_event'}
+        if self.player!=1:
+            queries={'skill_progress':f'SELECT id, value, actions FROM player_skill WHERE player = {self.player}',
+                     'skill_event':f'SELECT revision, skill, before, after FROM player_skill_event WHERE player = {self.player}'}
+        return {name:sorted(json.loads(self.request(self.path+'/sql',sql.encode(),
+                content_type='text/plain'))[0]['rows']) for name,sql in queries.items()}
 
     def skills(self):
-        rows=json.loads(self.request(self.path+'/sql',b'SELECT * FROM skill_progress',content_type='text/plain'))[0]['rows']
+        rows=self.skill_state()['skill_progress']
         values={7:0,11:0,44:0,45:0}
         values.update({row[0]:row[1] for row in rows})
         return values
@@ -510,8 +573,8 @@ class Backend:
     def begin_tool(self, serial):
         held = self.lift(serial,1)
         item = held['item']
-        if not ((item['container']==1 and item['graphic'] in (0xf43,0xf51,0xe86,0x13e3)) or
-                (item['container']==BACKPACK and item['graphic'] in (0x19b8,0x9f1))):
+        if not ((item['container']==self.player and item['graphic'] in (0xf43,0xf51,0xe86,0x13e3)) or
+                (item['container']==self.backpack and item['graphic'] in (0x19b8,0x9f1))):
             raise BackendError('Equip the tool or use backpack ore or raw ribs.')
         return dict(tool=serial,graphic=item['graphic'],revision=held['revision'])
 
@@ -522,7 +585,7 @@ class Backend:
         avatar = self.avatar()
         scene,objects = self.world()
         tool = next((i for i in items if i['serial']==context['tool']),None)
-        if tool is None or tool['container'] != (BACKPACK if context['graphic'] in (0x19b8,0x9f1) else 1) or tool['graphic'] != context['graphic']:
+        if tool is None or tool['container'] != (self.backpack if context['graphic'] in (0x19b8,0x9f1) else self.player) or tool['graphic'] != context['graphic']:
             raise BackendError('Equip the tool first.')
         args = [revision,avatar['revision'],scene,tool['serial']]
         if tool['graphic'] in (0xf43,0xe86):
@@ -544,7 +607,7 @@ class Backend:
             if any(bank==bank_id and remaining<2 and now<refill
                    for bank,remaining,refill in state['resource_bank']):
                 raise BackendError("There is no metal here to mine." if mining else "There's not enough wood here to harvest.")
-            if any(now < next_at for _,next_at in state['harvest_clock']):
+            if any(player==self.player and now < next_at for player,next_at in state['harvest_clock']):
                 raise BackendError('Let the tool recover for two seconds.')
             self.request(self.path+('/call/mine_ore' if mining else '/call/harvest_tree'),json.dumps(args+[
                 target['x'],target['y'],target['z'],target['graphic']]).encode())
@@ -555,7 +618,7 @@ class Backend:
             smithing = tool['graphic']==0x13e3
             if smithing:
                 ingredient = next((i for i in items if i['serial']==target['serial']),None)
-                if ingredient is None or ingredient['container']!=BACKPACK or ingredient['graphic']!=0x1bf2 or ingredient['amount']<5:
+                if ingredient is None or ingredient['container']!=self.backpack or ingredient['graphic']!=0x1bf2 or ingredient['amount']<5:
                     raise BackendError('Target at least five backpack ingots beside a forge.')
                 forge = next((o for o in objects if o['serial']==FORGE and
                     max(abs(o['x']-avatar['x']),abs(o['y']-avatar['y']))<=2 and abs(o['z']-avatar['z'])<=16),None)
@@ -584,7 +647,7 @@ class Backend:
             return ('You forge five iron ingots into a nose helm.' if smithing else
                     'You smelt the ore removing the impurities and put the metal in your backpack.')
         logs = next((i for i in items if i['serial']==target['serial']),None)
-        if logs is None or logs['container'] != BACKPACK or logs['graphic'] != 0x1bdd or logs['amount'] < 5:
+        if logs is None or logs['container'] != self.backpack or logs['graphic'] != 0x1bdd or logs['amount'] < 5:
             raise BackendError('Target a stack of at least five logs in your backpack.')
         self.request(self.path+'/call/carve_shield',json.dumps(args+[logs['serial']]).encode())
         return 'You carve five logs into a wooden shield.'

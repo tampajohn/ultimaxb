@@ -4,9 +4,10 @@ mod skills;
 mod hunting;
 mod cooking;
 mod combat;
+mod players;
 mod merchant;
 
-// Private tables: only the publishing gateway identity can read or mutate them.
+// Private tables: owner-only reads; gameplay writes derive the player identity.
 #[spacetimedb::table(accessor = gateway)]
 pub struct Gateway {
     #[primary_key]
@@ -79,11 +80,13 @@ pub struct DoorEvent {
     opened: bool,
 }
 
-fn authorize(ctx: &ReducerContext) -> Result<(), String> {
+fn authorize_admin(ctx: &ReducerContext) -> Result<(), String> {
     let gateway = ctx.db.gateway().id().find(0).ok_or("missing gateway")?;
     if ctx.sender() != gateway.owner { return Err("unauthorized gateway".into()); }
     Ok(())
 }
+
+fn authorize(ctx:&ReducerContext)->Result<(),String> { players::actor(ctx).map(|_| ()) }
 
 const BACKPACK: u32 = 0x40000100;
 const BARREL: u32 = 0x40000002;
@@ -171,21 +174,22 @@ pub struct Nutrition {
 #[spacetimedb::reducer]
 pub fn eat_item(ctx: &ReducerContext, expected_inventory: u64, expected_avatar: u64,
                 expected_scene: u64, serial: u32) -> Result<(), String> {
+    let actor=players::actor(ctx)?;
     authorize(ctx)?;
     check_scene(ctx,expected_scene)?;
     let mut state = ctx.db.inventory_state().id().find(0).ok_or("missing inventory")?;
     if state.revision != expected_inventory { return Err("stale inventory".into()); }
-    let avatar = ctx.db.avatar().serial().find(1).ok_or("missing avatar")?;
+    let avatar = ctx.db.avatar().serial().find(actor).ok_or("missing avatar")?;
     if avatar.revision != expected_avatar { return Err("stale avatar".into()); }
     let mut item = ctx.db.inventory_item().serial().find(serial).ok_or("unknown item")?;
     check_source(ctx,&avatar,&item)?;
     if ![0x9d0,0x9f2].contains(&item.graphic) || item.amount == 0 { return Err("not edible".into()); }
     // Simple travel-based appetite, not a simulation of the original UO rules.
-    let current = ctx.db.nutrition().serial().find(1);
+    let current = ctx.db.nutrition().serial().find(actor);
     let fullness = current.as_ref().map_or(0,|n|
         n.fullness.saturating_sub(((avatar.revision.saturating_sub(n.movement_revision))/100).min(20) as u8));
     if fullness >= 20 { return Err("you are full".into()); }
-    let needs = Nutrition {serial:1,fullness:(fullness+4).min(20),movement_revision:avatar.revision};
+    let needs = Nutrition {serial:actor,fullness:(fullness+4).min(20),movement_revision:avatar.revision};
     if current.is_some() { ctx.db.nutrition().serial().update(needs); }
     else { ctx.db.nutrition().insert(needs); }
     let z = ctx.db.ground_location().serial().find(serial).map_or(0,|l|l.z);
@@ -200,6 +204,7 @@ pub fn eat_item(ctx: &ReducerContext, expected_inventory: u64, expected_avatar: 
         item.amount -= 1;
         ctx.db.inventory_item().serial().update(item);
     }
+    players::record_inventory(ctx,state.revision)?;
     ctx.db.inventory_state().id().update(state);
     Ok(())
 }
@@ -234,7 +239,7 @@ fn wearable(graphic: u16) -> Option<(u8,bool)> {
 
 #[spacetimedb::reducer]
 pub fn seed_starter_kit(ctx: &ReducerContext) -> Result<(), String> {
-    authorize(ctx)?;
+    authorize_admin(ctx)?;
     if ctx.db.starter_kit().version().find(1).is_some() { return Ok(()); }
     let mut state = ctx.db.inventory_state().id().find(0).ok_or("missing inventory")?;
     let kit = [(0x170b,3,1,50,70),(0x152e,4,1,70,70),(0x1517,5,1,90,70),
@@ -251,17 +256,19 @@ pub fn seed_starter_kit(ctx: &ReducerContext) -> Result<(), String> {
         if wear { ctx.db.equipment_slot().insert(EquipmentSlot {serial,layer}); }
     }
     state.revision += 1;
+    players::record_inventory(ctx,state.revision)?;
     ctx.db.inventory_state().id().update(state);
     ctx.db.starter_kit().insert(StarterKit {version:1});
     Ok(())
 }
 
 fn check_source(ctx: &ReducerContext, avatar: &Avatar, item: &InventoryItem) -> Result<(), String> {
+    let actor=players::actor(ctx)?;
     if item.container == 0 {
         let location = ctx.db.ground_location().serial().find(item.serial).ok_or("missing ground location")?;
         return check_ground(avatar,item.x,item.y,location.z);
     }
-    if item.container == 1 {
+    if item.container == actor {
         ctx.db.equipment_slot().serial().find(item.serial).ok_or("missing equipment slot")?;
         return Ok(());
     }
@@ -271,12 +278,14 @@ fn check_source(ctx: &ReducerContext, avatar: &Avatar, item: &InventoryItem) -> 
 #[spacetimedb::reducer]
 pub fn equip_item(ctx: &ReducerContext, expected_inventory: u64, expected_avatar: u64,
                   expected_scene: u64, serial: u32, layer: u8, owner: u32) -> Result<(), String> {
+    let actor=players::actor(ctx)?;
+    let backpack=players::backpack(ctx,actor)?;
     authorize(ctx)?;
     check_scene(ctx,expected_scene)?;
-    if owner != 1 { return Err("not your equipment".into()); }
+    if owner != actor { return Err("not your equipment".into()); }
     let mut state = ctx.db.inventory_state().id().find(0).ok_or("missing inventory")?;
     if state.revision != expected_inventory { return Err("stale inventory".into()); }
-    let avatar = ctx.db.avatar().serial().find(1).ok_or("missing avatar")?;
+    let avatar = ctx.db.avatar().serial().find(actor).ok_or("missing avatar")?;
     if avatar.revision != expected_avatar { return Err("stale avatar".into()); }
     let mut item = ctx.db.inventory_item().serial().find(serial).ok_or("unknown item")?;
     check_source(ctx,&avatar,&item)?;
@@ -287,9 +296,10 @@ pub fn equip_item(ctx: &ReducerContext, expected_inventory: u64, expected_avatar
     for slot in slots {
         if slot.serial == serial { continue; }
         let mut other = ctx.db.inventory_item().serial().find(slot.serial).ok_or("missing worn item")?;
+        if other.container!=actor {continue;}
         let other_two_hands = wearable(other.graphic).ok_or("invalid worn item")?.1;
         if slot.layer == layer || (two_hands && slot.layer == 1) || (layer == 1 && other_two_hands) {
-            other.container=BACKPACK; other.x=65; other.y=85;
+            other.container=backpack; other.x=65; other.y=85;
             ctx.db.inventory_item().serial().update(other);
             ctx.db.equipment_slot().serial().delete(slot.serial);
             displaced.push(slot.serial);
@@ -300,22 +310,23 @@ pub fn equip_item(ctx: &ReducerContext, expected_inventory: u64, expected_avatar
         ctx.db.ground_location().serial().delete(serial);
         touch_scene(ctx)?;
     }
-    item.container=1; item.x=0; item.y=0;
+    item.container=actor; item.x=0; item.y=0;
     ctx.db.inventory_item().serial().update(item);
     if ctx.db.equipment_slot().serial().find(serial).is_some() {
         ctx.db.equipment_slot().serial().update(EquipmentSlot {serial,layer});
     } else { ctx.db.equipment_slot().insert(EquipmentSlot {serial,layer}); }
     state.revision += 1;
     ctx.db.inventory_event().insert(InventoryEvent {revision:state.revision,serial,amount:1,
-        from_container:source,to_container:1,remainder_serial:0});
+        from_container:source,to_container:actor,remainder_serial:0});
     ctx.db.equipment_event().insert(EquipmentEvent {revision:state.revision,serial,layer,displaced});
+    players::record_inventory(ctx,state.revision)?;
     ctx.db.inventory_state().id().update(state);
     Ok(())
 }
 
 #[spacetimedb::reducer]
 pub fn seed_inventory(ctx: &ReducerContext) -> Result<(), String> {
-    authorize(ctx)?;
+    authorize_admin(ctx)?;
     if ctx.db.inventory_state().id().find(0).is_some() { return Ok(()); }
     ctx.db.world_object().serial().find(BARREL).ok_or("missing barrel")?;
     ctx.db.inventory_item().insert(InventoryItem { serial:0x40000101, graphic:0xeed,
@@ -327,7 +338,9 @@ pub fn seed_inventory(ctx: &ReducerContext) -> Result<(), String> {
 }
 
 fn check_container(ctx: &ReducerContext, avatar: &Avatar, serial: u32) -> Result<(), String> {
-    if serial == BACKPACK { return Ok(()); }
+    let actor=players::actor(ctx)?;
+    let backpack=players::backpack(ctx,actor)?;
+    if serial == backpack { return Ok(()); }
     if serial != BARREL { return Err("unsupported container".into()); }
     let barrel = ctx.db.world_object().serial().find(BARREL).ok_or("missing barrel")?;
     if avatar.x.abs_diff(barrel.x).max(avatar.y.abs_diff(barrel.y)) > 2 ||
@@ -341,8 +354,10 @@ fn check_container(ctx: &ReducerContext, avatar: &Avatar, serial: u32) -> Result
 pub fn transfer_item(ctx: &ReducerContext, expected_inventory: u64, expected_avatar: u64,
                      expected_scene: u64, serial: u32, amount: u16,
                      container: u32, x: u16, y: u16) -> Result<(), String> {
+    let actor=players::actor(ctx)?;
+    let backpack=players::backpack(ctx,actor)?;
     // Retain the original container reducer signature for existing callers.
-    if container != BACKPACK && container != BARREL { return Err("unsupported container".into()); }
+    if container != backpack && container != BARREL { return Err("unsupported container".into()); }
     place_item(ctx,expected_inventory,expected_avatar,expected_scene,serial,amount,container,x,y,0)
 }
 
@@ -350,17 +365,19 @@ pub fn transfer_item(ctx: &ReducerContext, expected_inventory: u64, expected_ava
 pub fn place_item(ctx: &ReducerContext, expected_inventory: u64, expected_avatar: u64,
                   expected_scene: u64, serial: u32, amount: u16,
                   container: u32, x: u16, y: u16, z: i8) -> Result<(), String> {
+    let actor=players::actor(ctx)?;
+    let backpack=players::backpack(ctx,actor)?;
     authorize(ctx)?;
     check_scene(ctx, expected_scene)?;
     let mut state = ctx.db.inventory_state().id().find(0).ok_or("missing inventory")?;
     if state.revision != expected_inventory { return Err("stale inventory".into()); }
-    let avatar = ctx.db.avatar().serial().find(1).ok_or("missing avatar")?;
+    let avatar = ctx.db.avatar().serial().find(actor).ok_or("missing avatar")?;
     if avatar.revision != expected_avatar { return Err("stale avatar".into()); }
     let mut item = ctx.db.inventory_item().serial().find(serial).ok_or("unknown item")?;
     check_source(ctx, &avatar, &item)?;
     if amount == 0 || amount > item.amount { return Err("invalid amount".into()); }
     let from_container = item.container;
-    if container != 0 && container != BACKPACK && container != BARREL {
+    if container != 0 && container != backpack && container != BARREL {
         let mut target = ctx.db.inventory_item().serial().find(container).ok_or("unknown stack")?;
         check_source(ctx,&avatar,&target)?;
         if serial == target.serial || item.graphic != target.graphic ||
@@ -382,7 +399,8 @@ pub fn place_item(ctx: &ReducerContext, expected_inventory: u64, expected_avatar
         state.revision += 1;
         ctx.db.inventory_event().insert(InventoryEvent {revision:state.revision,serial,amount,
             from_container,to_container:target_container,remainder_serial:0});
-        ctx.db.inventory_state().id().update(state);
+        players::record_inventory(ctx,state.revision)?;
+    ctx.db.inventory_state().id().update(state);
         return Ok(());
     }
     if container == 0 {
@@ -390,13 +408,13 @@ pub fn place_item(ctx: &ReducerContext, expected_inventory: u64, expected_avatar
         check_ground(&avatar,x,y,z)?;
     } else {
         check_container(ctx, &avatar, container)?;
-        let (min_x,max_x,min_y,max_y) = if container == BACKPACK { (44,140,65,140) } else { (33,98,36,139) };
+        let (min_x,max_x,min_y,max_y) = if container == backpack { (44,140,65,140) } else { (33,98,36,139) };
         if !(min_x..=max_x).contains(&x) || !(min_y..=max_y).contains(&y) {
             return Err("invalid container position".into());
         }
     }
     let old_z = ctx.db.ground_location().serial().find(serial).map_or(0,|l| l.z);
-    if from_container == 1 { ctx.db.equipment_slot().serial().delete(serial); }
+    if from_container == actor { ctx.db.equipment_slot().serial().delete(serial); }
     let mut remainder_serial = 0;
     if amount < item.amount {
         if ctx.db.inventory_item().iter().count() >= 64 { return Err("inventory full".into()); }
@@ -419,6 +437,7 @@ pub fn place_item(ctx: &ReducerContext, expected_inventory: u64, expected_avatar
         serial,target:container,amount,x,y,z});
     ctx.db.inventory_event().insert(InventoryEvent { revision:state.revision,serial,amount,
         from_container,to_container:container,remainder_serial });
+    players::record_inventory(ctx,state.revision)?;
     ctx.db.inventory_state().id().update(state);
     Ok(())
 }
@@ -434,7 +453,7 @@ fn check_scene(ctx: &ReducerContext, expected: u64) -> Result<(), String> {
 #[spacetimedb::reducer]
 pub fn seed_objects(ctx: &ReducerContext, x: u16, y: u16, z: i8,
                     barrel_x: u16, barrel_y: u16, barrel_z: i8) -> Result<(), String> {
-    authorize(ctx)?;
+    authorize_admin(ctx)?;
     if ctx.db.world_object().serial().find(0x40000001).is_some() { return Ok(()); }
     let avatar = ctx.db.avatar().serial().find(1).ok_or("missing avatar")?;
     for (px, py, pz) in [(x,y,z), (barrel_x,barrel_y,barrel_z)] {
@@ -458,9 +477,10 @@ pub fn seed_objects(ctx: &ReducerContext, x: u16, y: u16, z: i8,
 
 #[spacetimedb::reducer]
 pub fn use_door(ctx: &ReducerContext, expected_avatar: u64, expected_scene: u64, serial: u32) -> Result<(), String> {
+    let actor=players::actor(ctx)?;
     authorize(ctx)?;
     check_scene(ctx,expected_scene)?;
-    let avatar = ctx.db.avatar().serial().find(1).ok_or("missing avatar")?;
+    let avatar = ctx.db.avatar().serial().find(actor).ok_or("missing avatar")?;
     if avatar.revision != expected_avatar { return Err("stale avatar".into()); }
     let mut door = ctx.db.world_object().serial().find(serial).ok_or("unknown object")?;
     if !door.is_door { return Err("not a door".into()); }
@@ -469,8 +489,9 @@ pub fn use_door(ctx: &ReducerContext, expected_avatar: u64, expected_scene: u64,
     let opened = !door.opened;
     // Classic 0x675/0x676 pair swings west one tile and south one tile.
     let (x,y) = if opened { (door.home_x-1,door.home_y+1) } else { (door.home_x,door.home_y) };
-    if (avatar.x,avatar.y) == (x,y) &&
-        (i16::from(avatar.z)-i16::from(door.z)).abs() < 20 { return Err("door would hit player".into()); }
+    if ((avatar.x,avatar.y) == (x,y) &&
+        (i16::from(avatar.z)-i16::from(door.z)).abs() < 20) ||
+        players::occupied(ctx,x,y,door.z,20) { return Err("door would hit player".into()); }
     if ctx.db.world_object().iter().any(|o| o.serial != serial && (o.x,o.y)==(x,y) &&
         (i16::from(o.z)-i16::from(door.z)).abs() < 20) { return Err("door would hit object".into()); }
     if ctx.db.inventory_item().iter().any(|o| o.container == 0 && (o.x,o.y)==(x,y) &&
@@ -496,18 +517,19 @@ pub fn init(ctx: &ReducerContext) {
 
 #[spacetimedb::reducer]
 pub fn walk(ctx: &ReducerContext, expected_revision: u64, direction: u8, target_z: i8, expected_scene: u64) -> Result<(), String> {
-    let gateway = ctx.db.gateway().id().find(0).ok_or("missing gateway")?;
-    if ctx.sender() != gateway.owner { return Err("unauthorized gateway".into()); }
+    let actor=players::actor(ctx)?;
+    authorize(ctx)?;
     check_scene(ctx,expected_scene)?;
-    let mut avatar = ctx.db.avatar().serial().find(1).ok_or("missing avatar")?;
+    let mut avatar = ctx.db.avatar().serial().find(actor).ok_or("missing avatar")?;
     if avatar.revision != expected_revision { return Err("stale revision".into()); }
     let (x, y) = destination(avatar.x, avatar.y, avatar.direction, direction)?;
     if avatar.direction & 7 != direction & 7 && target_z != avatar.z {
         return Err("a turn cannot change elevation".into());
     }
-    // Only the owner gateway can invoke this reducer. It validates target_z
+    // The gateway uses the authenticated player identity and validates target_z
     // against the installed map/statics using UOCore before committing. The
     // expected revision ties that decision to the exact source position.
+    if actor==1 {
     ctx.db.movement_event().insert(MovementEvent {
         revision: avatar.revision + 1, from_x: avatar.x, from_y: avatar.y,
         to_x: x, to_y: y, direction,
@@ -515,6 +537,8 @@ pub fn walk(ctx: &ReducerContext, expected_revision: u64, direction: u8, target_
     ctx.db.movement_height().insert(MovementHeight {
         revision: avatar.revision + 1, from_z: avatar.z, to_z: target_z, settled: false,
     });
+    }
+    players::record_movement(ctx,&avatar,x,y,target_z,direction,false);
     avatar.x = x; avatar.y = y; avatar.z = target_z;
     avatar.direction = direction; avatar.revision += 1;
     ctx.db.avatar().serial().update(avatar);
@@ -524,15 +548,16 @@ pub fn walk(ctx: &ReducerContext, expected_revision: u64, direction: u8, target_
 // Asset-backed placement on login, including recovery of old flat-world saves.
 #[spacetimedb::reducer]
 pub fn settle(ctx: &ReducerContext, expected_revision: u64, x: u16, y: u16, z: i8, expected_scene: u64) -> Result<(), String> {
-    let gateway = ctx.db.gateway().id().find(0).ok_or("missing gateway")?;
-    if ctx.sender() != gateway.owner { return Err("unauthorized gateway".into()); }
+    let actor=players::actor(ctx)?;
+    authorize(ctx)?;
     check_scene(ctx,expected_scene)?;
-    let mut avatar = ctx.db.avatar().serial().find(1).ok_or("missing avatar")?;
+    let mut avatar = ctx.db.avatar().serial().find(actor).ok_or("missing avatar")?;
     if avatar.revision != expected_revision { return Err("stale revision".into()); }
     if x >= 6143 || y >= 4095 || avatar.x.abs_diff(x).max(avatar.y.abs_diff(y)) > 8 {
         return Err("invalid grounding destination".into());
     }
     if (avatar.x, avatar.y, avatar.z) == (x, y, z) { return Ok(()); }
+    if actor==1 {
     ctx.db.movement_event().insert(MovementEvent {
         revision: avatar.revision + 1, from_x: avatar.x, from_y: avatar.y,
         to_x: x, to_y: y, direction: avatar.direction,
@@ -540,6 +565,8 @@ pub fn settle(ctx: &ReducerContext, expected_revision: u64, x: u16, y: u16, z: i
     ctx.db.movement_height().insert(MovementHeight {
         revision: avatar.revision + 1, from_z: avatar.z, to_z: z, settled: true,
     });
+    }
+    players::record_movement(ctx,&avatar,x,y,z,avatar.direction,true);
     avatar.x = x; avatar.y = y; avatar.z = z; avatar.revision += 1;
     ctx.db.avatar().serial().update(avatar);
     Ok(())

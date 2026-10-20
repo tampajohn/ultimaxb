@@ -15,7 +15,7 @@ pub struct PurchaseEvent {
 
 #[spacetimedb::reducer]
 pub fn seed_merchant(ctx: &ReducerContext, x: u16, y: u16, z: i8) -> Result<(),String> {
-    authorize(ctx)?;
+    authorize_admin(ctx)?;
     if ctx.db.merchant().serial().find(2).is_some() { return Ok(()); }
     let avatar=ctx.db.avatar().serial().find(1).ok_or("missing player")?;
     check_ground(&avatar,x,y,z)?;
@@ -31,9 +31,11 @@ pub fn seed_merchant(ctx: &ReducerContext, x: u16, y: u16, z: i8) -> Result<(),S
 #[spacetimedb::reducer]
 pub fn buy_apples(ctx: &ReducerContext, inventory: u64, avatar_revision: u64,
     scene: u64, merchant_revision: u64, quantity: u16) -> Result<(),String> {
+    let actor=players::actor(ctx)?;
+    let backpack=players::backpack(ctx,actor)?;
     authorize(ctx)?;
     check_scene(ctx,scene)?;
-    let avatar=ctx.db.avatar().serial().find(1).ok_or("missing player")?;
+    let avatar=ctx.db.avatar().serial().find(actor).ok_or("missing player")?;
     let mut state=ctx.db.inventory_state().id().find(0).ok_or("missing inventory")?;
     let mut vendor=ctx.db.merchant().serial().find(2).ok_or("missing merchant")?;
     if state.revision!=inventory || avatar.revision!=avatar_revision || vendor.revision!=merchant_revision {
@@ -42,7 +44,7 @@ pub fn buy_apples(ctx: &ReducerContext, inventory: u64, avatar_revision: u64,
     check_ground(&avatar,vendor.x,vendor.y,vendor.z)?;
     if quantity==0 || quantity>vendor.stock { return Err("stock unavailable".into()); }
     let price=u32::from(quantity)*3;
-    let mut coins:Vec<_>=ctx.db.inventory_item().iter().filter(|i|i.container==BACKPACK && i.graphic==0xeed).collect();
+    let mut coins:Vec<_>=ctx.db.inventory_item().iter().filter(|i|i.container==backpack && i.graphic==0xeed).collect();
     coins.sort_by_key(|i|i.serial);
     if coins.iter().map(|i|u32::from(i.amount)).sum::<u32>()<price { return Err("not enough gold".into()); }
     let mut unpaid=price;
@@ -53,7 +55,7 @@ pub fn buy_apples(ctx: &ReducerContext, inventory: u64, avatar_revision: u64,
         if paid==u32::from(item.amount) { ctx.db.inventory_item().serial().delete(item.serial); }
         else { item.amount-=paid as u16; ctx.db.inventory_item().serial().update(item); }
     }
-    let mut apples:Vec<_>=ctx.db.inventory_item().iter().filter(|i| i.container==BACKPACK &&
+    let mut apples:Vec<_>=ctx.db.inventory_item().iter().filter(|i| i.container==backpack &&
         i.graphic==0x9d0 && u32::from(i.amount)+u32::from(quantity)<=65535).collect();
     apples.sort_by_key(|i|i.serial);
     let output;
@@ -66,7 +68,7 @@ pub fn buy_apples(ctx: &ReducerContext, inventory: u64, avatar_revision: u64,
         state.next_serial=output.checked_add(1).ok_or("serial exhausted")?;
         if state.next_serial>=0x7fffffff { return Err("serial exhausted".into()); }
         ctx.db.inventory_item().insert(InventoryItem {serial:output,graphic:0x9d0,amount:quantity,
-            container:BACKPACK,x:55,y:120});
+            container:backpack,x:55,y:120});
     }
     vendor.stock-=quantity;
     vendor.gold=vendor.gold.checked_add(price).ok_or("merchant purse full")?;
@@ -74,6 +76,7 @@ pub fn buy_apples(ctx: &ReducerContext, inventory: u64, avatar_revision: u64,
     state.revision+=1;
     ctx.db.purchase_event().insert(PurchaseEvent {revision:state.revision,merchant:2,quantity,paid:price,output});
     ctx.db.merchant().serial().update(vendor);
+    players::record_inventory(ctx,state.revision)?;
     ctx.db.inventory_state().id().update(state);
     Ok(())
 }
@@ -93,9 +96,11 @@ pub struct SaleEvent {
 #[spacetimedb::reducer]
 pub fn sell_logs(ctx: &ReducerContext, inventory: u64, avatar_revision: u64,
     scene: u64, merchant_revision: u64, source: u32, quantity: u16) -> Result<(),String> {
+    let actor=players::actor(ctx)?;
+    let backpack=players::backpack(ctx,actor)?;
     authorize(ctx)?;
     check_scene(ctx,scene)?;
-    let avatar=ctx.db.avatar().serial().find(1).ok_or("missing player")?;
+    let avatar=ctx.db.avatar().serial().find(actor).ok_or("missing player")?;
     let mut state=ctx.db.inventory_state().id().find(0).ok_or("missing inventory")?;
     let mut vendor=ctx.db.merchant().serial().find(2).ok_or("missing merchant")?;
     if state.revision!=inventory || avatar.revision!=avatar_revision || vendor.revision!=merchant_revision {
@@ -103,7 +108,7 @@ pub fn sell_logs(ctx: &ReducerContext, inventory: u64, avatar_revision: u64,
     }
     check_ground(&avatar,vendor.x,vendor.y,vendor.z)?;
     let mut logs=ctx.db.inventory_item().serial().find(source).ok_or("missing goods")?;
-    if logs.container!=BACKPACK || logs.graphic!=0x1bdd || quantity==0 || quantity>logs.amount {
+    if logs.container!=backpack || logs.graphic!=0x1bdd || quantity==0 || quantity>logs.amount {
         return Err("invalid goods".into());
     }
     let paid=u32::from(quantity);
@@ -112,7 +117,7 @@ pub fn sell_logs(ctx: &ReducerContext, inventory: u64, avatar_revision: u64,
     let amount=old.as_ref().map_or(0,|g|g.amount).checked_add(paid).ok_or("merchant storage full")?;
     if logs.amount==quantity { ctx.db.inventory_item().serial().delete(source); }
     else { logs.amount-=quantity; ctx.db.inventory_item().serial().update(logs); }
-    let mut coins:Vec<_>=ctx.db.inventory_item().iter().filter(|i| i.container==BACKPACK &&
+    let mut coins:Vec<_>=ctx.db.inventory_item().iter().filter(|i| i.container==backpack &&
         i.graphic==0xeed && u32::from(i.amount)+paid<=65535).collect();
     coins.sort_by_key(|i|i.serial);
     let output;
@@ -124,7 +129,7 @@ pub fn sell_logs(ctx: &ReducerContext, inventory: u64, avatar_revision: u64,
         state.next_serial=output.checked_add(1).ok_or("serial exhausted")?;
         if state.next_serial>=0x7fffffff { return Err("serial exhausted".into()); }
         ctx.db.inventory_item().insert(InventoryItem {serial:output,graphic:0xeed,amount:quantity,
-            container:BACKPACK,x:65,y:65});
+            container:backpack,x:65,y:65});
     }
     let goods=MerchantGoods {graphic:0x1bdd,amount};
     if old.is_some() { ctx.db.merchant_goods().graphic().update(goods); }
@@ -132,6 +137,7 @@ pub fn sell_logs(ctx: &ReducerContext, inventory: u64, avatar_revision: u64,
     vendor.gold-=paid; vendor.revision+=1; state.revision+=1;
     ctx.db.sale_event().insert(SaleEvent {revision:state.revision,merchant:2,source,quantity,paid,output});
     ctx.db.merchant().serial().update(vendor);
+    players::record_inventory(ctx,state.revision)?;
     ctx.db.inventory_state().id().update(state);
     Ok(())
 }

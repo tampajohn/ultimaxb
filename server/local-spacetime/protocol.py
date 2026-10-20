@@ -114,16 +114,16 @@ def ground_item(item):
     return struct.pack('>BHIHHHb', 0x1a, 14, item['serial'], item['graphic'], item['x'], item['y'], item['z'])
 
 
-def backpack():
-    return struct.pack('>BIHBBIH', 0x2e, 0x40000100, 0xe75, 0, 21, 1, 0)
+def backpack(serial=0x40000100,owner=1):
+    return struct.pack('>BIHBBIH', 0x2e, serial, 0xe75, 0, 21, owner, 0)
 
 
-def equipped(item):
-    return struct.pack('>BIHBBIH',0x2e,item['serial'],item['graphic'],0,item['layer'],1,0)
+def equipped(item,owner=1):
+    return struct.pack('>BIHBBIH',0x2e,item['serial'],item['graphic'],0,item['layer'],owner,0)
 
 
-def open_container(serial):
-    return struct.pack('>BIH', 0x24, serial, 0x3c if serial == 0x40000100 else 0x3e)
+def open_container(serial,backpack=0x40000100):
+    return struct.pack('>BIH', 0x24, serial, 0x3c if serial == backpack else 0x3e)
 
 
 def container_record(item):
@@ -171,8 +171,16 @@ def creature_death():
 def melee_action(serial, animal=False):
     return struct.pack('>BIHHHBBB',0x6e,serial,5 if animal else 9,5,1,0,0,1)
 
-def player_health(health):
-    return struct.pack('>BIHH',0xa1,1,50,health)
+def player_health(health,serial=1):
+    return struct.pack('>BIHH',0xa1,serial,50,health)
+
+def player_mobile(player):
+    payload=struct.pack('>IHHHbBHBB',player['serial'],400,player['x'],player['y'],player['z'],
+                        player['direction'],0,0x40 if player.get('war') else 0,1)
+    for item in player['equipment']:
+        payload+=struct.pack('>IHB',item['serial'],item['graphic'],item['layer'])
+    payload+=struct.pack('>IHB',player['backpack'],0xe75,21)+bytes(4)
+    return struct.pack('>BH',0x78,len(payload)+3)+payload
 
 
 def merchant_mobile(vendor):

@@ -12,21 +12,23 @@ pub struct CookingEvent {
 #[spacetimedb::reducer]
 pub fn cook_ribs(ctx:&ReducerContext, expected_inventory:u64, expected_avatar:u64,
     expected_scene:u64, source:u32, x:u16, y:u16, z:i8)->Result<(),String> {
+    let actor=players::actor(ctx)?;
+    let backpack=players::backpack(ctx,actor)?;
     authorize(ctx)?;
     check_scene(ctx,expected_scene)?;
     let mut state=ctx.db.inventory_state().id().find(0).ok_or("missing inventory")?;
-    let avatar=ctx.db.avatar().serial().find(1).ok_or("missing player")?;
+    let avatar=ctx.db.avatar().serial().find(actor).ok_or("missing player")?;
     if state.revision!=expected_inventory || avatar.revision!=expected_avatar {
         return Err("stale cooking action".into());
     }
     check_ground(&avatar,x,y,z)?;
     let mut ingredient=ctx.db.inventory_item().serial().find(source).ok_or("missing ribs")?;
-    if ingredient.container!=BACKPACK || ingredient.graphic!=0x9f1 || ingredient.amount==0 {
+    if ingredient.container!=backpack || ingredient.graphic!=0x9f1 || ingredient.amount==0 {
         return Err("use raw ribs in your backpack".into());
     }
     let amount=ingredient.amount;
     let mut destinations:Vec<_>=ctx.db.inventory_item().iter().filter(|i|
-        i.container==BACKPACK && i.graphic==0x9f2 &&
+        i.container==backpack && i.graphic==0x9f2 &&
         u32::from(i.amount)+u32::from(amount)<=65535).collect();
     destinations.sort_by_key(|i|i.serial);
     let output;
@@ -44,6 +46,7 @@ pub fn cook_ribs(ctx:&ReducerContext, expected_inventory:u64, expected_avatar:u6
     state.revision+=1;
     ctx.db.cooking_event().insert(CookingEvent {revision:state.revision,source,output,amount,
         forge_x:x,forge_y:y,forge_z:z});
+    players::record_inventory(ctx,state.revision)?;
     ctx.db.inventory_state().id().update(state);
     Ok(())
 }

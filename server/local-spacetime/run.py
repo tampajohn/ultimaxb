@@ -114,6 +114,26 @@ def serve(args, data):
                 raise RuntimeError('Saved endpoint differs; use the original --db-port')
             subprocess.run([sys.executable, str(HERE / 'provision.py'), '--config', str(config),
                             '--port', str(db_port)], cwd=ROOT, check=True)
+            if args.verify_shared:
+                env=dict(os.environ,ULTIMA_SPACETIME_CONFIG=str(config),ULTIMA_CLIENT_ASSETS=args.client)
+                env['PYTHONPATH']=str(HERE/'tests')+os.pathsep+env.get('PYTHONPATH','')
+                subprocess.run([sys.executable,'-m','unittest','-v','shared_checks.SharedTests.test_shared_loop'],
+                               env=env,cwd=ROOT,check=True,timeout=240)
+                def snapshot():
+                    b=load_backend(config)
+                    state=b.multiplayer_state()
+                    for table in ('inventory_state','inventory_item','equipment_slot','ground_location','world_object','scene',
+                                  'movement_event','movement_height','inventory_event','equipment_event','item_action',
+                                  'skill_progress','skill_event','resource_bank','gathering_event','crafting_event','metal_event',
+                                  'merchant','merchant_goods','purchase_event','sale_event','creature','hunting_event','combat_event','cooking_event'):
+                        state[table]=sorted(__import__('json').loads(b.request(b.path+'/sql',
+                            ('SELECT * FROM '+table).encode(),content_type='text/plain'))[0]['rows'],key=repr)
+                    return state
+                before=snapshot()
+                stop(db);db=start_db()
+                if snapshot()!=before:raise RuntimeError('Shared world changed across restart')
+                print('PASS: both players and shared world state survive restart',flush=True)
+                return
             if args.verify:
                 env = dict(os.environ, ULTIMA_SPACETIME_CONFIG=str(config), ULTIMA_CLIENT_ASSETS=args.client)
                 env['PYTHONPATH']=str(HERE/'tests')+os.pathsep+env.get('PYTHONPATH','')
@@ -153,10 +173,17 @@ sys.exit(not result.wasSuccessful())
                 hunting_before = load_backend(config).hunting_state()
                 cooking_before = load_backend(config).cooking_state()
                 combat_before = load_backend(config).combat_state()
+                multiplayer_before = load_backend(config).multiplayer_state()
+                accounts_before = load_backend(config).player_accounts()
+                avatars_before = load_backend(config).avatars()
                 if load_backend(config).vitality()['health']!=0:
                     raise RuntimeError('Combat test must leave player defeated')
                 stop(db)
                 db = start_db()
+                if load_backend(config).multiplayer_state()!=multiplayer_before:
+                    raise RuntimeError('Restart changed per-player state or journals')
+                if load_backend(config).player_accounts()!=accounts_before or load_backend(config).avatars()!=avatars_before:
+                    raise RuntimeError('Restart changed account ownership or player positions')
                 if load_backend(config).combat_state()!=combat_before:
                     raise RuntimeError('Database restart changed defeated player or recovery deadline')
                 if load_backend(config).cooking_state()!=cooking_before:
@@ -200,12 +227,16 @@ sys.exit(not result.wasSuccessful())
                         time.sleep(0.05)
                 import protocol as wire
                 vendor=load_backend(config).merchant()
+                from accounts import ensure_local_accounts
+                peer=ensure_local_accounts(load_backend(config),config)['local2']
                 fixture=data/'merchant-packets.bin'
                 fixture.write_bytes(wire.merchant_mobile(vendor)+wire.merchant_offers(vendor)+wire.merchant_sell_offers(
                     dict(item=dict(serial=0x40000900,graphic=0x1bdd,amount=4)))+
                     wire.creature_mobile(load_backend(config).creature())+b'\xaa\0\0\0\3'+
                     wire.creature_status(load_backend(config).creature())+wire.creature_death()+
-                    wire.melee_action(1)+wire.melee_action(3,animal=True)+wire.player_health(17))
+                    wire.melee_action(1)+wire.melee_action(3,animal=True)+wire.player_health(17)+
+                    wire.player_mobile(dict(peer.avatar(),equipment=peer.equipment(),backpack=peer.backpack))+
+                    wire.player_health(41,4))
                 subprocess.run([str(ROOT / 'build/spacetime-tools/client-smoke'), str(game_port), args.client,str(fixture)],
                                cwd=ROOT, check=True, timeout=30)
                 items = load_backend(config).inventory()[1]
@@ -231,12 +262,14 @@ sys.exit(not result.wasSuccessful())
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--verify-shared',action='store_true',help='test two-player gameplay in a fresh disposable world')
     parser.add_argument('--verify', action='store_true', help='test a disposable world, including DB restart')
     parser.add_argument('--port', type=int, default=2594)
     parser.add_argument('--db-port', type=int, default=3000)
     parser.add_argument('--client', default=str(ROOT / 'uo1998-client'), help='UO assets for server collision')
     parser.add_argument('--standalone', default=str(ROOT / 'build/spacetime-tools/spacetimedb-standalone'))
     args = parser.parse_args()
+    args.verify = args.verify or args.verify_shared
     args.client = str(Path(args.client).resolve())
     if not Path(args.standalone).is_file():
         args.standalone = shutil.which('spacetimedb-standalone') or args.standalone

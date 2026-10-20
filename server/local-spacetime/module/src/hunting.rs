@@ -15,6 +15,18 @@ pub struct HuntingEvent {
     life:u64,weapon:u32,damage:u16,remaining:u16,loot:u32,at:i64,
 }
 
+#[spacetimedb::table(accessor = melee_clock)]
+pub struct MeleeClock {
+    #[primary_key] player:u32,
+    next_strike:i64,
+}
+
+#[spacetimedb::table(accessor = hunting_actor)]
+pub struct HuntingActor {
+    #[primary_key] revision:u64,
+    player:u32,
+}
+
 fn damage(graphic:Option<u16>)->u16 {
     match graphic { Some(0xf61)=>5,Some(0xf51)=>3,Some(0xf43)=>4,_=>1 }
 }
@@ -22,7 +34,7 @@ fn can_respawn(health:u16,deadline:i64,now:i64)->bool { health==0 && now>=deadli
 
 #[spacetimedb::reducer]
 pub fn seed_creature(ctx:&ReducerContext,x:u16,y:u16,z:i8)->Result<(),String> {
-    authorize(ctx)?;
+    authorize_admin(ctx)?;
     if ctx.db.creature().serial().find(3).is_some() {return Ok(());}
     let avatar=ctx.db.avatar().serial().find(1).ok_or("missing player")?;
     if x>=6143 || y>=4095 || avatar.x.abs_diff(x).max(avatar.y.abs_diff(y))>6 ||
@@ -34,9 +46,10 @@ pub fn seed_creature(ctx:&ReducerContext,x:u16,y:u16,z:i8)->Result<(),String> {
 #[spacetimedb::reducer]
 pub fn strike_creature(ctx:&ReducerContext,expected_avatar:u64,expected_inventory:u64,
     expected_scene:u64,expected_creature:u64)->Result<(),String> {
+    let actor=players::actor(ctx)?;
     authorize(ctx)?;check_scene(ctx,expected_scene)?;
     combat::require_alive(ctx)?;
-    let avatar=ctx.db.avatar().serial().find(1).ok_or("missing player")?;
+    let avatar=ctx.db.avatar().serial().find(actor).ok_or("missing player")?;
     let mut state=ctx.db.inventory_state().id().find(0).ok_or("missing inventory")?;
     let mut creature=ctx.db.creature().serial().find(3).ok_or("missing creature")?;
     if avatar.revision!=expected_avatar || state.revision!=expected_inventory || creature.revision!=expected_creature {
@@ -47,10 +60,13 @@ pub fn strike_creature(ctx:&ReducerContext,expected_avatar:u64,expected_inventor
         return Err("target unavailable".into());
     }
     let now=ctx.timestamp.to_micros_since_unix_epoch();
-    if now<creature.next_strike {return Err("strike cooling down".into());}
+    let clock=ctx.db.melee_clock().player().find(actor);
+    // Preserve the original player's existing durable deadline on upgrade.
+    let deadline=clock.as_ref().map_or(if actor==1 {creature.next_strike} else {0},|c|c.next_strike);
+    if now<deadline {return Err("strike cooling down".into());}
     let mut weapons:Vec<_>=ctx.db.equipment_slot().iter().filter(|s|s.layer==1 || s.layer==2)
         .filter_map(|s|ctx.db.inventory_item().serial().find(s.serial))
-        .filter(|i|i.container==1 && [0xf61,0xf51,0xf43].contains(&i.graphic)).collect();
+        .filter(|i|i.container==actor && [0xf61,0xf51,0xf43].contains(&i.graphic)).collect();
     weapons.sort_by_key(|i|i.serial);
     let weapon=weapons.first();
     let hit=damage(weapon.map(|w|w.graphic)).min(creature.health);
@@ -66,11 +82,17 @@ pub fn strike_creature(ctx:&ReducerContext,expected_avatar:u64,expected_inventor
         state.revision+=1;
         ctx.db.item_action().insert(ItemAction {revision:state.revision,kind:"hunt_loot".into(),serial:loot,
             target:3,amount:2,x:creature.x,y:creature.y,z:creature.z});
-        ctx.db.inventory_state().id().update(state);
+        players::record_inventory(ctx,state.revision)?;
+    ctx.db.inventory_state().id().update(state);
         touch_scene(ctx)?;
         creature.respawn_at=now+RESPAWN_US;
     }
-    creature.health-=hit;creature.next_strike=now+STRIKE_US;creature.revision+=1;
+    creature.health-=hit;creature.revision+=1;
+    if actor==1 {creature.next_strike=now+STRIKE_US;}
+    let updated=MeleeClock {player:actor,next_strike:now+STRIKE_US};
+    if clock.is_some() {ctx.db.melee_clock().player().update(updated);}
+    else {ctx.db.melee_clock().insert(updated);}
+    ctx.db.hunting_actor().insert(HuntingActor {revision:creature.revision,player:actor});
     ctx.db.hunting_event().insert(HuntingEvent {revision:creature.revision,life:creature.life,
         weapon:weapon.map_or(0,|w|w.serial),damage:hit,remaining:creature.health,loot,at:now});
     if creature.health>0 {combat::retaliate(ctx,creature.revision)?;}
@@ -80,13 +102,15 @@ pub fn strike_creature(ctx:&ReducerContext,expected_avatar:u64,expected_inventor
 
 #[spacetimedb::reducer]
 pub fn respawn_creature(ctx:&ReducerContext,expected_scene:u64,expected_creature:u64)->Result<(),String> {
+    let actor=players::actor(ctx)?;
     authorize(ctx)?;check_scene(ctx,expected_scene)?;
     let mut creature=ctx.db.creature().serial().find(3).ok_or("missing creature")?;
     if creature.revision!=expected_creature || !can_respawn(creature.health,creature.respawn_at,ctx.timestamp.to_micros_since_unix_epoch()) {
         return Err("respawn not ready".into());
     }
-    let avatar=ctx.db.avatar().serial().find(1).ok_or("missing player")?;
-    if (avatar.x,avatar.y)==(creature.x,creature.y) || ctx.db.world_object().iter().any(|o|(o.x,o.y)==(creature.x,creature.y)) ||
+    let avatar=ctx.db.avatar().serial().find(actor).ok_or("missing player")?;
+    if (avatar.x,avatar.y)==(creature.x,creature.y) || players::occupied(ctx,creature.x,creature.y,creature.z,20) ||
+        ctx.db.world_object().iter().any(|o|(o.x,o.y)==(creature.x,creature.y)) ||
         ctx.db.inventory_item().iter().any(|i|i.container==0 && (i.x,i.y)==(creature.x,creature.y)) {
         return Err("respawn site occupied".into());
     }

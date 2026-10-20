@@ -55,19 +55,21 @@ fn supply(remaining: u16, refill_at: i64, now: i64) -> (u16,i64) {
 }
 
 fn check_tool(ctx: &ReducerContext, serial: u32, graphic: u16, layer: u8) -> Result<(), String> {
+    let actor=players::actor(ctx)?;
     let item = ctx.db.inventory_item().serial().find(serial).ok_or("missing tool")?;
     let slot = ctx.db.equipment_slot().serial().find(serial).ok_or("equip the tool first")?;
-    if item.container != 1 || item.amount != 1 || item.graphic != graphic || slot.layer != layer {
+    if item.container != actor || item.amount != 1 || item.graphic != graphic || slot.layer != layer {
         return Err("wrong equipped tool".into());
     }
     Ok(())
 }
 
 fn checked_state(ctx: &ReducerContext, inventory: u64, avatar: u64, scene: u64) -> Result<(InventoryState,Avatar), String> {
+    let actor=players::actor(ctx)?;
     authorize(ctx)?;
     check_scene(ctx,scene)?;
     let state = ctx.db.inventory_state().id().find(0).ok_or("missing inventory")?;
-    let player = ctx.db.avatar().serial().find(1).ok_or("missing player")?;
+    let player = ctx.db.avatar().serial().find(actor).ok_or("missing player")?;
     if state.revision != inventory || player.revision != avatar { return Err("stale action".into()); }
     Ok((state,player))
 }
@@ -93,6 +95,8 @@ pub fn mine_ore(ctx: &ReducerContext, expected_inventory: u64, expected_avatar: 
 
 fn harvest(ctx: &ReducerContext, expected_inventory: u64, expected_avatar: u64,
     expected_scene: u64, tool: u32, x: u16, y: u16, z: i8, graphic: u16, mining: bool) -> Result<(),String> {
+    let actor=players::actor(ctx)?;
+    let backpack=players::backpack(ctx,actor)?;
     let (mut state,avatar) = checked_state(ctx,expected_inventory,expected_avatar,expected_scene)?;
     check_tool(ctx,tool,if mining {0xe86} else {0xf43},if mining {1} else {2})?;
     check_ground(&avatar,x,y,z)?;
@@ -108,7 +112,7 @@ fn harvest(ctx: &ReducerContext, expected_inventory: u64, expected_avatar: u64,
         return Err("not mining art".into());
     }
     let now = ctx.timestamp.to_micros_since_unix_epoch();
-    let clock = ctx.db.harvest_clock().serial().find(1);
+    let clock = ctx.db.harvest_clock().serial().find(actor);
     if clock.as_ref().is_some_and(|c| now < c.next_at) { return Err("tool cooling down".into()); }
     // High bit separates mineral deposits from wood at the same coordinates.
     let id = bank_id(x,y) | if mining {0x80000000} else {0};
@@ -119,7 +123,7 @@ fn harvest(ctx: &ReducerContext, expected_inventory: u64, expected_avatar: u64,
     if remaining < 2 { return Err("resource depleted".into()); }
     // Sort so identical states select the same destination stack.
     let mut stacks: Vec<_> = ctx.db.inventory_item().iter()
-        .filter(|i| i.container == BACKPACK && i.graphic == output_graphic && i.amount <= 65533).collect();
+        .filter(|i| i.container == backpack && i.graphic == output_graphic && i.amount <= 65533).collect();
     stacks.sort_by_key(|i|i.serial);
     let output;
     if let Some(mut logs) = stacks.into_iter().next() {
@@ -129,18 +133,19 @@ fn harvest(ctx: &ReducerContext, expected_inventory: u64, expected_avatar: u64,
         if ctx.db.inventory_item().iter().count() >= 64 { return Err("inventory full".into()); }
         output=allocate(&mut state)?;
         ctx.db.inventory_item().insert(InventoryItem {serial:output,graphic:output_graphic,amount:2,
-            container:BACKPACK,x:95,y:125});
+            container:backpack,x:95,y:125});
     }
     let bank = ResourceBank {id,remaining:remaining-2,refill_at};
     if old.is_some() { ctx.db.resource_bank().id().update(bank); }
     else { ctx.db.resource_bank().insert(bank); }
-    let updated_clock = HarvestClock {serial:1,next_at:now+COOLDOWN_US};
+    let updated_clock = HarvestClock {serial:actor,next_at:now+COOLDOWN_US};
     if clock.is_some() { ctx.db.harvest_clock().serial().update(updated_clock); }
     else { ctx.db.harvest_clock().insert(updated_clock); }
     state.revision += 1;
     skills::gain(ctx,state.revision,if mining {45} else {44})?;
     ctx.db.gathering_event().insert(GatheringEvent {revision:state.revision,tool,bank:id,
         x,y,z,graphic,output,amount:2,remaining:remaining-2,at:now});
+    players::record_inventory(ctx,state.revision)?;
     ctx.db.inventory_state().id().update(state);
     Ok(())
 }
@@ -148,10 +153,12 @@ fn harvest(ctx: &ReducerContext, expected_inventory: u64, expected_avatar: u64,
 #[spacetimedb::reducer]
 pub fn carve_shield(ctx: &ReducerContext, expected_inventory: u64, expected_avatar: u64,
                     expected_scene: u64, tool: u32, ingredient: u32) -> Result<(), String> {
+    let actor=players::actor(ctx)?;
+    let backpack=players::backpack(ctx,actor)?;
     let (mut state,_) = checked_state(ctx,expected_inventory,expected_avatar,expected_scene)?;
     check_tool(ctx,tool,0xf51,1)?;
     let mut logs = ctx.db.inventory_item().serial().find(ingredient).ok_or("missing logs")?;
-    if logs.container != BACKPACK || logs.graphic != 0x1bdd || logs.amount < 5 {
+    if logs.container != backpack || logs.graphic != 0x1bdd || logs.amount < 5 {
         return Err("need five logs in one backpack stack".into());
     }
     if logs.amount > 5 && ctx.db.inventory_item().iter().count() >= 64 { return Err("inventory full".into()); }
@@ -159,11 +166,12 @@ pub fn carve_shield(ctx: &ReducerContext, expected_inventory: u64, expected_avat
     else { logs.amount -= 5; ctx.db.inventory_item().serial().update(logs); }
     let output = allocate(&mut state)?;
     ctx.db.inventory_item().insert(InventoryItem {serial:output,graphic:0x1b7a,amount:1,
-        container:BACKPACK,x:90,y:100});
+        container:backpack,x:90,y:100});
     state.revision += 1;
     skills::gain(ctx,state.revision,11)?;
     ctx.db.crafting_event().insert(CraftingEvent {revision:state.revision,tool,ingredient,
         consumed:5,output,output_graphic:0x1b7a});
+    players::record_inventory(ctx,state.revision)?;
     ctx.db.inventory_state().id().update(state);
     Ok(())
 }
@@ -185,7 +193,7 @@ mod tests {
 // Versioned additions never replenish tools on reconnect or replace worn items.
 #[spacetimedb::reducer]
 pub fn seed_mining_kit(ctx: &ReducerContext) -> Result<(),String> {
-    authorize(ctx)?;
+    authorize_admin(ctx)?;
     if ctx.db.starter_kit().version().find(2).is_some() { return Ok(()); }
     let mut state = ctx.db.inventory_state().id().find(0).ok_or("missing inventory")?;
     if ctx.db.inventory_item().iter().count()+2 > 64 { return Err("mining kit needs space".into()); }
@@ -194,6 +202,7 @@ pub fn seed_mining_kit(ctx: &ReducerContext) -> Result<(),String> {
         ctx.db.inventory_item().insert(InventoryItem {serial,graphic,amount:1,container:BACKPACK,x:100,y:110});
     }
     state.revision+=1;
+    players::record_inventory(ctx,state.revision)?;
     ctx.db.inventory_state().id().update(state);
     ctx.db.starter_kit().insert(StarterKit {version:2});
     Ok(())
@@ -207,14 +216,16 @@ pub struct MetalEvent {
 }
 
 // Forge coordinates are verified against installed static art by the gateway.
-// Only that owner identity may call this reducer; clients never access the DB.
+// Registered player identities may call this reducer; clients never access the DB.
 #[spacetimedb::reducer]
 pub fn work_metal(ctx: &ReducerContext, expected_inventory: u64, expected_avatar: u64,
     expected_scene: u64, source: u32, tool: u32, x: u16, y: u16, z: i8) -> Result<(),String> {
+    let actor=players::actor(ctx)?;
+    let backpack=players::backpack(ctx,actor)?;
     let (mut state,avatar)=checked_state(ctx,expected_inventory,expected_avatar,expected_scene)?;
     check_ground(&avatar,x,y,z)?;
     let mut ingredient=ctx.db.inventory_item().serial().find(source).ok_or("missing metal")?;
-    if ingredient.container != BACKPACK { return Err("metal must be in backpack".into()); }
+    if ingredient.container != backpack { return Err("metal must be in backpack".into()); }
     let (consumed,produced,graphic)=if tool == 0 {
         if ingredient.graphic != 0x19b8 { return Err("not supported ore".into()); }
         // This pile shape contains two metal units: one ingot per displayed ore.
@@ -225,7 +236,7 @@ pub fn work_metal(ctx: &ReducerContext, expected_inventory: u64, expected_avatar
         (5,1,0x140e)
     };
     let mut destinations:Vec<_>=ctx.db.inventory_item().iter().filter(|i|
-        graphic==0x1bf2 && i.container==BACKPACK && i.graphic==graphic &&
+        graphic==0x1bf2 && i.container==backpack && i.graphic==graphic &&
         u32::from(i.amount)+u32::from(produced)<=65535).collect();
     destinations.sort_by_key(|i|i.serial);
     let destination=destinations.into_iter().next();
@@ -239,19 +250,20 @@ pub fn work_metal(ctx: &ReducerContext, expected_inventory: u64, expected_avatar
         output=item.serial; item.amount+=produced; ctx.db.inventory_item().serial().update(item);
     } else {
         output=allocate(&mut state)?;
-        ctx.db.inventory_item().insert(InventoryItem {serial:output,graphic,amount:produced,container:BACKPACK,x:85,y:100});
+        ctx.db.inventory_item().insert(InventoryItem {serial:output,graphic,amount:produced,container:backpack,x:85,y:100});
     }
     state.revision+=1;
     skills::gain(ctx,state.revision,if tool==0 {45} else {7})?;
     ctx.db.metal_event().insert(MetalEvent {revision:state.revision,source,consumed,output,produced,graphic,
         forge_x:x,forge_y:y,forge_z:z});
+    players::record_inventory(ctx,state.revision)?;
     ctx.db.inventory_state().id().update(state);
     Ok(())
 }
 
 #[spacetimedb::reducer]
 pub fn seed_forge(ctx: &ReducerContext, scene: u64, x: u16, y: u16, z: i8) -> Result<(),String> {
-    authorize(ctx)?;
+    authorize_admin(ctx)?;
     if ctx.db.world_object().serial().find(0x40000003).is_some() { return Ok(()); }
     check_scene(ctx,scene)?;
     let avatar=ctx.db.avatar().serial().find(1).ok_or("missing player")?;

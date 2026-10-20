@@ -52,7 +52,7 @@ swift run -c release UltimaMac --client uo1998-client \
 
 The repository also includes an experimental **SpacetimeDB-backed UO 1.25.32
 server**. It runs on loopback and uses the installed game assets for authoritative
-terrain checks. The single-player sandbox persists movement, doors, containers,
+terrain checks. The two-player sandbox persists movement, doors, containers,
 equipment, ground items, stack transfers, food, lumberjacking, mining, forge
 smelting, basic equipment recipes, skill progression, hunting with retaliation and recovery, cooking, and a merchant with finite stock.
 
@@ -62,12 +62,12 @@ After installing the server prerequisites:
 python3 server/local-spacetime/run.py
 ```
 
-Connect to `127.0.0.1:2594` with the development account `local` / `local`.
+Connect to `127.0.0.1:2594` with `local` / `local` and `local2` / `local2` in separate client instances. Each has a persistent avatar, backpack, equipment, skills, and health.
 The starter hatchet gathers logs from map trees; the dagger carves five logs into
 a wooden shield. The pickaxe mines ore; the smith's hammer forges five ingots into
 a nose helm. A persistent nearby forge also supports the client's smelting assistant.
 Mara the provisioner sells apples and buys logs through the classic vendor windows.
-Creature retaliation/player death, vendor restocking, multiplayer, and world merging remain future work.
+Both players see shared-world changes while idle. Creatures retaliate; defeat preserves belongings, and saying `recover` in peace restores health after thirty seconds without damage. Vendor restocking, classic ghost death, LAN discovery, and world merging remain future work.
 
 See the [server setup and gameplay guide](server/local-spacetime/README.md),
 [verification instructions](server/local-spacetime/README.md#verify), and

@@ -251,6 +251,7 @@ struct ClientSmoke {
             var sawCreatureHealth=false, sawDeath=false
             var actions:[MobileAction]=[]
             var playerStatus=CharacterStatus(serial:1)
+            var peerStatus=CharacterStatus(serial:4)
             var contents:[ContainerItem]=[], offers:[VendorOffer]=[], saleOffers:[VendorOffer]=[]
             for packet in try framer.receive(bytes) {
                 switch packet[0] {
@@ -262,7 +263,9 @@ struct ClientSmoke {
                     _ = try combat.apply(packet)
                     sawCreatureHealth = combat.serial==3 && combat.status?.maxHealth==20 && (combat.status?.health ?? 0)>0
                 case 0x6e: actions.append(try MobileAction.decode(packet))
-                case 0xa1: _ = try playerStatus.apply(packet)
+                case 0xa1:
+                    _ = try playerStatus.apply(packet)
+                    _ = try peerStatus.apply(packet)
                 case 0xaf:
                     guard try MobileDeath.decode(packet).serial==3 else { throw AssetError("Bad creature death") }
                     _ = try combat.apply(packet);try world.apply(packet);sawDeath=true
@@ -275,6 +278,11 @@ struct ClientSmoke {
                   offers.count==1,offers[0].price==3,offers[0].item.graphic==0x9d0,
                   offers[0].item.amount==18 else { throw AssetError("Merchant stock or mobile decode failed") }
             let assets=try ClientAssets(directory:URL(fileURLWithPath:CommandLine.arguments[2]))
+            guard world.mobiles[4]?.body==400,peerStatus.health==41,peerStatus.maxHealth==50,
+                  world.equipment.values.contains(where:{$0.owner==4 && $0.layer==21}),
+                  world.equipment.values.contains(where:{$0.owner==4 && $0.layer==6}) else {
+                throw AssetError("Peer mobile, equipment ownership, or health decoding failed")
+            }
             guard playerStatus.health==17,playerStatus.maxHealth==50,
                   actions.map(\.serial)==[1,3],actions.map(\.action)==[9,5],
                   try assets.animations?.frame(body:400,direction:3,action:9,frame:0) != nil,

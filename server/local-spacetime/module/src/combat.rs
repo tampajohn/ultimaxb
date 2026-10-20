@@ -15,9 +15,26 @@ pub struct CombatEvent {
     remaining:u16, at:i64,
 }
 
+#[spacetimedb::table(accessor = player_combat_event)]
+pub struct PlayerCombatEvent {
+    #[primary_key] key:String,
+    player:u32, revision:u64, kind:String, creature_revision:u64,
+    protection:u16, damage:u16, remaining:u16, at:i64,
+}
+
+fn record(ctx:&ReducerContext,vital:&Vitality,kind:&str,creature_revision:u64,armor:u16,damage:u16,at:i64) {
+    if vital.serial==1 {
+        ctx.db.combat_event().insert(CombatEvent {revision:vital.revision,kind:kind.into(),
+            creature_revision,protection:armor,damage,remaining:vital.health,at});
+    }
+    ctx.db.player_combat_event().insert(PlayerCombatEvent {key:format!("{}:{}",vital.serial,vital.revision),
+        player:vital.serial,revision:vital.revision,kind:kind.into(),creature_revision,
+        protection:armor,damage,remaining:vital.health,at});
+}
+
 #[spacetimedb::reducer]
 pub fn seed_vitality(ctx:&ReducerContext)->Result<(),String> {
-    authorize(ctx)?;
+    authorize_admin(ctx)?;
     if ctx.db.vitality().serial().find(1).is_none() {
         ctx.db.vitality().insert(Vitality {serial:1,health:50,revision:0,recover_at:0});
     }
@@ -25,7 +42,8 @@ pub fn seed_vitality(ctx:&ReducerContext)->Result<(),String> {
 }
 
 pub(super) fn require_alive(ctx:&ReducerContext)->Result<(),String> {
-    let vital=ctx.db.vitality().serial().find(1).ok_or("missing vitality")?;
+    let actor=players::actor(ctx)?;
+    let vital=ctx.db.vitality().serial().find(actor).ok_or("missing vitality")?;
     if vital.health==0 {return Err("You are defeated. Enter peace mode and say recover after thirty seconds.".into());}
     Ok(())
 }
@@ -35,30 +53,30 @@ fn protection(layer:u8,graphic:u16)->u16 {
 }
 
 pub(super) fn retaliate(ctx:&ReducerContext,creature_revision:u64)->Result<(),String> {
-    let mut vital=ctx.db.vitality().serial().find(1).ok_or("missing vitality")?;
+    let actor=players::actor(ctx)?;
+    let mut vital=ctx.db.vitality().serial().find(actor).ok_or("missing vitality")?;
     let armor=ctx.db.equipment_slot().iter().filter_map(|slot|
-        ctx.db.inventory_item().serial().find(slot.serial).filter(|i|i.container==1 && i.amount==1)
+        ctx.db.inventory_item().serial().find(slot.serial).filter(|i|i.container==actor && i.amount==1)
             .map(|i|protection(slot.layer,i.graphic))).sum::<u16>().min(3);
     let damage=(6-armor).min(vital.health);
     let now=ctx.timestamp.to_micros_since_unix_epoch();
     vital.health-=damage;vital.revision+=1;vital.recover_at=now+RECOVERY_US;
-    ctx.db.combat_event().insert(CombatEvent {revision:vital.revision,kind:"retaliation".into(),
-        creature_revision,protection:armor,damage,remaining:vital.health,at:now});
+    record(ctx,&vital,"retaliation",creature_revision,armor,damage,now);
     ctx.db.vitality().serial().update(vital);
     Ok(())
 }
 
 #[spacetimedb::reducer]
 pub fn recover_player(ctx:&ReducerContext,expected_vitality:u64)->Result<(),String> {
+    let actor=players::actor(ctx)?;
     authorize(ctx)?;
-    let mut vital=ctx.db.vitality().serial().find(1).ok_or("missing vitality")?;
+    let mut vital=ctx.db.vitality().serial().find(actor).ok_or("missing vitality")?;
     let now=ctx.timestamp.to_micros_since_unix_epoch();
     if vital.revision!=expected_vitality || vital.health==50 || now<vital.recover_at {
         return Err("Recovery requires thirty seconds without incoming damage.".into());
     }
     vital.health=50;vital.revision+=1;vital.recover_at=0;
-    ctx.db.combat_event().insert(CombatEvent {revision:vital.revision,kind:"recovery".into(),
-        creature_revision:0,protection:0,damage:0,remaining:50,at:now});
+    record(ctx,&vital,"recovery",0,0,0,now);
     ctx.db.vitality().serial().update(vital);
     Ok(())
 }

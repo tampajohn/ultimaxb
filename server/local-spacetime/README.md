@@ -16,7 +16,7 @@ relay tokens, Huffman-compressed game responses, existing-character selection,
 world entry, status, ping, turn/walk acknowledgement and rejection, position
 resynchronization, and persisted reconnect. The database atomically updates the
 avatar and appends a movement event plus an elevation record. Expected revisions reject stale commands.
-Only the publishing gateway identity can mutate the world; tables are private.
+Gameplay writes use the authenticated player’s private database identity; shared setup is administrator-only. Tables remain private.
 
 Movement now reads the installed UO assets through the same `ClientAssets` and
 `NavigationMap` code as the client. It checks land slopes, impassable land/water,
@@ -25,7 +25,7 @@ Accepted steps persist the actual standing elevation. Turning does not move or
 change elevation. The former 17-by-17 test boundary has been removed.
 
 The collision helper is server-owned; the UO client cannot supply a destination
-height. The trusted gateway validates the step, then invokes an owner-only reducer
+height. The trusted gateway validates the step, then invokes a player-bound reducer
 with an expected revision and validated Z. SpacetimeDB rejects stale decisions
 and atomically commits position and both journal records. Asset collision runs
 in the gateway helper, not inside the WASM database module.
@@ -100,9 +100,17 @@ door geometry and its journal event; movement and grounding validate that revisi
 alongside the avatar revision. This prevents committing a step based on outdated
 door geometry. The helper invalidates its collision cache whenever objects change.
 
-The demo account is **local / local**, with one character, **Local Avatar**.
-Only one game session may use it at a time. This is a local development gate,
-not a production account system. Never use real shard credentials here.
+Two accounts can play together: **local / local** selects **Local Avatar** and
+**local2 / local2** selects **Local Adventurer**. Each account permits one active
+session. The existing local avatar retains its progress; the second account gets
+a separate persistent backpack and starter kit. These are loopback development
+credentials, not remote-production authentication.
+
+Launch a second client directly with
+`.build/release/UltimaMac --client uo1998-client --connect` and choose Local
+Spacetime with the other account. The normal `tools/run_macos.sh` launcher replaces
+existing client instances. Both clients receive movement, equipment, ground-item,
+fixture, merchant, and creature updates even while idle.
 
 ## Run
 
@@ -216,7 +224,7 @@ an existing database. Prefer `run.py --verify` for an isolated test world.
 | 1 — Gathering and a useful recipe (implemented) | Equip the hatchet, target an actual map tree, collect logs, then use the dagger on five backpack logs to carve a wooden shield. | Single-use expiring target cursors; server-validated tree identity and reach; durable cooldown/depletion; lazy resource recovery after idle time; atomic ingredient consumption/output creation; crafted shield equips and persists; real-client target/result decoding. |
 | 2 — Mining, smithing, and progression (core loop and skill progression implemented) | Mine ore, smelt at a forge, craft or repair basic metal equipment. | Asset-validated ore/forge targets; explicit recipes and material costs; durable tool wear and skill progression; no skill/loot gains on rejected or replayed requests; original target/gump protocols. Decide era-faithful rules before expanding the recipe catalogue. |
 | 3 — A small inhabited adventure (merchant trading, hunting, cooking, and bounded combat implemented) | Trade with one vendor and fight one creature type near a safe starting area. | Finite vendor stock and money, atomic purchases/sales, deterministic attack cadence and range checks, damage/death/loot/recovery, NPC persistence, pause/resume rules for an empty world, no duplicate loot after reconnect. |
-| 4 — Shared local world | Two distinct players gather, trade, and fight together. | Real accounts and character ownership, subscription-driven visibility, per-player sessions, contested resource/equipment tests, secure LAN discovery and explicit host selection. Replace proof-of-concept HTTP polling before scaling. |
+| 4 — Shared local world (two-player loop implemented) | Two distinct players gather, trade, and fight together. | Persistent identity-bound ownership, per-account sessions, commit-triggered visibility, and contested item/resource tests. Secure LAN discovery and host selection remain planned; use database subscriptions before multiple gateways or scaling. |
 | 5 — World branches and reconciliation | Fork a checkpoint, explore independently, preview a merge, and create a new reconciled world. | Stable cross-world entity/event IDs, ancestry/checkpoints, explicit item creation/transfer/consumption history, three-way merge preview, conservation checks, deterministic conflict policies, provenance for overrides, reversible import into a new branch. Never merge solely by timestamps or local revision numbers. |
 
 Phase 1 intentionally uses a small sandbox recipe (five logs → one wooden shield),
@@ -275,7 +283,7 @@ consume goods or pay twice. Nearby reach is checked again at settlement.
 
 Classic speech supports 1–200 Latin-1 characters and normal/emote/whisper/yell
 modes through the existing client journal and overhead text. Vendor commands are
-local to Mara; this remains a single-player sandbox.
+local to Mara and shared by both players in this bounded sandbox.
 
 The merchant, goods, and buy/sell journals persist across restarts. She never
 restocks and has no wandering, combat, or mobile collision logic.
@@ -376,8 +384,8 @@ Consensus within an active shared world and reconciliation between independently
 played branches are separate problems. A merge must account for spent resources
 and item ownership; choosing a preferred player cannot silently duplicate items.
 
-- One precreated avatar, one stationary merchant, and one stationary neutral cow;
-  no character creation/deletion or multiplayer visibility.
+- Two precreated avatars, one stationary merchant, and one stationary neutral cow;
+  no character creation/deletion, PvP, LAN discovery, or remote hosting.
 - Movement uses the client's conservative collision rules, not a claim of exact
   original-server parity. Mobile blockers, placed houses/boats, mounts, ghost
   movement, and movement cadence remain unimplemented. World fixtures consist of
@@ -385,20 +393,20 @@ and item ownership; choosing a preferred player cannot silently duplicate items.
   Doors baked into map statics still block and cannot be opened. Dynamic door use
   currently supports the one seeded classic door orientation, with no auto-close
   timer or lock/key system. This is not yet a complete playable shard.
-- Inventory supports only the seeded backpack/barrel, at most 64 item records,
+- Inventory supports the two private backpacks and shared barrel, at most 64 item records globally,
   and bounded interior coordinates for each gump. There is no weight or
   capacity simulation or nested storage yet. Equipment is limited to the explicit
   starter catalogue, mining tools, wooden shields, and crafted nose helms.
   Tool use supports lumberjacking, carving, mining, smelting, and one smithing recipe.
-  Health, attributes, armor, and weight remain placeholder status values.
+  Health is persisted; attributes, displayed armor rating, and weight remain placeholders. Worn armor still provides the bounded mitigation described above.
   Ground placement uses standable terrain, not arbitrary table/container surfaces.
-  Container changes refresh on interaction, not subscriptions.
-- HTTP reducer calls and SQL reads are sequential and intended for the proof.
-  Replace this backend with SDK/WebSocket subscriptions before adding multiplayer
-  or claiming suitable gameplay throughput. Uncertain write outcomes trigger an
-  authoritative read and movement rejection; the adapter does not retry blindly.
-  Object changes are refreshed on entry, movement, position sync, and item use;
-  there is no background subscription for edits by other sessions.
+  Private container changes and shared objects refresh on committed or uncertain gateway writes.
+- HTTP reducer calls and SQL snapshots serve one local gateway. Coalesced commit
+  notifications wake the other session without periodic full-world polling.
+  This does not observe out-of-band database writers; SDK/WebSocket subscriptions
+  are required before multiple gateways or larger deployments. Uncertain writes
+  trigger authoritative refreshes and are never blindly retried. Global inventory
+  revisions intentionally invalidate competing quotes, drags, and tool cursors.
 - Unsupported packet opcodes close the session instead of guessing frame lengths.
   The Skills window reports the four trained sandbox skills; other skills remain
   untrained. War mode supports the neutral hunting loop described above.
@@ -408,7 +416,7 @@ and item ownership; choosing a preferred player cannot silently duplicate items.
 - Protocol and movement decisions use explicit code. No model is in the gameplay
   path. Model-assisted merge proposals can be explored separately later.
 
-Next: rendered-client playtesting, tool wear/repair, vendor restocking, and distinct player ownership for a shared local world. Fork/merge work will need stable cross-world identities and explicit rules
+Next: rendered-client playtesting, tool wear/repair, vendor restocking, secure LAN discovery, and measured hosted-world behavior. Fork/merge work will need stable cross-world identities and explicit rules
 for item ownership and consumption; the current local journals are not sufficient.
 
 ## Sources
@@ -421,3 +429,14 @@ SpacetimeDB API references:
 <https://spacetimedb.com/docs/http/database/>,
 <https://spacetimedb.com/docs/http/identity/>,
 <https://spacetimedb.com/docs/functions/reducers/>.
+
+## Shared-world verification
+
+Run `python3 server/local-spacetime/run.py --verify-shared` for a separate fresh
+world with two encrypted clients. It exercises contended ground stacks and tree
+harvests, occupied doors, private equipment/food/skills, stale crafting and vendor
+quotes, mining/smelting/smithing, finite trading, independent melee clocks, one
+shared death/loot result, cooking, disconnect/reconnect, and database restart.
+Run `--verify` as well for the original gameplay regressions and real Swift client
+smoke/peer-packet decoding. See [MULTIPLAYER.md](MULTIPLAYER.md) for ownership,
+notification design, migration, and future LAN/hosting boundaries.
