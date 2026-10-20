@@ -232,7 +232,10 @@ hold ten ore and use the same cooldown/refill policy as lumber, in a separate ba
 namespace. A verified reachable test site is rock **1250,1248,0**, approached from
 **1250,1249,0**. There is no teleport command in the player protocol.
 
-Double-click backpack ore and target an original map forge within two tiles.
+A permanent forge is placed once on reachable terrain within two tiles of the
+saved avatar on upgrade. It uses original forge art, blocks movement, preserves
+door swings, and is saved as part of the scene. Double-click backpack ore and
+target this forge or an original map forge within two tiles.
 For example, a forge at **636,2193,0** is reachable from **635,2193,0**. Each displayed
 ore of this supported pile shape contains two metal units and becomes one ingot.
 Near a forge, equip and use the smith's hammer, then target a backpack stack of at
@@ -241,8 +244,11 @@ commit together; stale cursors and unauthorized calls cannot repeat the conversi
 Ore and ingots also support ordinary drag splitting/merging. This is a deliberately
 small sandbox recipe, with no skill roll, tool wear, repair, or progression yet.
 Only iron ore shape 0x19B8 is supported; ore-use pile combining is not implemented.
-The client's automated smelting assistant requires a server-visible forge object;
-these static-map forges currently work through manual targeting.
+The nearby forge is a server-visible object and supports the client's existing
+`SmeltWorkflow`; original static-map forges also work through manual targeting.
+Dynamic forge targets must match the stored serial, graphic, and full position.
+The live Swift smoke runs the actual workflow through use/target/result packets,
+checks consumption and ingot creation, and then continues crafting and reconnects.
 
 Mining integration tests use real asset targets and encrypted client packets,
 deplete mineral banks independently of lumber, reject fake and distant targets,
@@ -290,7 +296,7 @@ and item ownership; choosing a preferred player cannot silently duplicate items.
 - Movement uses the client's conservative collision rules, not a claim of exact
   original-server parity. Mobile blockers, placed houses/boats, mounts, ghost
   movement, and movement cadence remain unimplemented. World fixtures consist of
-  the seeded door/barrel and player-dropped inventory; no decoration import exists.
+  the seeded door/barrel/forge and player-dropped inventory; no decoration import exists.
   Doors baked into map statics still block and cannot be opened. Dynamic door use
   currently supports the one seeded classic door orientation, with no auto-close
   timer or lock/key system. This is not yet a complete playable shard.
@@ -316,7 +322,7 @@ and item ownership; choosing a preferred player cannot silently duplicate items.
 - Protocol and movement decisions use explicit code. No model is in the gameplay
   path. Model-assisted merge proposals can be explored separately later.
 
-Next: rendered-client playtesting, tool wear/skills, vendor restocking, a nearby forge, and a small creature/combat
+Next: rendered-client playtesting, tool wear/skills, vendor restocking and a small creature/combat
 loop. Fork/merge work will need stable cross-world identities and explicit rules
 for item ownership and consumption; the current local journals are not sufficient.
 

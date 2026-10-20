@@ -12,6 +12,9 @@ struct ClientSmoke {
         var failure: String?
         var ready = false
         var inventoryReady = false
+        var smelt=SmeltWorkflow()
+        var smelted = !move
+        var lastSystemMessage = ""
         var inventoryStage = 0
         var daggerSerial: UInt32 = 0
         var existingShields = Set<UInt32>()
@@ -30,6 +33,19 @@ struct ClientSmoke {
             transfer.begin(serial:daggerSerial,amount:1,destination:.container(0x40000100,x:65,y:65),world:world,time:0)
             inventoryStage = 2
             for outgoing in packets { client.send(outgoing) }
+        }
+        func beginMovement() throws {
+            guard move,let entry=result else { return }
+            let from = WalkPoint(x: entry.x, y: entry.y, z: entry.z)
+            let map = try NavigationMap(assets: assets, center: from, additional: world.groundTiles)
+            let candidates = (UInt8(0)...7).compactMap { d in map.step(from: from, direction: d).map { (d, $0) } }
+            guard let choice = candidates.first(where: { $0.1.z != from.z }) ?? candidates.first else {
+                throw NSError(domain: "no walkable neighboring tile", code: 1)
+            }
+            direction = choice.0
+            expectedX = choice.1.x; expectedY = choice.1.y; expectedZ = choice.1.z
+            stage = entry.direction & 7 == direction ? 2 : 1
+            client.send(Data([0x02, direction, sequence]))
         }
         client.onEvent = { event in
             do {
@@ -58,7 +74,24 @@ struct ClientSmoke {
                             guard status.health == 50 else { throw NSError(domain: "bad status", code: 1) }
                         case 0x78, 0x1a, 0x1d, 0x2e, 0x24, 0x25, 0x3c:
                             try world.apply(packet)
-                            if packet[0] == 0x3c && inventoryStage == 0 {
+                            if inventoryStage == -1 {
+                                smelt.observe(world:world,time:ProcessInfo.processInfo.systemUptime)
+                                if case .stopped(let reason)=smelt.state { throw AssetError("Smelt stopped: \(reason); \(lastSystemMessage)") }
+                                if smelt.state == .completed {
+                                    guard smelt.successes==1 else { throw AssetError("Smelt produced no ingots") }
+                                    smelted=true; inventoryStage=0
+                                }
+                            }
+                            if packet[0] == 0x3c && inventoryStage == 0 && !smelted {
+                                guard let entry=result,let forge=world.items[0x40000003] else { throw AssetError("Missing nearby forge") }
+                                try smelt.start(backpack:0x40000100,forge:forge,world:world)
+                                let point=WalkPoint(x:entry.x,y:entry.y,z:entry.z)
+                                guard case .useItem(let serial)=smelt.next(world:world,position:point,time:ProcessInfo.processInfo.systemUptime) else {
+                                    throw AssetError("Smelt workflow could not start")
+                                }
+                                inventoryStage = -1
+                                client.send(InteractionPackets.use(serial:serial))
+                            } else if packet[0] == 0x3c && inventoryStage == 0 {
                                 guard let dagger = world.containerItems.values.first(where: { $0.container == 0x40000100 && $0.graphic == 0xf51 && $0.amount == 1 }),
                                       try assets.equipmentLayer(graphic: dagger.graphic) == 1 else {
                                     throw NSError(domain: "missing persistent backpack contents", code: 1)
@@ -84,6 +117,7 @@ struct ClientSmoke {
                                     throw NSError(domain: "unequip transfer not confirmed", code: 1)
                                 }
                                 inventoryStage = 3; inventoryReady = true
+                                try beginMovement()
                             } else if inventoryStage == 5, let shield = world.containerItems.values.first(where: {
                                 $0.graphic == 0x1b7a && !existingShields.contains($0.serial)
                             }) {
@@ -105,6 +139,14 @@ struct ClientSmoke {
                             }
                         case 0x6c:
                             let request = try TargetRequest.decode(packet)
+                            if inventoryStage == -1 {
+                                guard let entry=result else { throw AssetError("Missing smelt position") }
+                                let point=WalkPoint(x:entry.x,y:entry.y,z:entry.z)
+                                guard case .target(let cursor,let selection)=smelt.receive(request,world:world,position:point,time:ProcessInfo.processInfo.systemUptime) else {
+                                    throw AssetError("Smelt workflow rejected target")
+                                }
+                                client.send(try cursor.response(selection)); break
+                            }
                             guard inventoryStage == 4,request.flags == 0,request.allowsLocation else {
                                 throw NSError(domain:"unexpected target cursor",code:1)
                             }
@@ -122,9 +164,13 @@ struct ClientSmoke {
                             }
                         case 0x1c:
                             let message = try SpeechMessage.decode(packet)
+                            lastSystemMessage=message.text
                             guard message.type == 6 else { throw NSError(domain:"system speech type mismatch",code:1) }
+                            if inventoryStage == -1 {
+                                smelt.observe(speech:message,world:world,time:ProcessInfo.processInfo.systemUptime)
+                            }
                         case 0x55:
-                            guard let entry = result else { throw NSError(domain: "missing entry", code: 1) }
+                            guard result != nil else { throw NSError(domain: "missing entry", code: 1) }
                             guard world.equipment[0x40000100]?.layer == 21 else {
                                 throw NSError(domain: "missing backpack equipment", code: 1)
                             }
@@ -133,16 +179,6 @@ struct ClientSmoke {
                             }
                             client.send(Data([0x06,0x40,0x00,0x01,0x00]))
                             if !move { ready = true; break }
-                            let from = WalkPoint(x: entry.x, y: entry.y, z: entry.z)
-                            let map = try NavigationMap(assets: assets, center: from, additional: world.groundTiles)
-                            let candidates = (UInt8(0)...7).compactMap { d in map.step(from: from, direction: d).map { (d, $0) } }
-                            guard let choice = candidates.first(where: { $0.1.z != from.z }) ?? candidates.first else {
-                                throw NSError(domain: "no walkable neighboring tile", code: 1)
-                            }
-                            direction = choice.0
-                            expectedX = choice.1.x; expectedY = choice.1.y; expectedZ = choice.1.z
-                            stage = entry.direction & 7 == direction ? 2 : 1
-                            client.send(Data([0x02, direction, sequence]))
                         case 0x22:
                             guard packet[1] == sequence else { throw NSError(domain: "bad movement ack", code: 1) }
                             sequence += 1
@@ -187,7 +223,7 @@ struct ClientSmoke {
             try await Task.sleep(for: .milliseconds(10))
         }
         if let failure { throw NSError(domain: failure, code: 1) }
-        guard ready, inventoryReady, let result else { throw NSError(domain: "smoke timeout", code: 1) }
+        guard ready, inventoryReady, smelted, let result else { throw NSError(domain: "smoke timeout: inventory=\(inventoryStage), smelt=\(smelt.state), last=\(lastSystemMessage)", code: 1) }
         return result
     }
 
@@ -229,6 +265,6 @@ struct ClientSmoke {
         guard moved.x == resumed.x, moved.y == resumed.y, moved.z == resumed.z, moved.direction == resumed.direction else {
             throw NSError(domain: "reconnect lost state", code: 1)
         }
-        print("PASS: real GameConnection, target/cancel, crafting and ingredient removal, crafted shield paperdoll/equipment, movement, reconnect")
+        print("PASS: real GameConnection, SmeltWorkflow at persistent forge, target/cancel, crafting and ingredient removal, crafted shield paperdoll/equipment, movement, reconnect")
     }
 }

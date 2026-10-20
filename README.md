@@ -65,7 +65,8 @@ python3 server/local-spacetime/run.py
 Connect to `127.0.0.1:2594` with the development account `local` / `local`.
 The starter hatchet gathers logs from map trees; the dagger carves five logs into
 a wooden shield. The pickaxe mines ore; the smith's hammer forges five ingots into
-a nose helm. Mara the provisioner sells apples and buys logs through the classic vendor windows.
+a nose helm. A persistent nearby forge also supports the client's smelting assistant.
+Mara the provisioner sells apples and buys logs through the classic vendor windows.
 Combat, vendor restocking, multiplayer, and world merging remain future work.
 
 See the [server setup and gameplay guide](server/local-spacetime/README.md),

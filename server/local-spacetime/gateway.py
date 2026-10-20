@@ -9,7 +9,7 @@ import logging
 import secrets
 import struct
 import time
-from backend import BACKPACK, BARREL, ITEMS, BackendError, load_backend
+from backend import BACKPACK, BARREL, FORGE, ITEMS, BackendError, load_backend
 from navigation import Navigation
 import protocol as wire
 
@@ -223,7 +223,7 @@ class Gateway:
                     if opcode == 0x09 and serial == BACKPACK:
                         await self.send(writer,wire.speech(dict(serial=BACKPACK,graphic=0xe75,name='Backpack'),'Backpack'),True)
                         continue
-                    if opcode == 0x09 and serial not in (1,BARREL,0x40000001):
+                    if opcode == 0x09 and serial not in (1,BARREL,FORGE,0x40000001):
                         item = next((i for i in (await asyncio.to_thread(self.backend.inventory))[1] if i['serial']==serial),None)
                         if item is None or (item['container']==0 and serial not in visible):
                             continue
@@ -247,9 +247,11 @@ class Gateway:
                         await self.send(writer, wire.speech(avatar, 'Press P for your character; B for your backpack.'), True)
                     elif serial in visible and not visible[serial].get('movable'):
                         item = visible[serial]
-                        name = 'Metal door' if item['is_door'] else 'Barrel'
+                        name = 'Metal door' if item['is_door'] else ('Forge' if serial==FORGE else 'Barrel')
                         if opcode == 0x09:
                             await self.send(writer, wire.speech(dict(item, name=name), name), True)
+                        elif serial==FORGE:
+                            await self.send(writer,wire.system_message('Use backpack ore and target this forge to smelt. Use a worn smith hammer on five ingots to make a helm.'),True)
                         else:
                             try:
                                 await asyncio.to_thread(self.backend.use_door, serial)

@@ -17,6 +17,7 @@ class BackendError(RuntimeError):
 
 BACKPACK = 0x40000100
 BARREL = 0x40000002
+FORGE = 0x40000003
 ITEMS = {
     0xeed: ('Gold',None), 0xf51: ('Dagger',1), 0x170b: ('Boots',3),
     0x152e: ('Short pants',4), 0x1517: ('Shirt',5), 0x140e: ('Nose helm',6),
@@ -130,6 +131,38 @@ class Backend:
         self.request(self.path + '/call/seed_starter_kit', b'[]')
         self.request(self.path + '/call/seed_mining_kit', b'[]')
         self.prepare_merchant()
+        self.prepare_forge()
+
+    def prepare_forge(self):
+        scene,objects=self.world()
+        if any(o['serial']==FORGE for o in objects): return
+        if self.navigation is None: raise BackendError('Forge placement requires world assets.')
+        avatar=self.avatar(); vendor=self.merchant()
+        reserved={(o['x'],o['y']) for o in objects}
+        reserved.update((o['home_x'],o['home_y']) for o in objects)
+        reserved.update((o['home_x']-1,o['home_y']+1) for o in objects if o['is_door'])
+        if vendor: reserved.add((vendor['x'],vendor['y']))
+        start=self.navigation.query('settle',avatar,objects=objects)
+        if start is None: raise BackendError('No safe forge site.')
+        queue,seen=deque([start]),set()
+        for _ in range(100):
+            if not queue: break
+            point=queue.popleft(); key=tuple(point[k] for k in ('x','y','z'))
+            if key in seen: continue
+            seen.add(key)
+            distance=max(abs(point['x']-avatar['x']),abs(point['y']-avatar['y']))
+            if distance==2 and (point['x'],point['y']) not in reserved and abs(point['z']-avatar['z'])<=16:
+                proposed=objects+[dict(point,serial=FORGE,graphic=0xfb1)]
+                try: self.check_reach(point,avatar,proposed)
+                except BackendError: pass
+                else:
+                    self.request(self.path+'/call/seed_forge',json.dumps([scene,*key]).encode())
+                    return
+            for direction in range(8):
+                next_point=self.navigation.query('step',point,direction,objects=objects)
+                if next_point and max(abs(next_point['x']-avatar['x']),abs(next_point['y']-avatar['y']))<=2:
+                    queue.append(next_point)
+        raise BackendError('No safe reachable forge site.')
 
     def merchant(self):
         rows=json.loads(self.request(self.path+'/sql',b'SELECT * FROM merchant',content_type='text/plain'))[0]['rows']
@@ -442,15 +475,22 @@ class Backend:
                 ingredient = next((i for i in items if i['serial']==target['serial']),None)
                 if ingredient is None or ingredient['container']!=BACKPACK or ingredient['graphic']!=0x1bf2 or ingredient['amount']<5:
                     raise BackendError('Target at least five backpack ingots beside a forge.')
-                forge = self.navigation.query('near_forge',avatar,objects=objects)
+                forge = next((o for o in objects if o['serial']==FORGE and
+                    max(abs(o['x']-avatar['x']),abs(o['y']-avatar['y']))<=2 and abs(o['z']-avatar['z'])<=16),None)
+                if forge is None: forge = self.navigation.query('near_forge',avatar,objects=objects)
             else:
                 ingredient = tool
-                if target['serial']!=0 or max(abs(target['x']-avatar['x']),abs(target['y']-avatar['y']))>2:
-                    raise BackendError('Target a nearby forge in the world.')
-                forge = self.navigation.query('forge',target,objects=objects,graphic=target['graphic'])
+                if max(abs(target['x']-avatar['x']),abs(target['y']-avatar['y']))>2:
+                    raise BackendError('That is too far away.')
+                if target['serial']==0:
+                    forge = self.navigation.query('forge',target,objects=objects,graphic=target['graphic'])
+                else:
+                    forge = next((o for o in objects if o['serial']==FORGE and
+                        all(o[k]==target[k] for k in ('serial','graphic','x','y','z'))),None)
             if forge is None:
                 raise BackendError('You must be beside a forge.')
-            self.check_reach(forge,avatar,objects)
+            try: self.check_reach(forge,avatar,objects)
+            except BackendError: raise BackendError("You can't see that.") from None
             self.request(self.path+'/call/work_metal',json.dumps([
                 revision,avatar['revision'],scene,ingredient['serial'],tool['serial'] if smithing else 0,
                 forge['x'],forge['y'],forge['z']]).encode())

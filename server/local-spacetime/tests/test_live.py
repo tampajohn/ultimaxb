@@ -15,7 +15,7 @@ from unittest.mock import patch
 from collections import deque
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from backend import BACKPACK, BARREL, Backend, BackendError, load_backend
+from backend import BACKPACK, BARREL, FORGE, Backend, BackendError, load_backend
 from gateway import Gateway
 from navigation import Navigation
 import protocol as wire
@@ -467,12 +467,24 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(BackendError):
                 self.backend.perform_tool(self.backend.begin_tool(ore['serial']),forge)
             self.assertEqual(self.backend.inventory(),before)
+            local_forge=next(o for o in self.backend.world()[1] if o['serial']==FORGE)
+            local_spot=next(p for dx,dy in [(0,1),(1,0),(0,-1),(-1,0)]
+                if (p:=self.navigation.query('stand',dict(x=local_forge['x']+dx,y=local_forge['y']+dy,z=local_forge['z']),objects=self.backend.world()[1])))
+            self.assertIsNone(self.navigation.query('stand',local_forge,objects=self.backend.world()[1]))
+            await asyncio.to_thread(relocate,local_spot)
+            for wrong in (dict(local_forge,graphic=0xe77),dict(local_forge,x=local_forge['x']+1),dict(local_forge,serial=BARREL)):
+                with self.assertRaises(BackendError): self.backend.perform_tool(self.backend.begin_tool(ore['serial']),wrong)
+            self.assertEqual(self.backend.inventory(),before)
+            # Eight ore use a static forge; two remain for the real Swift workflow.
+            self.backend.transfer(self.backend.lift(ore['serial'],8),ore['serial'],BACKPACK,80,80)
             await asyncio.to_thread(relocate,dict(x=635,y=2193,z=0))
             self.assertIn(b'You smelt the ore',await use(ore['serial'],forge))
             items=self.backend.inventory()[1]
-            self.assertFalse(any(i['graphic']==0x19b8 for i in items))
+            self.assertEqual(sum(i['amount'] for i in items if i['graphic']==0x19b8),2)
             ingots=next(i for i in items if i['graphic']==0x1bf2)
-            self.assertEqual(ingots['amount'],10)
+            self.assertEqual(ingots['amount'],8)
+            await asyncio.to_thread(relocate,local_spot)
+            forge=local_forge
             self.backend.equip(self.backend.lift(hammer['serial'],1),hammer['serial'],1,1)
             context=self.backend.begin_tool(hammer['serial'])
             identity=json.loads(self.backend.request('/v1/identity',b''))
@@ -486,7 +498,7 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(BackendError):
                 self.backend.perform_tool(context,dict(ingots,z=0))
             items=self.backend.inventory()[1]
-            self.assertEqual(sum(i['amount'] for i in items if i['graphic']==0x1bf2),5)
+            self.assertEqual(sum(i['amount'] for i in items if i['graphic']==0x1bf2),3)
             self.assertEqual(sum(i['amount'] for i in items if i['graphic']==0x140e),helms+1)
             self.assertEqual(len(self.backend.gathering_state()['metal_event']),2)
             self.backend.transfer(self.backend.lift(hammer['serial'],1),hammer['serial'],BACKPACK,90,100)

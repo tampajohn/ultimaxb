@@ -245,3 +245,22 @@ pub fn work_metal(ctx: &ReducerContext, expected_inventory: u64, expected_avatar
     ctx.db.inventory_state().id().update(state);
     Ok(())
 }
+
+#[spacetimedb::reducer]
+pub fn seed_forge(ctx: &ReducerContext, scene: u64, x: u16, y: u16, z: i8) -> Result<(),String> {
+    authorize(ctx)?;
+    if ctx.db.world_object().serial().find(0x40000003).is_some() { return Ok(()); }
+    check_scene(ctx,scene)?;
+    let avatar=ctx.db.avatar().serial().find(1).ok_or("missing player")?;
+    check_ground(&avatar,x,y,z)?;
+    if (x,y)==(avatar.x,avatar.y) || ctx.db.world_object().iter().any(|o|
+        (o.x,o.y)==(x,y) || (o.home_x,o.home_y)==(x,y) ||
+        (o.is_door && (o.home_x.saturating_sub(1),o.home_y+1)==(x,y))) ||
+        ctx.db.inventory_item().iter().any(|i|i.container==0 && (i.x,i.y)==(x,y)) {
+        return Err("occupied forge site".into());
+    }
+    ctx.db.world_object().insert(WorldObject {serial:0x40000003,graphic:0xfb1,x,y,z,
+        home_x:x,home_y:y,is_door:false,opened:false});
+    touch_scene(ctx)?;
+    Ok(())
+}

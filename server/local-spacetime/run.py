@@ -1,6 +1,7 @@
 """Build and run the local protocol sandbox, or verify it in a temporary world.
 Requires Python 3.10+, Cargo with wasm32-unknown-unknown, and SpacetimeDB standalone.
 """
+from collections import deque
 import argparse
 import os
 from pathlib import Path
@@ -11,7 +12,8 @@ import sys
 import tempfile
 import time
 from urllib.request import urlopen
-from backend import load_backend
+from backend import load_backend, FORGE
+from navigation import Navigation
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
@@ -31,6 +33,41 @@ def stop(process):
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
+
+
+def stage_smoke_near_forge(config, assets):
+    """Move only the disposable verifier avatar through authoritative walk steps.
+    Earlier tests finish at arbitrary nearby cells; SmeltWorkflow needs forge reach.
+    """
+    backend=load_backend(config)
+    navigation=Navigation(assets)
+    backend.navigation=navigation
+    try:
+        avatar=backend.avatar(); objects=backend.world()[1]
+        forge=next(o for o in objects if o['serial']==FORGE)
+        first=tuple(avatar[k] for k in ('x','y','z'))
+        queue,parents=deque([first]),{first:None}
+        goal=None
+        for _ in range(256):
+            if not queue: break
+            point=queue.popleft()
+            if abs(point[0]-forge['x'])+abs(point[1]-forge['y'])==1 and abs(point[2]-forge['z'])<=16:
+                goal=point;break
+            for direction in range(8):
+                target=navigation.query('step',dict(zip(('x','y','z'),point)),direction,objects=objects)
+                if target is None:continue
+                key=tuple(target[k] for k in ('x','y','z'))
+                if key not in parents and max(abs(key[0]-first[0]),abs(key[1]-first[1]))<=10:
+                    parents[key]=point,direction;queue.append(key)
+        if goal is None: raise RuntimeError('Cannot approach the verification forge')
+        path=[]
+        while parents[goal] is not None:
+            goal,direction=parents[goal];path.append(direction)
+        for direction in reversed(path):
+            if avatar['direction']&7!=direction:avatar=backend.walk(avatar['revision'],direction)
+            avatar=backend.walk(avatar['revision'],direction)
+        backend.check_reach(forge,avatar,objects)
+    finally:navigation.close()
 
 
 def serve(args, data):
@@ -81,6 +118,7 @@ def serve(args, data):
                 env = dict(os.environ, ULTIMA_SPACETIME_CONFIG=str(config), ULTIMA_CLIENT_ASSETS=args.client)
                 subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s',
                                 str(HERE / 'tests'), '-v'], env=env, cwd=ROOT, check=True, timeout=120)
+                stage_smoke_near_forge(config,args.client)
                 before = load_backend(config).avatar()
                 world_before = load_backend(config).world()
                 inventory_before = load_backend(config).inventory()
@@ -127,6 +165,9 @@ def serve(args, data):
                 items = load_backend(config).inventory()[1]
                 if any(i['graphic']==0x1bdd for i in items) or sum(i['amount'] for i in items if i['graphic']==0x1b7a) != 2:
                     raise RuntimeError('Real-client craft failed ingredient/output conservation')
+                if any(i['graphic']==0x19b8 for i in items) or sum(i['amount'] for i in items if i['graphic']==0x1bf2)!=5:
+                    raise RuntimeError('Real-client smelting failed material conservation')
+                print('PASS: ten ore became five remaining ingots and five consumed for one helmet',flush=True)
                 if load_backend(config).merchant_state()['merchant_goods'] != [[0x1bdd,2]]:
                     raise RuntimeError('Merchant did not retain exactly the two sold logs')
                 print('PASS: twelve harvested logs became two shields and two retained merchant logs',flush=True)
