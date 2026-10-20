@@ -203,7 +203,7 @@ For codec-only tests without services:
 python3 -m unittest discover -s server/local-spacetime/tests -v
 ```
 
-The eleven live tests skip unless `ULTIMA_SPACETIME_CONFIG` names a gateway config.
+The twelve live tests skip unless `ULTIMA_SPACETIME_CONFIG` names a gateway config.
 Live tests deliberately move the demo avatar and append history if pointed at
 an existing database. Prefer `run.py --verify` for an isolated test world.
 
@@ -214,7 +214,7 @@ an existing database. Prefer `run.py --verify` for an isolated test world.
 | Phase | Player outcome | Acceptance criteria |
 | --- | --- | --- |
 | 1 — Gathering and a useful recipe (implemented) | Equip the hatchet, target an actual map tree, collect logs, then use the dagger on five backpack logs to carve a wooden shield. | Single-use expiring target cursors; server-validated tree identity and reach; durable cooldown/depletion; lazy resource recovery after idle time; atomic ingredient consumption/output creation; crafted shield equips and persists; real-client target/result decoding. |
-| 2 — Mining, smithing, and progression | Mine ore, smelt at a forge, craft or repair basic metal equipment. | Asset-validated ore/forge targets; explicit recipes and material costs; durable tool wear and skill progression; no skill/loot gains on rejected or replayed requests; original target/gump protocols. Decide era-faithful rules before expanding the recipe catalogue. |
+| 2 — Mining, smithing, and progression (core loop implemented) | Mine ore, smelt at a forge, craft or repair basic metal equipment. | Asset-validated ore/forge targets; explicit recipes and material costs; durable tool wear and skill progression; no skill/loot gains on rejected or replayed requests; original target/gump protocols. Decide era-faithful rules before expanding the recipe catalogue. |
 | 3 — A small inhabited adventure | Trade with one vendor and fight one creature type near a safe starting area. | Finite vendor stock and money, atomic purchases/sales, deterministic attack cadence and range checks, damage/death/loot/recovery, NPC persistence, pause/resume rules for an empty world, no duplicate loot after reconnect. |
 | 4 — Shared local world | Two distinct players gather, trade, and fight together. | Real accounts and character ownership, subscription-driven visibility, per-player sessions, contested resource/equipment tests, secure LAN discovery and explicit host selection. Replace proof-of-concept HTTP polling before scaling. |
 | 5 — World branches and reconciliation | Fork a checkpoint, explore independently, preview a merge, and create a new reconciled world. | Stable cross-world entity/event IDs, ancestry/checkpoints, explicit item creation/transfer/consumption history, three-way merge preview, conservation checks, deterministic conflict policies, provenance for overrides, reversible import into a new branch. Never merge solely by timestamps or local revision numbers. |
@@ -225,6 +225,32 @@ not a claim of original-era crafting fidelity. The resource model is ten logs pe
 five-minute refill evaluated on the next attempt. No background timer is required
 while idle. Harvest/craft outcomes commit with the inventory and their journals.
 
+The mining loop adds a pickaxe and smith's hammer to the backpack once, including
+existing saves. Equip the pickaxe and double-click it to target an adjacent rock or
+mountain tile. One successful swing produces two iron ore (0x19B8); mineral banks
+hold ten ore and use the same cooldown/refill policy as lumber, in a separate bank
+namespace. A verified reachable test site is rock **1250,1248,0**, approached from
+**1250,1249,0**. There is no teleport command in the player protocol.
+
+Double-click backpack ore and target an original map forge within two tiles.
+For example, a forge at **636,2193,0** is reachable from **635,2193,0**. Each displayed
+ore of this supported pile shape contains two metal units and becomes one ingot.
+Near a forge, equip and use the smith's hammer, then target a backpack stack of at
+least five ingots to create a nose helm. All consumption, output, and metal history
+commit together; stale cursors and unauthorized calls cannot repeat the conversion.
+Ore and ingots also support ordinary drag splitting/merging. This is a deliberately
+small sandbox recipe, with no skill roll, tool wear, repair, or progression yet.
+Only iron ore shape 0x19B8 is supported; ore-use pile combining is not implemented.
+The client's automated smelting assistant requires a server-visible forge object;
+these static-map forges currently work through manual targeting.
+
+Mining integration tests use real asset targets and encrypted client packets,
+deplete mineral banks independently of lumber, reject fake and distant targets,
+convert ten ore to ten ingots, and consume five ingots for exactly one helmet.
+Resource banks, metal journals, equipment, and remaining materials are checked
+across database restart. Test-only relocation uses owner-authorized reducers in a
+disposable database and never changes the saved play world.
+
 Hosting and distributed execution follow the shared-world phase: measure idle
 costs, checkpoint durability, wake-up behavior, and authority handoff first.
 Consensus within an active shared world and reconciliation between independently
@@ -232,7 +258,7 @@ played branches are separate problems. A merge must account for spent resources
 and item ownership; choosing a preferred player cannot silently duplicate items.
 
 - One precreated avatar; no character creation/deletion, NPCs,
-  combat, mining, speech input, or multiplayer visibility.
+  combat, speech input, or multiplayer visibility.
 - Movement uses the client's conservative collision rules, not a claim of exact
   original-server parity. Mobile blockers, placed houses/boats, mounts, ghost
   movement, and movement cadence remain unimplemented. World fixtures consist of
@@ -243,8 +269,8 @@ and item ownership; choosing a preferred player cannot silently duplicate items.
 - Inventory supports only the seeded backpack/barrel, at most 64 item records,
   and bounded interior coordinates for each gump. There is no weight or
   capacity simulation or nested storage yet. Equipment is limited to the explicit
-  starter catalogue and wooden shields; weapons have no combat actions yet.
-  Tool use supports only hatchet lumberjacking and the dagger/shield recipe.
+  starter catalogue, mining tools, wooden shields, and crafted nose helms; weapons have no combat actions yet.
+  Tool use supports lumberjacking, carving, mining, smelting, and one smithing recipe.
   Health, attributes, armor, and weight remain placeholder status values.
   Ground placement uses standable terrain, not arbitrary table/container surfaces.
   Container changes refresh on interaction, not subscriptions.
@@ -262,7 +288,7 @@ and item ownership; choosing a preferred player cannot silently duplicate items.
 - Protocol and movement decisions use explicit code. No model is in the gameplay
   path. Model-assisted merge proposals can be explored separately later.
 
-Next: rendered-client playtesting, mining/smithing, and a small NPC/combat
+Next: rendered-client playtesting, tool wear/skills, and a small NPC/vendor/combat
 loop. Fork/merge work will need stable cross-world identities and explicit rules
 for item ownership and consumption; the current local journals are not sufficient.
 

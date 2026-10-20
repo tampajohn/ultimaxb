@@ -216,7 +216,7 @@ fn touch_scene(ctx: &ReducerContext) -> Result<(), String> {
 // Layer 2 includes shields and two-handed weapons; the hatchet needs both hands.
 fn wearable(graphic: u16) -> Option<(u8,bool)> {
     match graphic {
-        0xf51 | 0xf61 => Some((1,false)),
+        0xf51 | 0xf61 | 0xe86 | 0x13e3 => Some((1,false)),
         0x1b76 | 0x1b7a => Some((2,false)),
         0xf43 => Some((2,true)),
         0x170b => Some((3,false)),
@@ -359,7 +359,7 @@ pub fn place_item(ctx: &ReducerContext, expected_inventory: u64, expected_avatar
         let mut target = ctx.db.inventory_item().serial().find(container).ok_or("unknown stack")?;
         check_source(ctx,&avatar,&target)?;
         if serial == target.serial || item.graphic != target.graphic ||
-            ![0xeed,0x9d0,0x1bdd].contains(&item.graphic) { return Err("incompatible stack".into()); }
+            ![0xeed,0x9d0,0x1bdd,0x19b8,0x1bf2].contains(&item.graphic) { return Err("incompatible stack".into()); }
         target.amount = target.amount.checked_add(amount).ok_or("stack full")?;
         let target_container = target.container;
         let target_z = ctx.db.ground_location().serial().find(target.serial).map_or(0,|l| l.z);

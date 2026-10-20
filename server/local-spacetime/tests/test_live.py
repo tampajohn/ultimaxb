@@ -413,6 +413,90 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(BackendError):
             outsider.request(outsider.path+'/call/place_item',json.dumps(far).encode())
 
+    async def test_mining_smelting_and_smithing_conserve_materials(self):
+        # Only disposable test databases: move the fixture with owner-only settle
+        # in legal eight-tile increments, then validate real installed-map targets.
+        start=self.backend.avatar()
+        def relocate(point):
+            current=self.backend.avatar()
+            scene=self.backend.world()[0]
+            while any(current[k]!=point[k] for k in ('x','y','z')):
+                x=current['x']+max(-8,min(8,point['x']-current['x']))
+                y=current['y']+max(-8,min(8,point['y']-current['y']))
+                self.backend.request(self.backend.path+'/call/settle',json.dumps([
+                    current['revision'],x,y,point['z'],scene]).encode())
+                current=dict(current,x=x,y=y,z=point['z'],revision=current['revision']+1)
+        try:
+            site=self.navigation.query('ore_site',dict(x=1250,y=1249,z=0),details=True)
+            self.assertIsNotNone(site)
+            await asyncio.to_thread(relocate,site)
+            target=dict(site['target'],serial=0)
+            pick=next(i for i in self.backend.inventory()[1] if i['graphic']==0xe86)
+            hammer=next(i for i in self.backend.inventory()[1] if i['graphic']==0x13e3)
+            self.backend.equip(self.backend.lift(pick['serial'],1),pick['serial'],1,1)
+            before=self.backend.inventory()
+            with self.assertRaises(BackendError):
+                self.backend.perform_tool(self.backend.begin_tool(pick['serial']),dict(target,graphic=0xffff))
+            self.assertEqual(self.backend.inventory(),before)
+            reader,writer,cipher=await self.game(await self.relay())
+            await block(reader)
+            writer.write(cipher.transform(b'\x5d'+bytes.fromhex('edededed')+wire.fixed(start['name'],30)+bytes(38)))
+            await block(reader)
+            async def use(serial,selection):
+                writer.write(cipher.transform(b'\x06'+struct.pack('>I',serial)))
+                response=await block(reader)
+                self.assertEqual(response[-19],0x6c)
+                cursor=struct.unpack_from('>I',response,-17)[0]
+                writer.write(cipher.transform(struct.pack('>BBIBIHHhH',0x6c,
+                    1 if selection['serial']==0 else 0,cursor,0,selection['serial'],
+                    selection['x'],selection['y'],selection['z'],selection['graphic'])))
+                return await block(reader)
+            await asyncio.sleep(2.05)
+            for attempt in range(5):
+                if attempt: await asyncio.sleep(2.05)
+                self.assertIn(b'You dig some ore',await use(pick['serial'],target))
+            saved=self.backend.gathering_state()
+            self.assertEqual(len(saved['resource_bank']),2)
+            self.assertIn(b'There is no metal here to mine.',await use(pick['serial'],target))
+            self.assertEqual(self.backend.gathering_state(),saved)
+            ore=next(i for i in self.backend.inventory()[1] if i['graphic']==0x19b8)
+            self.assertEqual(ore['amount'],10)
+            forge=dict(serial=0,x=636,y=2193,z=0,graphic=0x1986)
+            self.assertIsNotNone(self.navigation.query('forge',forge,graphic=forge['graphic']))
+            before=self.backend.inventory()
+            with self.assertRaises(BackendError):
+                self.backend.perform_tool(self.backend.begin_tool(ore['serial']),forge)
+            self.assertEqual(self.backend.inventory(),before)
+            await asyncio.to_thread(relocate,dict(x=635,y=2193,z=0))
+            self.assertIn(b'You smelt the ore',await use(ore['serial'],forge))
+            items=self.backend.inventory()[1]
+            self.assertFalse(any(i['graphic']==0x19b8 for i in items))
+            ingots=next(i for i in items if i['graphic']==0x1bf2)
+            self.assertEqual(ingots['amount'],10)
+            self.backend.equip(self.backend.lift(hammer['serial'],1),hammer['serial'],1,1)
+            context=self.backend.begin_tool(hammer['serial'])
+            identity=json.loads(self.backend.request('/v1/identity',b''))
+            outsider=Backend(self.backend.endpoint,self.backend.database,identity['token'])
+            raw=[self.backend.inventory()[0],self.backend.avatar()['revision'],self.backend.world()[0],
+                 ingots['serial'],hammer['serial'],forge['x'],forge['y'],forge['z']]
+            with self.assertRaises(BackendError):
+                outsider.request(outsider.path+'/call/work_metal',json.dumps(raw).encode())
+            helms=sum(i['amount'] for i in self.backend.inventory()[1] if i['graphic']==0x140e)
+            self.assertIn(b'You forge five iron ingots',await use(hammer['serial'],dict(ingots,z=0)))
+            with self.assertRaises(BackendError):
+                self.backend.perform_tool(context,dict(ingots,z=0))
+            items=self.backend.inventory()[1]
+            self.assertEqual(sum(i['amount'] for i in items if i['graphic']==0x1bf2),5)
+            self.assertEqual(sum(i['amount'] for i in items if i['graphic']==0x140e),helms+1)
+            self.assertEqual(len(self.backend.gathering_state()['metal_event']),2)
+            self.backend.transfer(self.backend.lift(hammer['serial'],1),hammer['serial'],BACKPACK,90,100)
+            # Additive kit migration is idempotent after crafting and reconnects.
+            before=self.backend.inventory()
+            self.backend.prepare()
+            self.assertEqual(self.backend.inventory(),before)
+        finally:
+            await asyncio.to_thread(relocate,start)
+
     async def test_z_food_consumption_is_atomic_and_persistent(self):
         before = self.backend.inventory()
         food = next(i for i in before[1] if i['graphic']==0x9d0 and i['container']==BACKPACK)

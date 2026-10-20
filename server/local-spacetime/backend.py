@@ -21,6 +21,8 @@ ITEMS = {
     0xeed: ('Gold',None), 0xf51: ('Dagger',1), 0x170b: ('Boots',3),
     0x152e: ('Short pants',4), 0x1517: ('Shirt',5), 0x140e: ('Nose helm',6),
     0x1b76: ('Heater shield',2), 0xf61: ('Longsword',1), 0xf43: ('Hatchet',2),
+    0xe86: ('Pickaxe',1), 0x13e3: ("Smith's hammer",1),
+    0x19b8: ('Iron ore',None), 0x1bf2: ('Iron ingots',None),
     0x9d0: ('Apple',None), 0x1bdd: ('Logs',None), 0x1b7a: ('Wooden shield',2),
 }
 
@@ -126,6 +128,7 @@ class Backend:
         self.prepare_objects()
         self.request(self.path + '/call/seed_inventory', b'[]')
         self.request(self.path + '/call/seed_starter_kit', b'[]')
+        self.request(self.path + '/call/seed_mining_kit', b'[]')
 
     def prepare_objects(self):
         _, objects = self.world()
@@ -315,7 +318,7 @@ class Backend:
 
     def gathering_state(self, history=True):
         state = {}
-        tables = ('resource_bank','harvest_clock','gathering_event','crafting_event') if history else ('resource_bank','harvest_clock')
+        tables = ('resource_bank','harvest_clock','gathering_event','crafting_event','metal_event') if history else ('resource_bank','harvest_clock')
         for table in tables:
             result = json.loads(self.request(self.path + '/sql',('SELECT * FROM '+table).encode(),
                                             content_type='text/plain'))
@@ -325,8 +328,9 @@ class Backend:
     def begin_tool(self, serial):
         held = self.lift(serial,1)
         item = held['item']
-        if item['container'] != 1 or item['graphic'] not in (0xf43,0xf51):
-            raise BackendError('Equip the hatchet or dagger first.')
+        if not ((item['container']==1 and item['graphic'] in (0xf43,0xf51,0xe86,0x13e3)) or
+                (item['container']==BACKPACK and item['graphic']==0x19b8)):
+            raise BackendError('Equip the tool or use backpack ore.')
         return dict(tool=serial,graphic=item['graphic'],revision=held['revision'])
 
     def perform_tool(self, context, target):
@@ -336,32 +340,55 @@ class Backend:
         avatar = self.avatar()
         scene,objects = self.world()
         tool = next((i for i in items if i['serial']==context['tool']),None)
-        if tool is None or tool['container'] != 1 or tool['graphic'] != context['graphic']:
+        if tool is None or tool['container'] != (BACKPACK if context['graphic']==0x19b8 else 1) or tool['graphic'] != context['graphic']:
             raise BackendError('Equip the tool first.')
         args = [revision,avatar['revision'],scene,tool['serial']]
-        if tool['graphic'] == 0xf43:
+        if tool['graphic'] in (0xf43,0xe86):
+            mining = tool['graphic']==0xe86
             if target['serial'] != 0 or max(abs(target['x']-avatar['x']),abs(target['y']-avatar['y'])) > 1:
                 raise BackendError('That is too far away.')
             if self.navigation is None:
                 raise BackendError('World assets are unavailable.')
             try:
-                tree = self.navigation.query('tree',target,objects=objects,graphic=target['graphic'])
+                tree = self.navigation.query('ore' if mining else 'tree',target,objects=objects,graphic=target['graphic'])
             except NavigationError as error:
                 raise BackendError(str(error)) from error
             if tree is None:
-                raise BackendError("You can't use an axe on that.")
+                raise BackendError("You cannot harvest that target.")
             self.check_reach(tree,avatar,objects)
             now = int(time.time()*1_000_000)
             state = self.gathering_state(history=False)
-            bank_id = target['x']//8*512 + target['y']//8
+            bank_id = (target['x']//8*512 + target['y']//8) | (0x80000000 if mining else 0)
             if any(bank==bank_id and remaining<2 and now<refill
                    for bank,remaining,refill in state['resource_bank']):
-                raise BackendError("There's not enough wood here to harvest.")
+                raise BackendError("There is no metal here to mine." if mining else "There's not enough wood here to harvest.")
             if any(now < next_at for _,next_at in state['harvest_clock']):
                 raise BackendError('Let the tool recover for two seconds.')
-            self.request(self.path+'/call/harvest_tree',json.dumps(args+[
+            self.request(self.path+('/call/mine_ore' if mining else '/call/harvest_tree'),json.dumps(args+[
                 target['x'],target['y'],target['z'],target['graphic']]).encode())
-            return 'You put some logs in your backpack.'
+            return 'You dig some ore and put it in your backpack.' if mining else 'You put some logs in your backpack.'
+        if tool['graphic'] in (0x19b8,0x13e3):
+            if self.navigation is None:
+                raise BackendError('World assets are unavailable.')
+            smithing = tool['graphic']==0x13e3
+            if smithing:
+                ingredient = next((i for i in items if i['serial']==target['serial']),None)
+                if ingredient is None or ingredient['container']!=BACKPACK or ingredient['graphic']!=0x1bf2 or ingredient['amount']<5:
+                    raise BackendError('Target at least five backpack ingots beside a forge.')
+                forge = self.navigation.query('near_forge',avatar,objects=objects)
+            else:
+                ingredient = tool
+                if target['serial']!=0 or max(abs(target['x']-avatar['x']),abs(target['y']-avatar['y']))>2:
+                    raise BackendError('Target a nearby forge in the world.')
+                forge = self.navigation.query('forge',target,objects=objects,graphic=target['graphic'])
+            if forge is None:
+                raise BackendError('You must be beside a forge.')
+            self.check_reach(forge,avatar,objects)
+            self.request(self.path+'/call/work_metal',json.dumps([
+                revision,avatar['revision'],scene,ingredient['serial'],tool['serial'] if smithing else 0,
+                forge['x'],forge['y'],forge['z']]).encode())
+            return ('You forge five iron ingots into a nose helm.' if smithing else
+                    'You smelt the ore removing the impurities and put the metal in your backpack.')
         logs = next((i for i in items if i['serial']==target['serial']),None)
         if logs is None or logs['container'] != BACKPACK or logs['graphic'] != 0x1bdd or logs['amount'] < 5:
             raise BackendError('Target a stack of at least five logs in your backpack.')

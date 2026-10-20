@@ -74,16 +74,21 @@ struct NavigationService {
                 guard (0..<assets.width-1).contains(request.x), (0..<assets.height-1).contains(request.y),
                       (-128...127).contains(request.z) else { try respond(Reply(nil)); continue }
                 let point = WalkPoint(x: request.x, y: request.y, z: request.z)
-                if request.op == "tree" {
+                if ["tree","ore","forge"].contains(request.op) {
                     let tiles = try assets.region(x:point.x,y:point.y,radius:0)
                     let valid = tiles.contains {
-                        $0.isStatic && !$0.isDynamic && $0.x == point.x && $0.y == point.y && $0.z == point.z &&
-                        $0.art - 0x4000 == request.graphic &&
-                        HarvestSitePlanner.accepts(kind:.lumberjacking,graphic:$0.art-0x4000,isStatic:true)
+                        guard !$0.isDynamic && $0.x == point.x && $0.y == point.y && $0.z == point.z else { return false }
+                        let graphic = $0.isStatic ? $0.art-0x4000 : $0.art
+                        if request.op == "forge" {
+                            return $0.isStatic && graphic == request.graphic && SmeltOutcome.isForge(graphic)
+                        }
+                        let kind:HarvestOutcome.Kind = request.op == "ore" ? .mining : .lumberjacking
+                        return ($0.isStatic ? graphic : 0) == request.graphic &&
+                            HarvestSitePlanner.accepts(kind:kind,graphic:graphic,isStatic:$0.isStatic)
                     }
                     try respond(Reply(valid ? point : nil)); continue
                 }
-                if request.op == "tree_site" {
+                if request.op == "tree_site" || request.op == "ore_site" {
                     // Diagnostic/discovery helper; never authorizes harvesting.
                     let zone = try HarvestWorkflow.Zone(x1:max(0,point.x-32),y1:max(0,point.y-32),
                         x2:min(6142,point.x+32),y2:min(4094,point.y+32))
@@ -92,7 +97,7 @@ struct NavigationService {
                         tile.isDynamic=true; tile.sourceSerial=object.serial
                         return tile
                     }
-                    let plan = try HarvestSitePlanner.discover(assets:assets,zone:zone,kind:.lumberjacking,start:point,additional:dynamic)
+                    let plan = try HarvestSitePlanner.discover(assets:assets,zone:zone,kind:request.op == "ore_site" ? .mining : .lumberjacking,start:point,additional:dynamic)
                     let reachMap = try NavigationMap(assets:assets,center:point,additional:dynamic,radius:32)
                     if let site = plan.sites.first(where: {
                         guard abs($0.standing.z-$0.target.z) <= 16 else { return false }
@@ -103,6 +108,17 @@ struct NavigationService {
                     }) {
                         var reply = Reply(site.standing)
                         reply.target = Target(x:site.target.x,y:site.target.y,z:site.target.z,graphic:site.target.graphic)
+                        try respond(reply)
+                    } else { try respond(Reply(nil)) }
+                    continue
+                }
+                if request.op == "near_forge" {
+                    let tiles = try assets.region(x:point.x,y:point.y,radius:2)
+                    if let tile = tiles.filter({ $0.isStatic && !$0.isDynamic &&
+                        abs($0.z-point.z)<=16 && SmeltOutcome.isForge($0.art-0x4000)
+                    }).sorted(by:{ ($0.x,$0.y,$0.z,$0.art)<($1.x,$1.y,$1.z,$1.art) }).first {
+                        var reply = Reply(WalkPoint(x:tile.x,y:tile.y,z:tile.z))
+                        reply.target = Target(x:tile.x,y:tile.y,z:tile.z,graphic:tile.art-0x4000)
                         try respond(reply)
                     } else { try respond(Reply(nil)) }
                     continue
