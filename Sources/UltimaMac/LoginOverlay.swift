@@ -1473,6 +1473,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         connection.send(InteractionPackets.use(serial: serial))
         return true
     }
+    var onScreenFade: ((Int)->Void)?
     var onGraphicEffect: ((GraphicEffect)->Void)?
     var onAnimation: ((MobileAction)->Void)?
     var onMobileDeath: ((MobileDeath,WorldMobile,[EquippedItem])->Void)?
@@ -2238,10 +2239,12 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         Telemetry.shared.record("sound_received",["id":sound.id,"flags":sound.flags,"x":sound.x,"y":sound.y,"z":sound.z])
                     case 0x70, 0xC0, 0xC7:
                         let effect = try GraphicEffect.decode(packet)
-                        onGraphicEffect?(effect)
+                        if effect.kind == .screen {
+                            if packet.first == 0x70 { onScreenFade?(min(4,effect.graphic)) }
+                        } else { onGraphicEffect?(effect) }
                         Telemetry.shared.record("graphic_effect", ["kind":effect.kind.rawValue,"graphic":effect.graphic,
                             "hue":effect.hue,"blend_mode":effect.blendMode,"particle_metadata_unsupported":packet.first == 0xC7,
-                            "duration_ms":Int(effect.duration*1000),"rendered_kind":effect.kind != .screen])
+                            "duration_ms":Int(effect.duration*1000),"rendered_kind":effect.kind != .screen || packet.first == 0x70])
                     case 0x6E:
                         let animation = try MobileAction.decode(packet)
                         onAnimation?(animation)

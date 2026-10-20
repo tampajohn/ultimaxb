@@ -63,6 +63,7 @@ final class WorldView: NSView {
     private var lastRenderDiagnostic: TimeInterval = -.infinity
     let legacyTerrain: Bool
     var effects = WorldEffects()
+    let screenFade = ScreenFadeOverlay()
     var groundObjects: [GroundItem] = []
     var onUse: ((UInt32) -> Void)?
     var onInspect: ((UInt32) -> Void)?
@@ -868,6 +869,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.worldView?.targeting = active
                 if active, let view = self?.worldView { view.window?.makeFirstResponder(view) }
             }
+            panel.onScreenFade = { [weak self] style in
+                guard let view = self?.worldView else { return }
+                view.screenFade.play(style:style,in:view)
+            }
             panel.onGraphicEffect = { [weak self] effect in
                 self?.worldView?.effects.append(effect,at:ProcessInfo.processInfo.systemUptime)
                 self?.worldView?.refresh()
@@ -1155,7 +1160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 view.window?.invalidateCursorRects(for:view)
                 view.sidebar?.isHidden = player == nil
                 view.sidebar?.updateEquipment(view.equipment, player:player?.serial, assets:view.assets)
-                if player == nil { self?.herdPanel?.closePanel(); self?.herdPanel=nil; self?.harvestPanel?.closePanel(); self?.harvestPanel=nil; view.harvestBoundary=[]; view.harvestSites=[]; self?.travelPanel?.removeFromSuperview(); self?.travelPanel=nil; self?.mapPanel?.onPickLocation=nil; view.resetDeathAnimations(); view.effects = WorldEffects(); self?.audio.stop(); self?.spawnMusic.reset(); view.sidebar?.updateStatus(nil); self?.skillsPanel?.update(SkillState()) }
+                if player == nil { self?.herdPanel?.closePanel(); self?.herdPanel=nil; self?.harvestPanel?.closePanel(); self?.harvestPanel=nil; view.harvestBoundary=[]; view.harvestSites=[]; self?.travelPanel?.removeFromSuperview(); self?.travelPanel=nil; self?.mapPanel?.onPickLocation=nil; view.resetDeathAnimations(); view.effects = WorldEffects(); view.screenFade.cancel(); self?.audio.stop(); self?.spawnMusic.reset(); view.sidebar?.updateStatus(nil); self?.skillsPanel?.update(SkillState()) }
                 view.needsLayout = true
                 if player == nil { self?.worldView?.overheadSpeech = OverheadSpeech(); self?.spellShortcuts.values.forEach { $0.removeFromSuperview() }; self?.spellShortcuts.removeAll(); self?.spellbooks.values.forEach { $0.removeFromSuperview() }; self?.spellbooks.removeAll(); self?.chatPanel.reset(); self?.journalPanel?.removeFromSuperview(); self?.characterPanel?.removeFromSuperview(); self?.characterPanel = nil; self?.containerPanels.values.forEach { $0.removeFromSuperview() }; self?.containerPanels.removeAll() }
                 if let player, view.followPlayer, player.x != view.cx || player.y != view.cy {

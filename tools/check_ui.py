@@ -11,7 +11,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = [
     "check_login_flow", "check_login_profiles", "check_classic_ui",
-    "check_character_creation", "check_vendor_panel", "check_spellbook", "check_graphic_effects",
+    "check_character_creation", "check_vendor_panel", "check_spellbook", "check_graphic_effects", "check_screen_fade",
     "check_journal", "check_death_panel", "check_shortcut_layout", "check_arrival_invalidation", "check_telemetry_rotation", "check_container_interactions", "check_mobile_route_recovery", "check_gathered_banking", "check_entry_alignment", "check_travel_interactions", "check_harvest_panel", "check_auto_harvest", "check_herding", "check_server_menu", "check_server_gump",
 ]
 

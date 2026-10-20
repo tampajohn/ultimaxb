@@ -20,6 +20,15 @@ import UOCore
         particlePacket += Data(repeating:0,count:13)
         for byte in packet+coloredPacket+particlePacket { connection.onEvent?(.gameData(Data([byte]))) }
         precondition(received.count == 3 && received[1].hue == 33 && received[2].blendMode == 2)
+        var fades:[Int] = []
+        login.onScreenFade = { fades.append($0) }
+        var fadePacket = packet; fadePacket[1] = 4; fadePacket[10] = 0; fadePacket[11] = 2
+        connection.onEvent?(.gameData(fadePacket))
+        fadePacket[11] = 99
+        connection.onEvent?(.gameData(fadePacket))
+        coloredPacket[1] = 4
+        connection.onEvent?(.gameData(coloredPacket))
+        precondition(fades == [2,4] && received.count == 3,"Only legacy screen effects own the overlay")
         var effects = WorldEffects()
         effects.append(try GraphicEffect.decode(packet),at:0)
         let base = try WorldRenderer.render(assets,x:2493,y:482)
