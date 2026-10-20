@@ -3,6 +3,7 @@ mod gathering;
 mod skills;
 mod hunting;
 mod cooking;
+mod combat;
 mod merchant;
 
 // Private tables: only the publishing gateway identity can read or mutate them.

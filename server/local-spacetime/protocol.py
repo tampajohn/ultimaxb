@@ -168,6 +168,12 @@ def creature_status(creature):
 def creature_death():
     return struct.pack('>BIII',0xaf,3,0,0)
 
+def melee_action(serial, animal=False):
+    return struct.pack('>BIHHHBBB',0x6e,serial,5 if animal else 9,5,1,0,0,1)
+
+def player_health(health):
+    return struct.pack('>BIHH',0xa1,1,50,health)
+
 
 def merchant_mobile(vendor):
     payload=struct.pack('>IHHHbBHBB',MERCHANT,400,vendor['x'],vendor['y'],vendor['z'],3,0x83ea,0,1)

@@ -249,6 +249,8 @@ struct ClientSmoke {
             var framer=GamePacketFramer(), world=WorldState()
             var combat=CombatTarget()
             var sawCreatureHealth=false, sawDeath=false
+            var actions:[MobileAction]=[]
+            var playerStatus=CharacterStatus(serial:1)
             var contents:[ContainerItem]=[], offers:[VendorOffer]=[], saleOffers:[VendorOffer]=[]
             for packet in try framer.receive(bytes) {
                 switch packet[0] {
@@ -258,7 +260,9 @@ struct ClientSmoke {
                 case 0xaa: _ = try combat.apply(packet)
                 case 0x11:
                     _ = try combat.apply(packet)
-                    sawCreatureHealth = combat.serial==3 && combat.status?.health==20
+                    sawCreatureHealth = combat.serial==3 && combat.status?.maxHealth==20 && (combat.status?.health ?? 0)>0
+                case 0x6e: actions.append(try MobileAction.decode(packet))
+                case 0xa1: _ = try playerStatus.apply(packet)
                 case 0xaf:
                     guard try MobileDeath.decode(packet).serial==3 else { throw AssetError("Bad creature death") }
                     _ = try combat.apply(packet);try world.apply(packet);sawDeath=true
@@ -271,6 +275,12 @@ struct ClientSmoke {
                   offers.count==1,offers[0].price==3,offers[0].item.graphic==0x9d0,
                   offers[0].item.amount==18 else { throw AssetError("Merchant stock or mobile decode failed") }
             let assets=try ClientAssets(directory:URL(fileURLWithPath:CommandLine.arguments[2]))
+            guard playerStatus.health==17,playerStatus.maxHealth==50,
+                  actions.map(\.serial)==[1,3],actions.map(\.action)==[9,5],
+                  try assets.animations?.frame(body:400,direction:3,action:9,frame:0) != nil,
+                  try assets.animations?.frame(body:216,direction:3,action:5,frame:0) != nil else {
+                throw AssetError("Combat feedback or installed attack art missing")
+            }
             for graphic in [0x9f1,0x9f2] {
                 guard try assets.sprite(0x4000+graphic) != nil,
                       try assets.itemName(graphic:graphic).contains("ribs") else {

@@ -898,6 +898,100 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(sum(i['amount'] for i in self.backend.inventory()[1] if i['graphic']==0x9f2),1)
         finally:await asyncio.to_thread(self.relocate_fixture,start)
 
+    async def test_zzzzzzzz_retaliation_armor_and_defeat(self):
+        start=self.backend.avatar();creature=self.backend.creature()
+        spot=next(p for dx,dy in [(0,1),(1,0),(0,-1),(-1,0)] if
+            (p:=self.navigation.query('stand',dict(x=creature['x']+dx,y=creature['y']+dy,z=creature['z']),objects=self.backend.world()[1])))
+        try:
+            await asyncio.to_thread(self.relocate_fixture,spot)
+            # Only the helm and shield affect incoming damage. Unarmed attacks
+            # leave enough creature health to verify defeat without a new kill.
+            for item in self.backend.equipment():
+                if item['layer'] in (1,2,6):
+                    self.backend.transfer(self.backend.lift(item['serial'],1),item['serial'],BACKPACK,75,75)
+            items=self.backend.inventory()[1]
+            helm=next(i for i in items if i['graphic']==0x140e)
+            shield=next(i for i in items if i['graphic']==0x1b7a)
+            self.backend.equip(self.backend.lift(helm['serial'],1),helm['serial'],6,1)
+            self.backend.equip(self.backend.lift(shield['serial'],1),shield['serial'],2,1)
+            before=self.backend.vitality()
+            await asyncio.sleep(max(0,self.backend.creature()['next_strike']/1_000_000-time.time())+.05)
+            self.backend.strike_creature()
+            self.assertEqual(self.backend.vitality()['health'],before['health']-3)
+            event=self.backend.combat_state()['combat_event'][-1]
+            self.assertEqual((event[3],event[4]),(3,3))
+            for item in (helm,shield):
+                self.backend.transfer(self.backend.lift(item['serial'],1),item['serial'],BACKPACK,75,75)
+            before=self.backend.vitality()
+            reader,writer,cipher=await self.game(await self.relay());await block(reader)
+            writer.write(cipher.transform(b'\x5d'+bytes.fromhex('edededed')+wire.fixed(start['name'],30)+bytes(38)))
+            response=await block(reader)
+            self.assertIn(wire.status(self.backend.player_status()),response)
+            writer.write(cipher.transform(b'\x72\1\x32\0\0'));await block(reader)
+            writer.write(cipher.transform(b'\x05\0\0\0\3'));await block(reader)
+            response=await asyncio.wait_for(block(reader),3)
+            self.assertEqual(self.backend.vitality()['health'],max(0,before['health']-6))
+            self.assertIn(wire.melee_action(1),response)
+            self.assertIn(wire.melee_action(3,animal=True),response)
+            self.assertIn(wire.player_health(self.backend.vitality()['health']),response)
+            writer.write(cipher.transform(b'\x72\0\x32\0\0'));await block(reader)
+            saved=self.backend.combat_state()
+            await asyncio.sleep(2.1)
+            self.assertEqual(self.backend.combat_state(),saved)
+            writer.close();await writer.wait_closed()
+            for _ in range(100):
+                if not self.gateway.active:break
+                await asyncio.sleep(.01)
+            await asyncio.sleep(2.1)
+            self.assertEqual(self.backend.combat_state(),saved)
+            # Finish defeat using real attack ticks and verify automatic peace.
+            reader,writer,cipher=await self.game(await self.relay());await block(reader)
+            writer.write(cipher.transform(b'\x5d'+bytes.fromhex('edededed')+wire.fixed(start['name'],30)+bytes(38)))
+            await block(reader)
+            inventory=self.backend.inventory()
+            writer.write(cipher.transform(b'\x72\1\x32\0\0'));await block(reader)
+            writer.write(cipher.transform(b'\x05\0\0\0\3'));await block(reader)
+            while self.backend.vitality()['health']:
+                response=await asyncio.wait_for(block(reader),3)
+            self.assertIn(b'\xaa\0\0\0\0\x72\0\x32\0\0',response)
+            self.assertIn(wire.player_health(0),response)
+            saved=self.backend.combat_state()
+            self.assertEqual(self.backend.inventory(),inventory)
+            with self.assertRaises(BackendError):self.backend.strike_creature()
+            with self.assertRaises(BackendError):
+                self.backend.request(self.backend.path+'/call/strike_creature',json.dumps([
+                    self.backend.avatar()['revision'],self.backend.inventory()[0],self.backend.world()[0],
+                    self.backend.creature()['revision']]).encode())
+            with self.assertRaises(BackendError):self.backend.recover()
+            writer.write(cipher.transform(b'\x72\1\x32\0\0'))
+            self.assertEqual(await block(reader),b'\x72\0\x32\0\0')
+            writer.write(cipher.transform(b'\x05\0\0\0\3'))
+            self.assertEqual(await block(reader),b'\xaa\0\0\0\0')
+            self.assertEqual(self.backend.combat_state(),saved)
+            self.assertEqual(self.backend.inventory(),inventory)
+        finally:await asyncio.to_thread(self.relocate_fixture,start)
+
+    async def test_zzzzzzzzz_recover_after_defeat_restart(self):
+        self.assertEqual(self.backend.vitality()['health'],0)
+        before=self.backend.inventory();vital=self.backend.vitality()
+        identity=json.loads(self.backend.request('/v1/identity',b''))
+        outsider=Backend(self.backend.endpoint,self.backend.database,identity['token'])
+        with self.assertRaises(BackendError):
+            outsider.request(outsider.path+'/call/recover_player',json.dumps([vital['revision']]).encode())
+        await asyncio.sleep(max(0,vital['recover_at']/1_000_000-time.time())+.05)
+        reader,writer,cipher=await self.game(await self.relay());await block(reader)
+        writer.write(cipher.transform(b'\x5d'+bytes.fromhex('edededed')+wire.fixed(self.backend.avatar()['name'],30)+bytes(38)))
+        self.assertIn(wire.status(self.backend.player_status()),await block(reader))
+        # Classic Latin-1 speech uses the normal journal/chat input.
+        speech=b'recover\0'
+        writer.write(cipher.transform(struct.pack('>BHBHH',3,8+len(speech),0,0x3b2,3)+speech))
+        self.assertIn(b'You have recovered.',await block(reader))
+        self.assertEqual(self.backend.vitality()['health'],50)
+        self.assertEqual(self.backend.inventory(),before)
+        with self.assertRaises(BackendError):
+            self.backend.request(self.backend.path+'/call/recover_player',json.dumps([vital['revision']]).encode())
+        with self.assertRaises(BackendError):self.backend.recover()
+
     async def test_z_food_consumption_is_atomic_and_persistent(self):
         before = self.backend.inventory()
         food = next(i for i in before[1] if i['graphic']==0x9d0 and i['container']==BACKPACK)

@@ -118,6 +118,7 @@ def serve(args, data):
                 env = dict(os.environ, ULTIMA_SPACETIME_CONFIG=str(config), ULTIMA_CLIENT_ASSETS=args.client)
                 env['PYTHONPATH']=str(HERE/'tests')+os.pathsep+env.get('PYTHONPATH','')
                 hunting_test='test_live.LiveTests.test_b_hunting_weapons_disconnect_death_and_loot'
+                recovery_test='test_live.LiveTests.test_zzzzzzzzz_recover_after_defeat_restart'
                 subprocess.run([sys.executable,'-m','unittest','-v',hunting_test],env=env,cwd=ROOT,check=True,timeout=60)
                 dead=load_backend(config).hunting_state()
                 dead_inventory=load_backend(config).inventory()
@@ -134,11 +135,11 @@ def flatten(suite):
     for test in suite:
         if isinstance(test,unittest.TestSuite):yield from flatten(test)
         else:yield test
-selected=unittest.TestSuite(t for t in flatten(suite) if t.id()!=sys.argv[2])
+selected=unittest.TestSuite(t for t in flatten(suite) if t.id() not in sys.argv[2:])
 result=unittest.TextTestRunner(verbosity=2).run(selected)
 sys.exit(not result.wasSuccessful())
 """
-                subprocess.run([sys.executable,'-c',remaining_tests,str(HERE/'tests'),hunting_test],
+                subprocess.run([sys.executable,'-c',remaining_tests,str(HERE/'tests'),hunting_test,recovery_test],
                                env=env,cwd=ROOT,check=True,timeout=180)
                 stage_smoke_near_forge(config,args.client)
                 before = load_backend(config).avatar()
@@ -151,8 +152,13 @@ sys.exit(not result.wasSuccessful())
                 skills_before = load_backend(config).skill_state()
                 hunting_before = load_backend(config).hunting_state()
                 cooking_before = load_backend(config).cooking_state()
+                combat_before = load_backend(config).combat_state()
+                if load_backend(config).vitality()['health']!=0:
+                    raise RuntimeError('Combat test must leave player defeated')
                 stop(db)
                 db = start_db()
+                if load_backend(config).combat_state()!=combat_before:
+                    raise RuntimeError('Database restart changed defeated player or recovery deadline')
                 if load_backend(config).cooking_state()!=cooking_before:
                     raise RuntimeError('Database restart changed cooking history')
                 if load_backend(config).hunting_state()!=hunting_before:
@@ -175,6 +181,12 @@ sys.exit(not result.wasSuccessful())
                 if load_backend(config).gathering_state() != gathering_before:
                     raise RuntimeError('Database restart changed resource banks, cooldowns, or action journals')
                 print('PASS: avatar, world objects, inventory, and revisions survive standalone database restart', flush=True)
+                subprocess.run([sys.executable,'-m','unittest','-v',recovery_test],env=env,cwd=ROOT,check=True,timeout=45)
+                recovered=load_backend(config).combat_state()
+                stop(db);db=start_db()
+                if load_backend(config).combat_state()!=recovered:
+                    raise RuntimeError('Restart changed recovered health or combat history')
+                print('PASS: defeat, recovery deadline, and recovered health survive restarts',flush=True)
             gateway = subprocess.Popen([sys.executable, str(HERE / 'gateway.py'), '--config', str(config),
                                         '--port', str(game_port), '--client', args.client], cwd=ROOT)
             if args.verify:
@@ -192,7 +204,8 @@ sys.exit(not result.wasSuccessful())
                 fixture.write_bytes(wire.merchant_mobile(vendor)+wire.merchant_offers(vendor)+wire.merchant_sell_offers(
                     dict(item=dict(serial=0x40000900,graphic=0x1bdd,amount=4)))+
                     wire.creature_mobile(load_backend(config).creature())+b'\xaa\0\0\0\3'+
-                    wire.creature_status(load_backend(config).creature())+wire.creature_death())
+                    wire.creature_status(load_backend(config).creature())+wire.creature_death()+
+                    wire.melee_action(1)+wire.melee_action(3,animal=True)+wire.player_health(17))
                 subprocess.run([str(ROOT / 'build/spacetime-tools/client-smoke'), str(game_port), args.client,str(fixture)],
                                cwd=ROOT, check=True, timeout=30)
                 items = load_backend(config).inventory()[1]

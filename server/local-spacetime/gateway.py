@@ -132,7 +132,15 @@ class Gateway:
                     try:
                         creature=await asyncio.to_thread(self.backend.strike_creature)
                         if creature:
-                            data=wire.creature_status(creature)
+                            vital=await asyncio.to_thread(self.backend.vitality)
+                            data=wire.melee_action(1)+wire.creature_status(creature)+wire.player_health(vital['health'])
+                            if creature['health']:
+                                data+=wire.melee_action(3,animal=True)
+                            if vital['health']==0:
+                                attack_target=None
+                                war=False
+                                data+=b'\xaa\0\0\0\0\x72\0\x32\0\0'
+                                data+=wire.system_message('You are defeated. Say recover after thirty seconds. Your belongings are safe.')
                             if creature['health']==0:
                                 attack_target=None
                                 data=wire.creature_death()+data+b'\xaa\0\0\0\0'
@@ -180,6 +188,14 @@ class Gateway:
                     current=await asyncio.to_thread(self.backend.avatar)
                     data=wire.speech(current,text,kind=packet[3])
                     command=' '.join(text.lower().split())
+                    if packet[3]!=2 and command=='recover':
+                        try:
+                            if war or attack_target:raise BackendError('Enter peace mode before recovering.')
+                            await asyncio.to_thread(self.backend.recover)
+                            data+=wire.system_message('You have recovered.')
+                        except BackendError as error:
+                            data+=wire.system_message(str(error))
+                        data+=wire.status(await asyncio.to_thread(self.backend.player_status))
                     if packet[3]!=2 and command in ('vendor sell','mara sell','vendor buy','mara buy'):
                         pending_purchase=pending_sale=None
                         try:
@@ -384,13 +400,15 @@ class Gateway:
                 elif opcode == 0x72:
                     if packet[1] not in (0,1):raise wire.ProtocolError('invalid war mode')
                     war=bool(packet[1])
+                    if war and (await asyncio.to_thread(self.backend.vitality))['health']==0:
+                        war=False
                     if not war:attack_target=None
                     await self.send(writer,bytes([0x72,int(war),0x32,0,0]),True)
                 elif opcode == 0x05:
                     target=struct.unpack_from('>I',packet,1)[0]
                     if war and target==3 and 3 in visible:
                         creature=await asyncio.to_thread(self.backend.creature)
-                        if creature and creature['health']:
+                        if creature and creature['health'] and (await asyncio.to_thread(self.backend.vitality))['health']:
                             attack_target=3
                             await self.send(writer,b'\xaa\0\0\0\3'+wire.creature_status(creature),True)
                             continue

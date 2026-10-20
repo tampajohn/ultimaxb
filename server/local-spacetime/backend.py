@@ -133,6 +133,19 @@ class Backend:
         self.prepare_merchant()
         self.prepare_forge()
         self.prepare_creature()
+        self.request(self.path+'/call/seed_vitality',b'[]')
+
+    def vitality(self):
+        rows=json.loads(self.request(self.path+'/sql',b'SELECT * FROM vitality',content_type='text/plain'))[0]['rows']
+        return dict(zip(('serial','health','revision','recover_at'),rows[0]))
+
+    def combat_state(self):
+        return {table:sorted(json.loads(self.request(self.path+'/sql',('SELECT * FROM '+table).encode(),
+            content_type='text/plain'))[0]['rows']) for table in ('vitality','combat_event')}
+
+    def recover(self):
+        vital=self.vitality()
+        self.request(self.path+'/call/recover_player',json.dumps([vital['revision']]).encode())
 
     def creature(self):
         rows=json.loads(self.request(self.path+'/sql',b'SELECT * FROM creature',content_type='text/plain'))[0]['rows']
@@ -178,6 +191,7 @@ class Backend:
 
     def strike_creature(self):
         avatar=self.avatar();revision,_=self.inventory();scene,objects=self.world();creature=self.creature()
+        if self.vitality()['health']==0:raise BackendError('You are defeated. Enter peace mode and say recover after thirty seconds.')
         if creature is None or creature['health']==0:raise BackendError('Target is dead.')
         if max(abs(avatar['x']-creature['x']),abs(avatar['y']-creature['y']))>1:raise BackendError('Move closer to strike.')
         self.check_reach(creature,avatar,objects)
@@ -464,6 +478,8 @@ class Backend:
 
     def player_status(self):
         avatar = self.avatar()
+        avatar['health']=self.vitality()['health']
+        avatar['max_health']=50
         avatar['gold'] = sum(item['amount'] for item in self.inventory()[1]
                              if item['container']==BACKPACK and item['graphic']==0xeed)
         return avatar

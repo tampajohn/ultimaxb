@@ -35,6 +35,7 @@ pub fn seed_creature(ctx:&ReducerContext,x:u16,y:u16,z:i8)->Result<(),String> {
 pub fn strike_creature(ctx:&ReducerContext,expected_avatar:u64,expected_inventory:u64,
     expected_scene:u64,expected_creature:u64)->Result<(),String> {
     authorize(ctx)?;check_scene(ctx,expected_scene)?;
+    combat::require_alive(ctx)?;
     let avatar=ctx.db.avatar().serial().find(1).ok_or("missing player")?;
     let mut state=ctx.db.inventory_state().id().find(0).ok_or("missing inventory")?;
     let mut creature=ctx.db.creature().serial().find(3).ok_or("missing creature")?;
@@ -72,6 +73,7 @@ pub fn strike_creature(ctx:&ReducerContext,expected_avatar:u64,expected_inventor
     creature.health-=hit;creature.next_strike=now+STRIKE_US;creature.revision+=1;
     ctx.db.hunting_event().insert(HuntingEvent {revision:creature.revision,life:creature.life,
         weapon:weapon.map_or(0,|w|w.serial),damage:hit,remaining:creature.health,loot,at:now});
+    if creature.health>0 {combat::retaliate(ctx,creature.revision)?;}
     ctx.db.creature().serial().update(creature);
     Ok(())
 }

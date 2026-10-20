@@ -215,7 +215,7 @@ an existing database. Prefer `run.py --verify` for an isolated test world.
 | --- | --- | --- |
 | 1 — Gathering and a useful recipe (implemented) | Equip the hatchet, target an actual map tree, collect logs, then use the dagger on five backpack logs to carve a wooden shield. | Single-use expiring target cursors; server-validated tree identity and reach; durable cooldown/depletion; lazy resource recovery after idle time; atomic ingredient consumption/output creation; crafted shield equips and persists; real-client target/result decoding. |
 | 2 — Mining, smithing, and progression (core loop and skill progression implemented) | Mine ore, smelt at a forge, craft or repair basic metal equipment. | Asset-validated ore/forge targets; explicit recipes and material costs; durable tool wear and skill progression; no skill/loot gains on rejected or replayed requests; original target/gump protocols. Decide era-faithful rules before expanding the recipe catalogue. |
-| 3 — A small inhabited adventure (merchant trading and neutral hunting implemented) | Trade with one vendor and fight one creature type near a safe starting area. | Finite vendor stock and money, atomic purchases/sales, deterministic attack cadence and range checks, damage/death/loot/recovery, NPC persistence, pause/resume rules for an empty world, no duplicate loot after reconnect. |
+| 3 — A small inhabited adventure (merchant trading, hunting, cooking, and bounded combat implemented) | Trade with one vendor and fight one creature type near a safe starting area. | Finite vendor stock and money, atomic purchases/sales, deterministic attack cadence and range checks, damage/death/loot/recovery, NPC persistence, pause/resume rules for an empty world, no duplicate loot after reconnect. |
 | 4 — Shared local world | Two distinct players gather, trade, and fight together. | Real accounts and character ownership, subscription-driven visibility, per-player sessions, contested resource/equipment tests, secure LAN discovery and explicit host selection. Replace proof-of-concept HTTP polling before scaling. |
 | 5 — World branches and reconciliation | Fork a checkpoint, explore independently, preview a merge, and create a new reconciled world. | Stable cross-world entity/event IDs, ancestry/checkpoints, explicit item creation/transfer/consumption history, three-way merge preview, conservation checks, deterministic conflict policies, provenance for overrides, reversible import into a new branch. Never merge solely by timestamps or local revision numbers. |
 
@@ -319,8 +319,8 @@ plays the installed cow animation; no persistent corpse container is created.
 After sixty seconds, entry/movement/item interactions may lazily respawn the cow
 at its saved location. Occupied or unstandable spawn tiles postpone respawn,
 including uncollected loot on that tile. No attacks or background simulation run
-without a connected player. This first hunting slice has no creature retaliation,
-wandering AI, player damage/death, armor mitigation, or weapon-skill training.
+without a connected player. Creatures retaliate only during an active melee
+exchange, as described below. There is no wandering AI or weapon-skill training.
 
 Verification tests real war/target/status/death and loot packets, weapon-dependent
 damage, database cooldown timestamps, replay/authorization/range rejection,
@@ -328,6 +328,27 @@ disconnect and peace-mode cancellation, exactly one loot stack per death, actual
 respawn timing and occupied-site rejection, and database restart persistence
 both while dead and after respawning.
 Swift checks decode target health/death and load original standing/death art.
+
+### Retaliation, protection, and recovery
+
+Player health starts at fifty and persists across reconnects. After an accepted
+strike, a surviving cow retaliates in the same transaction for six damage. A
+killing blow receives no retaliation. Only worn protection counts: the nose helm
+removes one damage and either supported shield removes two, capped at three.
+Carrying them in the backpack gives no protection. Classic attack animations
+and health updates accompany each exchange.
+
+At zero health the avatar is **defeated**. The server clears combat target and war
+mode and refuses further attacks. Movement and inventory remain available; there
+is no ghost body, corpse, or equipment loss. Enter peace mode and say **recover**
+after thirty seconds without incoming damage to restore fifty health. This also
+works for a wounded avatar. The recovery deadline and health are persisted;
+reconnecting cannot bypass them. Food still affects fullness only.
+
+Peace, disconnect, or leaving melee range stops both sides of the exchange.
+There is no chasing, independent attack timer, or offline damage. See
+[combat rules](COMBAT.md) for the exact bounded model. This is a sandbox encounter,
+not a reproduction of classic UO death, resurrection, armor ratings, or AI.
 
 ### Cooking hunted food
 
@@ -387,7 +408,7 @@ and item ownership; choosing a preferred player cannot silently duplicate items.
 - Protocol and movement decisions use explicit code. No model is in the gameplay
   path. Model-assisted merge proposals can be explored separately later.
 
-Next: rendered-client playtesting, tool wear/repair, vendor restocking, cooking, and retaliating combat/player recovery. Fork/merge work will need stable cross-world identities and explicit rules
+Next: rendered-client playtesting, tool wear/repair, vendor restocking, and distinct player ownership for a shared local world. Fork/merge work will need stable cross-world identities and explicit rules
 for item ownership and consumption; the current local journals are not sufficient.
 
 ## Sources
