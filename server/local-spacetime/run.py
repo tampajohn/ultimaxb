@@ -120,13 +120,16 @@ def serve(args, data):
                 import protocol as wire
                 vendor=load_backend(config).merchant()
                 fixture=data/'merchant-packets.bin'
-                fixture.write_bytes(wire.merchant_mobile(vendor)+wire.merchant_offers(vendor))
+                fixture.write_bytes(wire.merchant_mobile(vendor)+wire.merchant_offers(vendor)+wire.merchant_sell_offers(
+                    dict(item=dict(serial=0x40000900,graphic=0x1bdd,amount=4))))
                 subprocess.run([str(ROOT / 'build/spacetime-tools/client-smoke'), str(game_port), args.client,str(fixture)],
                                cwd=ROOT, check=True, timeout=30)
                 items = load_backend(config).inventory()[1]
                 if any(i['graphic']==0x1bdd for i in items) or sum(i['amount'] for i in items if i['graphic']==0x1b7a) != 2:
                     raise RuntimeError('Real-client craft failed ingredient/output conservation')
-                print('PASS: ten harvested logs produced exactly two shields, with no logs remaining',flush=True)
+                if load_backend(config).merchant_state()['merchant_goods'] != [[0x1bdd,2]]:
+                    raise RuntimeError('Merchant did not retain exactly the two sold logs')
+                print('PASS: twelve harvested logs became two shields and two retained merchant logs',flush=True)
             else:
                 while gateway.poll() is None and db.poll() is None:
                     time.sleep(0.25)

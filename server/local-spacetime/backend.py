@@ -137,7 +137,7 @@ class Backend:
 
     def merchant_state(self):
         return {table:json.loads(self.request(self.path+'/sql',('SELECT * FROM '+table).encode(),
-                content_type='text/plain'))[0]['rows'] for table in ('merchant','purchase_event')}
+                content_type='text/plain'))[0]['rows'] for table in ('merchant','purchase_event','merchant_goods','sale_event')}
 
     def prepare_merchant(self):
         if self.merchant() is not None: return
@@ -179,6 +179,23 @@ class Backend:
         self.check_reach(quote['vendor'],avatar,objects)
         self.request(self.path+'/call/buy_apples',json.dumps([quote['inventory'],avatar['revision'],scene,
             quote['vendor']['revision'],quantity]).encode())
+
+    def merchant_sell_quote(self):
+        revision,items=self.inventory()
+        vendor=self.merchant()
+        if vendor is None: raise BackendError('Merchant unavailable.')
+        self.check_reach(vendor,self.avatar(),self.world()[1])
+        logs=sorted((i for i in items if i['container']==BACKPACK and i['graphic']==0x1bdd),key=lambda i:i['serial'])
+        item=dict(logs[0],amount=min(logs[0]['amount'],vendor['gold'])) if logs and vendor['gold'] else None
+        return dict(inventory=revision,vendor=vendor,item=item)
+
+    def sell_logs(self,quote,serial,quantity):
+        if quote['item'] is None or serial!=quote['item']['serial'] or quantity<=0 or quantity>quote['item']['amount']:
+            raise BackendError('Choose the quoted logs and quantity.')
+        avatar=self.avatar(); scene,objects=self.world()
+        self.check_reach(quote['vendor'],avatar,objects)
+        self.request(self.path+'/call/sell_logs',json.dumps([quote['inventory'],avatar['revision'],scene,
+            quote['vendor']['revision'],serial,quantity]).encode())
 
     def prepare_objects(self):
         _, objects = self.world()

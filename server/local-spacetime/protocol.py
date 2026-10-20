@@ -98,7 +98,7 @@ def status(avatar):
 
 def speech(avatar, message, kind=0):
     payload = struct.pack('>IHBHH', avatar['serial'], avatar.get('graphic', 400), kind, 0x3b2, 3)
-    payload += fixed(avatar['name'], 30) + message.encode('ascii') + b'\0'
+    payload += fixed(avatar['name'], 30) + message.encode('latin-1') + b'\0'
     return struct.pack('>BH', 0x1c, len(payload) + 3) + payload
 
 
@@ -167,6 +167,20 @@ def merchant_offers(vendor):
     return container_contents(items)+struct.pack('>BH',0x74,len(payload)+3)+payload+struct.pack('>BIH',0x24,MERCHANT,0x30)
 
 
+def merchant_sell_offers(quote):
+    item=quote['item']
+    payload=struct.pack('>IH',MERCHANT,1 if item else 0)
+    if item:
+        payload+=struct.pack('>IHHHHH',item['serial'],item['graphic'],0,item['amount'],1,4)+b'Logs'
+    return struct.pack('>BH',0x9e,len(payload)+3)+payload
+
+
+def spoken_text(packet):
+    if packet[3] not in (0,2,8,9) or packet[-1]!=0 or not packet[8:-1] or any(c<32 or c==127 for c in packet[8:-1]):
+        raise ProtocolError('invalid speech')
+    return packet[8:-1].decode('latin-1')
+
+
 def close_merchant():
     return struct.pack('>BHIB',0x3b,8,MERCHANT,0)
 
@@ -180,10 +194,11 @@ LENGTHS = {0x80: 62, 0xa0: 3, 0x91: 65, 0x5d: 73, 0x02: 3,
 
 async def read_packet(reader, cipher):
     opcode = cipher.transform(await reader.readexactly(1))[0]
-    if opcode == 0x3b:
+    if opcode in (0x3b,0x9f,0x03):
         header=cipher.transform(await reader.readexactly(2))
         length=struct.unpack('>H',header)[0]
-        if length not in (8,15): raise ProtocolError('invalid purchase packet size')
+        valid = (10<=length<=209) if opcode==0x03 else length in ((8,15) if opcode==0x3b else (9,15))
+        if not valid: raise ProtocolError('invalid variable packet size')
         return bytes([opcode])+header+cipher.transform(await reader.readexactly(length-3))
     if opcode not in LENGTHS:
         raise ProtocolError(f'unsupported opcode 0x{opcode:02x}')

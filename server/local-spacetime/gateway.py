@@ -41,6 +41,7 @@ class Gateway:
         lifted = None
         pending_target = None
         pending_purchase = None
+        pending_sale = None
 
         async def inventory_updates():
             _, items = await asyncio.to_thread(self.backend.inventory)
@@ -146,8 +147,47 @@ class Gateway:
                         await self.send(writer, wire.status(await asyncio.to_thread(self.backend.player_status)), True)
                     elif packet[5] == 5:
                         await self.send(writer, b'\x3a\0\x06\0\0\0', True)
+                elif opcode == 0x03:
+                    text=wire.spoken_text(packet)
+                    current=await asyncio.to_thread(self.backend.avatar)
+                    data=wire.speech(current,text,kind=packet[3])
+                    command=' '.join(text.lower().split())
+                    if packet[3]!=2 and command in ('vendor sell','mara sell','vendor buy','mara buy'):
+                        pending_purchase=pending_sale=None
+                        try:
+                            if lifted is not None: raise BackendError('Finish the current drag.')
+                            if command.endswith('sell'):
+                                quote=await asyncio.to_thread(self.backend.merchant_sell_quote)
+                                pending_sale=dict(quote=quote,expires=time.monotonic()+30)
+                                data+=wire.merchant_sell_offers(quote)
+                            else:
+                                quote=await asyncio.to_thread(self.backend.merchant_quote)
+                                pending_purchase=dict(quote=quote,expires=time.monotonic()+30)
+                                data+=wire.merchant_offers(quote['vendor'])
+                        except BackendError:
+                            data+=wire.system_message('Come closer to Mara and finish any item drag first.')
+                    await self.send(writer,data,True)
+                elif opcode == 0x9f:
+                    quote,pending_sale=pending_sale,None
+                    pending_purchase=None
+                    try:
+                        vendor,count=struct.unpack_from('>IH',packet,3)
+                        if vendor!=wire.MERCHANT: raise BackendError('Unknown merchant.')
+                        if len(packet)==9 and count==0:
+                            await self.send(writer,wire.close_merchant(),True)
+                            continue
+                        if quote is None or time.monotonic()>quote['expires'] or lifted is not None:
+                            raise BackendError('Ask for a fresh sale quote.')
+                        if len(packet)!=15 or count!=1: raise BackendError('Invalid sale.')
+                        serial,quantity=struct.unpack_from('>IH',packet,9)
+                        await asyncio.to_thread(self.backend.sell_logs,quote['quote'],serial,quantity)
+                        message='Thank you for the logs. Your gold is in your backpack.'
+                    except BackendError:
+                        message='Sale refused. Check the goods, purse, and reach; ask for a fresh quote.'
+                    await self.send(writer,wire.close_merchant()+wire.system_message(message)+await inventory_updates(),True)
                 elif opcode == 0x3b:
                     quote,pending_purchase=pending_purchase,None
+                    pending_sale=None
                     try:
                         vendor=struct.unpack_from('>I',packet,3)[0]
                         if vendor!=wire.MERCHANT: raise BackendError('Unknown merchant.')
@@ -171,7 +211,7 @@ class Gateway:
                         if opcode==0x09:
                             await self.send(writer,wire.speech(dict(serial=2,name='Mara the provisioner'),'Mara the provisioner'),True)
                         else:
-                            pending_purchase=None
+                            pending_purchase=pending_sale=None
                             try:
                                 if lifted is not None: raise BackendError('Finish the current drag first.')
                                 quote=await asyncio.to_thread(self.backend.merchant_quote)

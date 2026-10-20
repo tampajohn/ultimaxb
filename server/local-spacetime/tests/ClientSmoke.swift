@@ -196,13 +196,14 @@ struct ClientSmoke {
         if CommandLine.arguments.count > 3 {
             let bytes = try Data(contentsOf:URL(fileURLWithPath:CommandLine.arguments[3]))
             var framer=GamePacketFramer(), world=WorldState()
-            var contents:[ContainerItem]=[], offers:[VendorOffer]=[]
+            var contents:[ContainerItem]=[], offers:[VendorOffer]=[], saleOffers:[VendorOffer]=[]
             for packet in try framer.receive(bytes) {
                 switch packet[0] {
                 case 0x78,0x24,0x3c:
                     try world.apply(packet)
                     if packet[0]==0x3c { contents=try ContainerItem.decode(packet) }
                 case 0x74: offers=try VendorPackets.offers(packet,contents:contents)
+                case 0x9e: saleOffers=try VendorPackets.sellOffers(packet).offers
                 default: throw AssetError("Unexpected merchant packet")
                 }
             }
@@ -214,7 +215,12 @@ struct ClientSmoke {
             guard layers.filter({$0.item != nil}).count==3 else { throw AssetError("Merchant clothes missing original art") }
             let buy=try VendorPackets.buy(vendor:2,offers:offers,quantities:[offers[0].item.serial:2])
             guard buy.count==15,buy[0]==0x3b else { throw AssetError("Merchant purchase encoding failed") }
-            print("PASS: real UOCore merchant, original clothing art, stock/price window, purchase encoding")
+            guard saleOffers.count==1,saleOffers[0].price==1,saleOffers[0].item.amount==4 else {
+                throw AssetError("Merchant sell offers failed")
+            }
+            let sell=try VendorPackets.sell(vendor:2,offers:saleOffers,quantities:[saleOffers[0].item.serial:2])
+            guard sell.count==15,sell[0]==0x9f else { throw AssetError("Merchant sale encoding failed") }
+            print("PASS: real UOCore merchant, clothing art, buy/sell prices and encoding")
         }
         let port = UInt16(CommandLine.arguments.dropFirst().first ?? "2594")!
         let moved = try await session(port: port, move: true)

@@ -70,6 +70,23 @@ class FramingTests(unittest.IsolatedAsyncioTestCase):
             reader.feed_data(wire.Cipher(9).transform(bytes([0x3b,length>>8,length&255])))
             with self.assertRaises(wire.ProtocolError): await wire.read_packet(reader,wire.Cipher(9))
 
+    async def test_sale_and_speech_frames(self):
+        sale=bytes.fromhex('9f000f000000020001400001020002')
+        speech=bytes.fromhex('0300140003b20003')+b'vendor sell\0'
+        plain=sale+speech+b'\x73\x08'
+        encrypted=wire.Cipher(7).transform(plain)
+        for split in range(len(plain)+1):
+            reader=asyncio.StreamReader();cipher=wire.Cipher(7)
+            reader.feed_data(encrypted[:split]);task=asyncio.create_task(wire.read_packet(reader,cipher))
+            await asyncio.sleep(0);reader.feed_data(encrypted[split:])
+            self.assertEqual(await task,sale)
+            self.assertEqual(wire.spoken_text(await wire.read_packet(reader,cipher)),'vendor sell')
+            self.assertEqual(await wire.read_packet(reader,cipher),b'\x73\x08')
+        for packet in (b'\x9f\xff\xff',b'\x03\x00\x09',b'\x03\x00\xd2'):
+            reader=asyncio.StreamReader();reader.feed_data(wire.Cipher(7).transform(packet))
+            with self.assertRaises(wire.ProtocolError): await wire.read_packet(reader,wire.Cipher(7))
+        with self.assertRaises(wire.ProtocolError): wire.spoken_text(speech[:-2]+b'\0\0')
+
     async def test_unknown_and_truncated_packets(self):
         for data, exception in [(b'\xff', wire.ProtocolError), (b'\x02\x01', asyncio.IncompleteReadError)]:
             reader = asyncio.StreamReader()

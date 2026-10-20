@@ -570,6 +570,88 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await asyncio.to_thread(relocate,start)
 
+    async def test_zzz_merchant_sales_conserve_gold_and_retained_logs(self):
+        start=self.backend.avatar()
+        def relocate(point):
+            current=self.backend.avatar(); scene=self.backend.world()[0]
+            while any(current[k]!=point[k] for k in ('x','y','z')):
+                x=current['x']+max(-8,min(8,point['x']-current['x']))
+                y=current['y']+max(-8,min(8,point['y']-current['y']))
+                self.backend.request(self.backend.path+'/call/settle',json.dumps([
+                    current['revision'],x,y,point['z'],scene]).encode())
+                current=dict(current,x=x,y=y,z=point['z'],revision=current['revision']+1)
+        try:
+            # Produce two additional real logs; leave the original five for Swift crafting.
+            site=self.navigation.query('tree_site',dict(x=1393,y=1732,z=0),details=True)
+            self.assertIsNotNone(site)
+            await asyncio.to_thread(relocate,site)
+            hatchet=next(i for i in self.backend.inventory()[1] if i['graphic']==0xf43)
+            self.backend.equip(self.backend.lift(hatchet['serial'],1),hatchet['serial'],2,1)
+            self.backend.perform_tool(self.backend.begin_tool(hatchet['serial']),dict(site['target'],serial=0))
+            self.backend.transfer(self.backend.lift(hatchet['serial'],1),hatchet['serial'],BACKPACK,90,100)
+            vendor=self.backend.merchant()
+            spot=next(p for dx,dy in [(0,1),(1,0),(0,-1),(-1,0)]
+                      if (p:=self.navigation.query('stand',dict(x=vendor['x']+dx,y=vendor['y']+dy,z=vendor['z']),objects=self.backend.world()[1])))
+            await asyncio.to_thread(relocate,spot)
+            reader,writer,cipher=await self.game(await self.relay()); await block(reader)
+            writer.write(cipher.transform(b'\x5d'+bytes.fromhex('edededed')+wire.fixed(start['name'],30)+bytes(38)))
+            await block(reader)
+            async def speech(text):
+                raw=text.encode('latin-1')
+                writer.write(cipher.transform(struct.pack('>BH BHH',0x03,len(raw)+9,0,0x3b2,3)+raw+b'\0'))
+                return await block(reader)
+            self.assertIn('Bonjour, café!'.encode('latin-1'),await speech('Bonjour, café!'))
+            self.assertIn(wire.merchant_offers(vendor),await speech('vendor buy'))
+            async def quote():
+                expected=self.backend.merchant_sell_quote()
+                self.assertIn(wire.merchant_sell_offers(expected),await speech('vendor sell'))
+                return expected
+            offered=await quote()
+            self.assertEqual(offered['item']['amount'],6) # finite purse caps the seven carried logs
+            logs=offered['item']['serial']
+            packet=struct.pack('>BHIHIH',0x9f,15,2,1,logs,2)
+            async def sell():
+                writer.write(cipher.transform(packet)); return await block(reader)
+            before=self.backend.inventory(),self.backend.merchant_state()
+            with patch('gateway.time',SimpleNamespace(monotonic=lambda:time.monotonic()+31)):
+                self.assertIn(b'Sale refused',await sell())
+            self.assertEqual((self.backend.inventory(),self.backend.merchant_state()),before)
+            raw=[before[0][0],self.backend.avatar()['revision'],self.backend.world()[0],vendor['revision'],logs,7]
+            with self.assertRaises(BackendError): self.backend.request(self.backend.path+'/call/sell_logs',json.dumps(raw).encode())
+            raw[-1]=2
+            identity=json.loads(self.backend.request('/v1/identity',b''))
+            outsider=Backend(self.backend.endpoint,self.backend.database,identity['token'])
+            with self.assertRaises(BackendError): outsider.request(outsider.path+'/call/sell_logs',json.dumps(raw).encode())
+            await quote()
+            writer.write(cipher.transform(struct.pack('>BHIH',0x9f,9,2,0)))
+            self.assertEqual(await block(reader),wire.close_merchant())
+            self.assertEqual((self.backend.inventory(),self.backend.merchant_state()),before)
+            await quote()
+            # Closing the shared vendor UI through either classic response must
+            # invalidate both trade directions, including a queued old sale.
+            writer.write(cipher.transform(struct.pack('>BHIB',0x3b,8,2,0)))
+            self.assertEqual(await block(reader),wire.close_merchant())
+            self.assertIn(b'Sale refused',await sell())
+            self.assertEqual((self.backend.inventory(),self.backend.merchant_state()),before)
+            await quote()
+            self.assertIn(b'Thank you for the logs.',await sell())
+            after=self.backend.inventory(),self.backend.merchant_state()
+            self.assertIn(b'Sale refused',await sell())
+            with self.assertRaises(BackendError): self.backend.request(self.backend.path+'/call/sell_logs',json.dumps(raw).encode())
+            self.assertEqual((self.backend.inventory(),self.backend.merchant_state()),after)
+            for graphic,delta in [(0xeed,2),(0x1bdd,-2)]:
+                total=lambda state:sum(i['amount'] for i in state[0][1] if i['graphic']==graphic)
+                self.assertEqual(total(after)-total(before),delta)
+            self.assertEqual(self.backend.merchant()['gold'],4)
+            self.assertEqual(after[1]['merchant_goods'],[[0x1bdd,2]])
+            self.assertEqual(len(after[1]['sale_event']),1)
+            stale=self.backend.merchant_sell_quote()
+            await asyncio.to_thread(relocate,dict(x=spot['x']+8,y=spot['y'],z=spot['z']))
+            with self.assertRaises(BackendError): self.backend.sell_logs(stale,logs,1)
+            self.assertEqual((self.backend.inventory(),self.backend.merchant_state()),after)
+        finally:
+            await asyncio.to_thread(relocate,start)
+
     async def test_z_food_consumption_is_atomic_and_persistent(self):
         before = self.backend.inventory()
         food = next(i for i in before[1] if i['graphic']==0x9d0 and i['container']==BACKPACK)
