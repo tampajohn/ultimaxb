@@ -59,6 +59,7 @@ class Gateway:
                     [item for item in items if item['container'] == serial])
             data += b''.join(wire.equipped(item) for item in await asyncio.to_thread(self.backend.equipment))
             data += wire.status(await asyncio.to_thread(self.backend.player_status))
+            data += wire.skills(await asyncio.to_thread(self.backend.skills))
             return data
 
         async def object_updates(avatar):
@@ -146,7 +147,7 @@ class Gateway:
                     if packet[5] == 4:
                         await self.send(writer, wire.status(await asyncio.to_thread(self.backend.player_status)), True)
                     elif packet[5] == 5:
-                        await self.send(writer, b'\x3a\0\x06\0\0\0', True)
+                        await self.send(writer,wire.skills(await asyncio.to_thread(self.backend.skills)),True)
                 elif opcode == 0x03:
                     text=wire.spoken_text(packet)
                     current=await asyncio.to_thread(self.backend.avatar)

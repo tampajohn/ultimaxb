@@ -203,7 +203,7 @@ For codec-only tests without services:
 python3 -m unittest discover -s server/local-spacetime/tests -v
 ```
 
-The fourteen live tests skip unless `ULTIMA_SPACETIME_CONFIG` names a gateway config.
+The fifteen live tests skip unless `ULTIMA_SPACETIME_CONFIG` names a gateway config.
 Live tests deliberately move the demo avatar and append history if pointed at
 an existing database. Prefer `run.py --verify` for an isolated test world.
 
@@ -214,7 +214,7 @@ an existing database. Prefer `run.py --verify` for an isolated test world.
 | Phase | Player outcome | Acceptance criteria |
 | --- | --- | --- |
 | 1 — Gathering and a useful recipe (implemented) | Equip the hatchet, target an actual map tree, collect logs, then use the dagger on five backpack logs to carve a wooden shield. | Single-use expiring target cursors; server-validated tree identity and reach; durable cooldown/depletion; lazy resource recovery after idle time; atomic ingredient consumption/output creation; crafted shield equips and persists; real-client target/result decoding. |
-| 2 — Mining, smithing, and progression (core loop implemented) | Mine ore, smelt at a forge, craft or repair basic metal equipment. | Asset-validated ore/forge targets; explicit recipes and material costs; durable tool wear and skill progression; no skill/loot gains on rejected or replayed requests; original target/gump protocols. Decide era-faithful rules before expanding the recipe catalogue. |
+| 2 — Mining, smithing, and progression (core loop and skill progression implemented) | Mine ore, smelt at a forge, craft or repair basic metal equipment. | Asset-validated ore/forge targets; explicit recipes and material costs; durable tool wear and skill progression; no skill/loot gains on rejected or replayed requests; original target/gump protocols. Decide era-faithful rules before expanding the recipe catalogue. |
 | 3 — A small inhabited adventure (merchant purchases and log sales implemented) | Trade with one vendor and fight one creature type near a safe starting area. | Finite vendor stock and money, atomic purchases/sales, deterministic attack cadence and range checks, damage/death/loot/recovery, NPC persistence, pause/resume rules for an empty world, no duplicate loot after reconnect. |
 | 4 — Shared local world | Two distinct players gather, trade, and fight together. | Real accounts and character ownership, subscription-driven visibility, per-player sessions, contested resource/equipment tests, secure LAN discovery and explicit host selection. Replace proof-of-concept HTTP polling before scaling. |
 | 5 — World branches and reconciliation | Fork a checkpoint, explore independently, preview a merge, and create a new reconciled world. | Stable cross-world entity/event IDs, ancestry/checkpoints, explicit item creation/transfer/consumption history, three-way merge preview, conservation checks, deterministic conflict policies, provenance for overrides, reversible import into a new branch. Never merge solely by timestamps or local revision numbers. |
@@ -242,7 +242,7 @@ Near a forge, equip and use the smith's hammer, then target a backpack stack of 
 least five ingots to create a nose helm. All consumption, output, and metal history
 commit together; stale cursors and unauthorized calls cannot repeat the conversion.
 Ore and ingots also support ordinary drag splitting/merging. This is a deliberately
-small sandbox recipe, with no skill roll, tool wear, repair, or progression yet.
+small sandbox recipe, with no skill roll, tool wear, or repair yet.
 Only iron ore shape 0x19B8 is supported; ore-use pile combining is not implemented.
 The nearby forge is a server-visible object and supports the client's existing
 `SmeltWorkflow`; original static-map forges also work through manual targeting.
@@ -285,6 +285,24 @@ quantity/range/authorization checks, and conservation of both goods and currency
 ten logs consumed for two shields and two logs retained by the merchant.
 The Swift verifier decodes her stock prices and original clothing through UOCore.
 
+The existing Skills window now reports persistent sandbox progression using the
+installed 1998 definitions: Blacksmithy (7), Carpentry (11), Lumberjacking (44),
+and Mining (45). Successful chopping trains Lumberjacking, ore mining and smelting
+train Mining, wooden-shield carving trains Carpentry, and forging a helm trains
+Blacksmithy. Each completed action grants **0.1**, capped at **100.0** per skill.
+This is a deterministic training rule, not original-era probabilistic advancement;
+skills do not change current success rates or recipes. Progress starts at 0.0 on
+this upgrade, without retroactive credit for old action history.
+
+The skill row and gain journal commit inside the same transaction as resources
+and inventory. Rejected, stale, unauthorized, or replayed actions cannot train.
+There is no callable reducer for arbitrary skill awards. Trading, movement, food,
+and item transfers do not train skills. Classic 0x3A snapshots answer Skills-window
+requests and accompany inventory updates; no client UI or replacement fonts are
+needed. Verification matches every gain to a committed action revision, checks cap
+boundaries, and confirms the real Swift client sees gains and retains them after
+reconnect and database restart.
+
 Hosting and distributed execution follow the shared-world phase: measure idle
 costs, checkpoint durability, wake-up behavior, and authority handoff first.
 Consensus within an active shared world and reconciliation between independently
@@ -315,14 +333,15 @@ and item ownership; choosing a preferred player cannot silently duplicate items.
   Object changes are refreshed on entry, movement, position sync, and item use;
   there is no background subscription for edits by other sessions.
 - Unsupported packet opcodes close the session instead of guessing frame lengths.
-  Skills currently return an empty list; war-mode requests retain peace mode.
+  The Skills window reports the four trained sandbox skills; other skills remain
+  untrained. War-mode requests retain peace mode.
 - The avatar and journal are real persisted state. World forks, global entity
   identities, merge/rebase policies, checkpoint import/export, and cloud hosting
   are not implemented. Local revision numbers are not cross-world event IDs.
 - Protocol and movement decisions use explicit code. No model is in the gameplay
   path. Model-assisted merge proposals can be explored separately later.
 
-Next: rendered-client playtesting, tool wear/skills, vendor restocking and a small creature/combat
+Next: rendered-client playtesting, tool wear/repair, vendor restocking and a small creature/combat
 loop. Fork/merge work will need stable cross-world identities and explicit rules
 for item ownership and consumption; the current local journals are not sufficient.
 

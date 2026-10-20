@@ -664,6 +664,45 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await asyncio.to_thread(relocate,start)
 
+    async def test_zzzzz_skills_match_only_committed_actions(self):
+        history=self.backend.gathering_state()
+        expected={row[0]:(45 if row[2]&0x80000000 else 44) for row in history['gathering_event']}
+        expected.update({row[0]:11 for row in history['crafting_event']})
+        expected.update({row[0]:(45 if row[5]==0x1bf2 else 7) for row in history['metal_event']})
+        state=self.backend.skill_state()
+        # Every gain must correspond to exactly one committed gameplay action,
+        # including all preceding rejection, stale, replay and unauthorized tests.
+        self.assertEqual({row[0]:row[1] for row in state['skill_event']},expected)
+        counts={7:0,11:0,44:0,45:0}
+        for revision,skill,before,after in state['skill_event']:
+            self.assertEqual(before,min(1000,counts[skill]))
+            counts[skill]+=1
+            self.assertEqual(after,min(1000,counts[skill]))
+        self.assertEqual(state['skill_progress'],[[skill,min(1000,count),count] for skill,count in sorted(counts.items())])
+        self.assertEqual(self.backend.skills(),{7:1,11:1,44:6,45:6})
+        before=self.backend.inventory(),self.backend.skill_state()
+        avatar=self.backend.avatar();scene=self.backend.world()[0]
+        dagger=next(i for i in before[0][1] if i['graphic']==0xf51)
+        logs=next(i for i in before[0][1] if i['graphic']==0x1bdd)
+        # Stale inventory and an unworn tool cannot consume logs or award gains.
+        for revision in (before[0][0]-1,before[0][0]):
+            with self.assertRaises(BackendError):
+                self.backend.request(self.backend.path+'/call/carve_shield',json.dumps([
+                    revision,avatar['revision'],scene,dagger['serial'],logs['serial']]).encode())
+        identity=json.loads(self.backend.request('/v1/identity',b''))
+        outsider=Backend(self.backend.endpoint,self.backend.database,identity['token'])
+        with self.assertRaises(BackendError):
+            outsider.request(outsider.path+'/call/carve_shield',json.dumps([
+                before[0][0],avatar['revision'],scene,dagger['serial'],logs['serial']]).encode())
+        # There is intentionally no externally callable skill-award reducer.
+        with self.assertRaises(BackendError): self.backend.request(self.backend.path+'/call/gain',b'[1,44]')
+        self.assertEqual((self.backend.inventory(),self.backend.skill_state()),before)
+        reader,writer,cipher=await self.game(await self.relay());await block(reader)
+        writer.write(cipher.transform(b'\x5d'+bytes.fromhex('edededed')+wire.fixed(avatar['name'],30)+bytes(38)))
+        await block(reader)
+        writer.write(cipher.transform(bytes.fromhex('34edededed05')+struct.pack('>I',1)))
+        self.assertEqual(await block(reader),wire.skills(self.backend.skills()))
+
     async def test_z_food_consumption_is_atomic_and_persistent(self):
         before = self.backend.inventory()
         food = next(i for i in before[1] if i['graphic']==0x9d0 and i['container']==BACKPACK)

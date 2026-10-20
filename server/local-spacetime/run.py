@@ -126,8 +126,11 @@ def serve(args, data):
                 nutrition_before = load_backend(config).nutrition()
                 gathering_before = load_backend(config).gathering_state()
                 merchant_before = load_backend(config).merchant_state()
+                skills_before = load_backend(config).skill_state()
                 stop(db)
                 db = start_db()
+                if load_backend(config).skill_state() != skills_before:
+                    raise RuntimeError('Database restart changed skills or gain history')
                 if load_backend(config).merchant_state() != merchant_before:
                     raise RuntimeError('Database restart changed merchant or purchases')
                 after = load_backend(config).avatar()
@@ -171,6 +174,9 @@ def serve(args, data):
                 if load_backend(config).merchant_state()['merchant_goods'] != [[0x1bdd,2]]:
                     raise RuntimeError('Merchant did not retain exactly the two sold logs')
                 print('PASS: twelve harvested logs became two shields and two retained merchant logs',flush=True)
+                if load_backend(config).skills() != {7:1,11:2,44:6,45:7}:
+                    raise RuntimeError('Final skills do not match successful actions')
+                print('PASS: persisted skill gains match successful gathering, smelting, and crafting actions',flush=True)
             else:
                 while gateway.poll() is None and db.poll() is None:
                     time.sleep(0.25)

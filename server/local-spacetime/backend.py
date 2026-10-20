@@ -416,6 +416,16 @@ class Backend:
                              if item['container']==BACKPACK and item['graphic']==0xeed)
         return avatar
 
+    def skill_state(self):
+        return {table:sorted(json.loads(self.request(self.path+'/sql',('SELECT * FROM '+table).encode(),
+                content_type='text/plain'))[0]['rows']) for table in ('skill_progress','skill_event')}
+
+    def skills(self):
+        rows=json.loads(self.request(self.path+'/sql',b'SELECT * FROM skill_progress',content_type='text/plain'))[0]['rows']
+        values={7:0,11:0,44:0,45:0}
+        values.update({row[0]:row[1] for row in rows})
+        return values
+
     def gathering_state(self, history=True):
         state = {}
         tables = ('resource_bank','harvest_clock','gathering_event','crafting_event','metal_event') if history else ('resource_bank','harvest_clock')

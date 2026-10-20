@@ -96,6 +96,11 @@ def status(avatar):
     return bytes(packet)
 
 
+def skills(values):
+    payload=b'\0'+b''.join(struct.pack('>HH',skill+1,value) for skill,value in sorted(values.items()))+b'\0\0'
+    return struct.pack('>BH',0x3a,len(payload)+3)+payload
+
+
 def speech(avatar, message, kind=0):
     payload = struct.pack('>IHBHH', avatar['serial'], avatar.get('graphic', 400), kind, 0x3b2, 3)
     payload += fixed(avatar['name'], 30) + message.encode('latin-1') + b'\0'

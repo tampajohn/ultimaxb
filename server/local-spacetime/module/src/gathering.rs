@@ -138,6 +138,7 @@ fn harvest(ctx: &ReducerContext, expected_inventory: u64, expected_avatar: u64,
     if clock.is_some() { ctx.db.harvest_clock().serial().update(updated_clock); }
     else { ctx.db.harvest_clock().insert(updated_clock); }
     state.revision += 1;
+    skills::gain(ctx,state.revision,if mining {45} else {44})?;
     ctx.db.gathering_event().insert(GatheringEvent {revision:state.revision,tool,bank:id,
         x,y,z,graphic,output,amount:2,remaining:remaining-2,at:now});
     ctx.db.inventory_state().id().update(state);
@@ -160,6 +161,7 @@ pub fn carve_shield(ctx: &ReducerContext, expected_inventory: u64, expected_avat
     ctx.db.inventory_item().insert(InventoryItem {serial:output,graphic:0x1b7a,amount:1,
         container:BACKPACK,x:90,y:100});
     state.revision += 1;
+    skills::gain(ctx,state.revision,11)?;
     ctx.db.crafting_event().insert(CraftingEvent {revision:state.revision,tool,ingredient,
         consumed:5,output,output_graphic:0x1b7a});
     ctx.db.inventory_state().id().update(state);
@@ -240,6 +242,7 @@ pub fn work_metal(ctx: &ReducerContext, expected_inventory: u64, expected_avatar
         ctx.db.inventory_item().insert(InventoryItem {serial:output,graphic,amount:produced,container:BACKPACK,x:85,y:100});
     }
     state.revision+=1;
+    skills::gain(ctx,state.revision,if tool==0 {45} else {7})?;
     ctx.db.metal_event().insert(MetalEvent {revision:state.revision,source,consumed,output,produced,graphic,
         forge_x:x,forge_y:y,forge_z:z});
     ctx.db.inventory_state().id().update(state);

@@ -15,6 +15,8 @@ struct ClientSmoke {
         var smelt=SmeltWorkflow()
         var smelted = !move
         var lastSystemMessage = ""
+        var skillState=SkillState()
+        var receivedSkills=false
         var inventoryStage = 0
         var daggerSerial: UInt32 = 0
         var existingShields = Set<UInt32>()
@@ -28,6 +30,9 @@ struct ClientSmoke {
         var expectedZ = 0
         var world = WorldState()
         let assets = try ClientAssets(directory: URL(fileURLWithPath: CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : "uo1998-client"))
+        for (id,name) in [(7,"Blacksmithy"),(11,"Carpentry"),(44,"Lumberjacking"),(45,"Mining")] {
+            guard assets.skills.contains(where:{$0.id==id && $0.name==name}) else { throw AssetError("Installed skill definition mismatch") }
+        }
         func returnDagger() throws {
             let packets = try world.movePackets(serial:daggerSerial,amount:1,player:1,x:65,y:65,target:0x40000100)
             transfer.begin(serial:daggerSerial,amount:1,destination:.container(0x40000100,x:65,y:65),world:world,time:0)
@@ -68,6 +73,12 @@ struct ClientSmoke {
                         case 0x1b:
                             result = try WorldEntry.decode(packet)
                             client.finishWorldEntryWait()
+                        case 0x3a:
+                            try skillState.apply(packet)
+                            guard Set(skillState.values.keys)==Set([7,11,44,45]),skillState.values.values.allSatisfy({(0...1000).contains($0)}) else {
+                                throw AssetError("Invalid skill values")
+                            }
+                            receivedSkills=true
                         case 0x11:
                             var status = CharacterStatus(serial: 1)
                             try status.apply(packet)
@@ -177,6 +188,7 @@ struct ClientSmoke {
                             guard world.items.values.contains(where: { $0.graphic == 0x9d0 && $0.amount == 2 }) else {
                                 throw NSError(domain: "persisted ground stack quantity missing", code: 1)
                             }
+                            client.send(SkillState.request(serial:1))
                             client.send(Data([0x06,0x40,0x00,0x01,0x00]))
                             if !move { ready = true; break }
                         case 0x22:
@@ -224,6 +236,9 @@ struct ClientSmoke {
         }
         if let failure { throw NSError(domain: failure, code: 1) }
         guard ready, inventoryReady, smelted, let result else { throw NSError(domain: "smoke timeout: inventory=\(inventoryStage), smelt=\(smelt.state), last=\(lastSystemMessage)", code: 1) }
+        guard receivedSkills,skillState.values==[7:1,11:2,44:6,45:7] else {
+            throw AssetError("Client skills did not persist or reflect completed actions: \(skillState.values)")
+        }
         return result
     }
 
@@ -265,6 +280,6 @@ struct ClientSmoke {
         guard moved.x == resumed.x, moved.y == resumed.y, moved.z == resumed.z, moved.direction == resumed.direction else {
             throw NSError(domain: "reconnect lost state", code: 1)
         }
-        print("PASS: real GameConnection, SmeltWorkflow at persistent forge, target/cancel, crafting and ingredient removal, crafted shield paperdoll/equipment, movement, reconnect")
+        print("PASS: real GameConnection, SmeltWorkflow at persistent forge, target/cancel, crafting and ingredient removal, crafted shield paperdoll/equipment, movement, skills, reconnect")
     }
 }
