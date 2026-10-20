@@ -12,6 +12,11 @@ import UOCore
     var onPlayerPosition:(()->WalkPoint?)?
     var onStart:((UInt32,WalkPoint)->Void)?
     var onStop:(()->Void)?
+    var onPick:(()->Void)?
+    var onClose:(()->Void)?
+    var selectedAnimal:UInt32? {
+        candidates.indices.contains(animals.indexOfSelectedItem) ? candidates[animals.indexOfSelectedItem].serial:nil
+    }
     var isWorking:(()->Bool)?
     init(assets:ClientAssets,position:WalkPoint) {
         self.assets=assets; animals=ClassicChoice(fonts:assets.fonts)
@@ -31,7 +36,8 @@ import UOCore
         x.nextKeyView=y; y.nextKeyView=z; z.nextKeyView=animals
         setDestination(position)
         for (title,selector,frame) in [
-            ("Send to my position",#selector(centerOnMe),NSRect(x:20,y:176,width:380,height:30)),
+            ("Send to my position",#selector(centerOnMe),NSRect(x:20,y:176,width:215,height:30)),
+            ("Pick on map",#selector(pickOnMap),NSRect(x:245,y:176,width:155,height:30)),
             ("Herd animal",#selector(startHerding),NSRect(x:20,y:220,width:245,height:32)),
             ("Stop",#selector(stopHerding),NSRect(x:275,y:220,width:125,height:32))] {
             let button=ClassicButton(title,fonts:assets.fonts,target:self,action:selector); button.frame=frame; addSubview(button)
@@ -63,7 +69,18 @@ import UOCore
         }
         onStart?(candidates[animals.indexOfSelectedItem].serial,.init(x:x,y:y,z:z))
     }
+    @objc func pickOnMap() {
+        guard isWorking?() != true else { showResult("Choose Stop before changing this order."); return }
+        guard selectedAnimal != nil else { showResult("Refresh and choose a visible animal first."); return }
+        onPick?()
+    }
+    func pickedDestination(_ point:WalkPoint?) {
+        isHidden=false
+        guard let point else { showResult("No nearby ground route was found for this animal. Choose another destination."); return }
+        setDestination(point)
+        showResult("Destination chosen. Choose Herd animal to begin.")
+    }
     @objc func stopHerding() { onStop?() }
     func showResult(_ text:String) { message.stringValue=text }
-    @objc func closePanel() { let parent=superview; let host=window; onStop?(); removeFromSuperview(); host?.makeFirstResponder(parent) }
+    @objc func closePanel() { let parent=superview; let host=window; onStop?(); onClose?(); removeFromSuperview(); host?.makeFirstResponder(parent) }
 }

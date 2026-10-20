@@ -75,7 +75,15 @@ import UOCore
         precondition(started==9 && point==destination)
         started=nil;panel.x.stringValue="-1";panel.startHerding();precondition(started==nil)
         panel.setDestination(destination);panel.isWorking={true};panel.startHerding();precondition(started==nil)
-        panel.isWorking={false};panel.showResult("The selected animal is no longer visible. Move closer, refresh the list, and choose a new animal before starting again.")
+        var picked=false,closed=false
+        panel.onPick={picked=true}; panel.onClose={closed=true}
+        panel.pickOnMap();precondition(!picked,"Cannot change destination during an active order")
+        panel.isWorking={false};panel.pickOnMap();precondition(picked)
+        panel.isHidden=true;panel.pickedDestination(.init(x:12,y:10,z:7))
+        precondition(!panel.isHidden && panel.z.stringValue=="7")
+        panel.pickedDestination(nil)
+        precondition(panel.x.stringValue=="12" && panel.z.stringValue=="7","Unreachable clicks preserve the previous destination")
+        panel.showResult("The selected animal is no longer visible. Move closer, refresh the list, and choose a new animal before starting again.")
         let window=NSWindow(contentRect:NSRect(x:0,y:0,width:420,height:400),styleMask:[.borderless],backing:.buffered,defer:false)
         window.contentView=panel;ClassicNativeFont.apply(to:panel);panel.layoutSubtreeIfNeeded()
         precondition(panel.x.font?.fontName=="UltimaXB-ClassicBitmap")
@@ -88,7 +96,7 @@ import UOCore
             let name=editing ? "herding-panel-editing":"herding-panel"
             try bitmap.representation(using:.png,properties:[:])!.write(to:URL(fileURLWithPath:"build/\(name).png"))
         }
-        panel.closePanel();precondition(stopped)
+        panel.closePanel();precondition(stopped && closed)
         print("Herding adapter handles both cursors, refusal, actual arrival, cancellation, ownership, and classic controls")
     }
 }

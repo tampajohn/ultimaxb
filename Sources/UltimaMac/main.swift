@@ -1367,6 +1367,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             login?.cancelRoute(); view?.followPlayer=true
             self?.approachHerd(animal:serial,destination:destination)
         }
+        panel.onPick={ [weak self,weak panel,weak view] in
+            guard let self,let panel,let view else { return }
+            if self.mapPanel?.superview == nil { self.toggleMap() }
+            guard let map=self.mapPanel else { return }
+            if map.onPickLocation != nil { map.onPickLocation=nil; map.onPickCancelled?() }
+            map.showWorld(); panel.isHidden=true
+            map.onPickCancelled={ [weak panel] in panel?.isHidden=false }
+            map.onPickLocation={ [weak self,weak panel,weak view] x,y in
+                guard let self,let panel,let view,panel.superview != nil else { return }
+                guard let serial=panel.selectedAnimal,let animal=view.mobiles.first(where:{$0.serial==serial}),
+                      max(abs(x-animal.x),abs(y-animal.y))<=24 else { panel.pickedDestination(nil); return }
+                let start=WalkPoint(x:animal.x,y:animal.y,z:animal.z)
+                guard let nav=try? NavigationMap(assets:self.assets,center:start,additional:view.groundItems,radius:24) else { panel.pickedDestination(nil); return }
+                let point=HerdingDestination.resolve(from:start,x:x,y:y) { nav.step(from:$0,direction:$1) }
+                panel.pickedDestination(point)
+            }
+        }
+        panel.onClose={ [weak self,weak panel] in
+            guard panel?.isHidden == true else { return }
+            self?.mapPanel?.onPickLocation=nil; self?.mapPanel?.onPickCancelled=nil
+        }
         login.onHarvestStatus={ [weak panel] in panel?.showResult($0) }
         panel.refreshAnimals(); view.addSubview(panel)
     }
@@ -1457,6 +1478,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     private func showTravel() {
         guard let view=worldView,let login=loginOverlay,view.player != nil else { return }
+        herdPanel?.closePanel(); herdPanel=nil
         travelPanel?.removeFromSuperview()
         let panel=TravelPanel(assets:assets,scope:login.assistantScope); travelPanel=panel
         panel.onGo = { [weak self,weak panel] x,y in

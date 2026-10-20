@@ -216,7 +216,10 @@ evidence of full automation parity.
 
 Herding now has a sidebar panel and client adapter around `HerdingAction`.
 Refresh the visible creature list, choose the animal by its displayed position,
-and enter a destination or use Send to my position. Herd approaches the animal
+and enter a destination, use Send to my position, or Pick on map. Map picks
+resolve a reachable height through the local collision graph within 24 tiles of
+the selected animal; blocked or out-of-range picks preserve the prior destination.
+This is a terrain preview, not a promise of server animal pathfinding. Herd approaches the animal
 with up to three replans if it moves, equips a known carried shepherd's crook,
 and handles the animal cursor followed by the destination cursor. Unknown
 backpack contents are requested before selecting a carried tool. Eligibility
@@ -227,8 +230,8 @@ is distinct from actual XYZ arrival, and missing responses/blocked animals time 
 
 The adapter and game-style controls are covered by offline packet/UI fixtures.
 Live UO1998 herding and approach behavior still need validation. This is one
-explicit animal/order at a time; repeated zone herding, richer animal labels and
-map-picked destinations remain unfinished. The bounded SpacetimeDB sandbox does
+explicit animal/order at a time; repeated zone herding and richer animal labels
+remain unfinished. The bounded SpacetimeDB sandbox does
 not yet implement herding and is not a behavioral oracle for this workflow.
 
 Ore hauling now has a locally tested single-stack state machine: confirmed drop at
