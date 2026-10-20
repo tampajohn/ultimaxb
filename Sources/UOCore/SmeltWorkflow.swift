@@ -1,6 +1,6 @@
 import Foundation
 
-/// One attempt per selected backpack pile, at an explicit live forge. The
+/// Confirmed ore combining and bounded smelting attempts at a live forge. The
 /// adapter exclusively owns the target stream and stops this workflow for any
 /// manual action, danger, disconnect or overlapping inventory transaction.
 public struct SmeltWorkflow {
@@ -8,6 +8,14 @@ public struct SmeltWorkflow {
     public private(set) var state:State = .idle
     public private(set) var successes=0
     public private(set) var skipped=0
+    public private(set) var losses=0
+    public private(set) var combined=0
+    public var combining:Bool { mergePair != nil }
+    private var prepare=true
+    private var mergePair:(ContainerItem,ContainerItem)?
+    private var mergeTargeted=false
+    private var mergeDeadline:TimeInterval=0
+    private var pileFailures=0
     private var piles:[ContainerItem]=[]
     private var index=0
     private var bag:UInt32=0
@@ -16,13 +24,13 @@ public struct SmeltWorkflow {
     private var outcome:SmeltOutcome?
     private var readyAt:TimeInterval=0
     public init() {}
-    public mutating func start(backpack:UInt32,forge:GroundItem,world:WorldState) throws {
+    public mutating func start(backpack:UInt32,forge:GroundItem,world:WorldState,combineOre:Bool = true) throws {
         guard state == .idle,backpack != 0,backpack != .max,
               forge.serial != 0,forge.serial != .max,SmeltOutcome.isForge(forge.graphic),
               world.items[forge.serial]==forge else { throw AssetError("Select a visible forge") }
         let candidates=world.containerItems.values.filter { $0.container==backpack && (0x19B7...0x19BA).contains($0.graphic) }.sorted { $0.serial<$1.serial }
         guard !candidates.isEmpty,candidates.count<=256 else { throw AssetError("Open a backpack containing ore first") }
-        bag=backpack; self.forge=forge; piles=candidates; state = .ready
+        bag=backpack; self.forge=forge; piles=candidates; prepare=combineOre; state = .ready
     }
     public mutating func stop(_ reason:AssistantAction.StopReason = .cancelled) {
         switch state {
@@ -51,6 +59,21 @@ public struct SmeltWorkflow {
             guard time>=readyAt else { return nil }
             state = .ready
         }
+        if prepare {
+            // Same art and hue means matching visible ore type. Different pile
+            // shapes are left separate: their hidden resource units differ.
+            for source in piles {
+                guard world.containerItems[source.serial]==source else { stop(.missingTool); return nil }
+                if let destination=piles.first(where:{$0.serial != source.serial && $0.graphic==source.graphic && $0.hue==source.hue && $0.amount+source.amount<=65535}) {
+                    mergePair=(source,destination); mergeTargeted=false; action=AssistantAction()
+                    do {
+                        let command=try action.start(tool:source.serial,targets:[.init(serial:destination.serial,x:destination.x,y:destination.y,z:0,graphic:destination.graphic)],at:time)
+                        state = .working; return command
+                    } catch { stop(.invalidSelection); return nil }
+                }
+            }
+            prepare=false
+        }
         guard index<piles.count else { state = .completed; return nil }
         // A changed/moved source is not a new pile to silently substitute.
         guard world.containerItems[piles[index].serial]==piles[index] else { stop(.missingTool); return nil }
@@ -67,6 +90,12 @@ public struct SmeltWorkflow {
             stop(.unexpectedTarget); return request.flags==3 ? nil:.cancelTarget(request)
         }
         let command=action.receive(request,at:time)
+        if let pair=mergePair {
+            guard world.containerItems[pair.0.serial]==pair.0,world.containerItems[pair.1.serial]==pair.1 else { stop(.missingTool); return .cancelTarget(request) }
+            if case .target=command { mergeTargeted=true; mergeDeadline=time+10 }
+            if case .stopped(let reason)=action.state { stop(reason) }
+            return command
+        }
         if case .target=command {
             guard world.containerItems[piles[index].serial]==piles[index],
                   let tracker=try? SmeltOutcome(ore:piles[index],backpack:bag,world:world,time:time) else {
@@ -78,14 +107,38 @@ public struct SmeltWorkflow {
         return command
     }
     public mutating func observe(speech:SpeechMessage?=nil,world:WorldState,time:TimeInterval) {
-        guard state == .working,var tracker=outcome else { return }
+        guard state == .working else { return }
+        if let pair=mergePair,mergeTargeted {
+            guard time.isFinite,time<mergeDeadline else { stop(.timeout); return }
+            let a=world.containerItems[pair.0.serial],b=world.containerItems[pair.1.serial]
+            let survivor=a ?? b,removed=a == nil ? pair.0.serial:pair.1.serial
+            if (a == nil || b == nil),let survivor,
+               world.items[removed]==nil,world.equipment[removed]==nil,
+               survivor.container==bag,survivor.graphic==pair.0.graphic,survivor.hue==pair.0.hue,
+               survivor.amount==pair.0.amount+pair.1.amount {
+                piles.removeAll { $0.serial==pair.0.serial || $0.serial==pair.1.serial }
+                piles.append(survivor); piles.sort { $0.serial<$1.serial }
+                mergePair=nil; mergeTargeted=false; combined += 1
+                readyAt=time+1; state = .coolingDown
+            }
+            return
+        }
+        guard var tracker=outcome else { return }
         let result=tracker.observe(speech:speech,world:world,time:time)
         outcome=tracker
         guard let result else { return }
         switch result {
-        case .success: successes += 1
-        case .insufficientOre: skipped += 1
-        case .lostMetal: stop(.noProgress); return
+        case .success: successes += 1; pileFailures=0
+        case .insufficientOre: skipped += 1; pileFailures=0
+        case .lostMetal:
+            losses += 1; pileFailures += 1
+            if let remaining=world.containerItems[piles[index].serial],
+               remaining.container==bag,remaining.hue==piles[index].hue,
+               (0x19B7...0x19BA).contains(remaining.graphic),remaining.amount>0,pileFailures<3 {
+                piles[index]=remaining; outcome=nil; readyAt=time+2; state = .coolingDown
+                return
+            }
+            skipped += 1; pileFailures=0
         case .refused: stop(.refused); return
         case .unreachable: stop(.unreachable); return
         }

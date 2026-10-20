@@ -134,6 +134,8 @@ import UOCore
         precondition(trips.count == 1,"Wait for authoritative ingots before returning")
         send(Data([0x25,0x40,0,0,6,0x1B,0xF2,0,0,4,0,0,0,0,0x40,0,0,2,0,0]))
         send(status); login.tickMovement()
+        precondition(trips.count == 1,"Allow the completed smelt action to settle before mining again")
+        now += 1.1; login.tickMovement()
         precondition(trips.count == 2 && trips[1].x == 10)
         arrival?(true); login.tickMovement()
         precondition(messages.last!.contains("Using tool"),"Return resumes the saved mining site")

@@ -207,6 +207,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         var zone:HarvestWorkflow.Zone,sites:[HarvestWorkflow.Site],anchor:WalkPoint
         let relocate:Bool
         var phase:Phase = .mining
+        var smeltReadyAt:TimeInterval?
         var visitedZones:Set<String>=[]
         var usedTargets:Set<String>=[]
         var zoneSites:[HarvestWorkflow.Site]
@@ -257,7 +258,14 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         if harvestPauseRequested || circuit.phase == .travelling { return }
         if circuit.phase == .smelting {
             guard !smeltActive else { return }
-            guard smelt?.state == .completed,(smelt?.successes ?? 0)>0 else { endMiningCircuit("Mining circuit stopped because smelting did not complete."); return }
+            guard smelt?.state == .completed,((smelt?.successes ?? 0)>0 || (smelt?.losses ?? 0)>0) else { endMiningCircuit("Mining circuit stopped because smelting did not complete."); return }
+            if circuit.smeltReadyAt == nil {
+                circuit.smeltReadyAt=harvestNow()+1
+                onHarvestStatus?("Smelting finished. Returning to the mining zone after the action cooldown.")
+                return
+            }
+            guard harvestNow() >= circuit.smeltReadyAt! else { return }
+            circuit.smeltReadyAt=nil
             miningTravel(circuit.anchor,adjacent:false) { [weak self] in self?.resumeCircuitMining() }
             return
         }
@@ -328,7 +336,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             Telemetry.shared.record("smelt_ore_used",["serial":serial])
         case .target(let request,let selection):
             if let packet=try? request.response(selection) { connection.send(packet) }
-            Telemetry.shared.record("smelt_forge_targeted",["serial":selection.serial])
+            Telemetry.shared.record(smelt?.combining == true ? "smelt_ore_combine_targeted":"smelt_forge_targeted",["serial":selection.serial])
         case .cancelTarget(let request):
             if let packet=try? request.response(nil) { connection.send(packet) }
         }
@@ -344,13 +352,13 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         switch smelt.state {
         case .idle: text="Smelting idle."
         case .ready,.coolingDown: text="Smelting: \(smelt.successes) piles processed. Waiting before the next pile."
-        case .working: text="Smelting ore; waiting for the server."
-        case .completed: text="Smelting finished: \(smelt.successes) successful piles, \(smelt.skipped) too small."
+        case .working: text=smelt.combining ? "Combining matching ore; waiting for inventory confirmation." : "Smelting ore; waiting for the server."
+        case .completed: text="Smelting finished: \(smelt.successes) successful, \(smelt.losses) failed attempts, \(smelt.skipped) skipped piles."
         case .stopped(.noProgress): text="Smelting stopped after metal loss. Improve Mining before trying again."
         case .stopped(let reason): text="Smelting stopped: \(reason)."
         }
         onHarvestStatus?(text)
-        Telemetry.shared.record("smelt_state",["state":String(describing:smelt.state),"successes":smelt.successes,"skipped":smelt.skipped])
+        Telemetry.shared.record("smelt_state",["state":String(describing:smelt.state),"successes":smelt.successes,"skipped":smelt.skipped,"losses":smelt.losses,"combined":smelt.combined])
     }
     private var harvest:HarvestWorkflow?
     private var harvestAfterEquip:(()->Void)?

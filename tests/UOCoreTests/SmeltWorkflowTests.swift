@@ -10,7 +10,7 @@ final class SmeltWorkflowTests:XCTestCase {
         try world.apply(item()); try world.apply(item(5))
         try world.apply(Data([0x1A,0,14,0x40,0,0,9,0x0F,0xB1,0,11,0,10,0]))
         var flow=SmeltWorkflow()
-        try flow.start(backpack:2,forge:world.items[0x40000009]!,world:world)
+        try flow.start(backpack:2,forge:world.items[0x40000009]!,world:world,combineOre:false)
         return (world,flow)
     }
     func cursor()throws->TargetRequest { try TargetRequest.decode(Data([0x6C,0,0,0,0,1,0])+Data(repeating:0,count:12)) }
@@ -33,14 +33,15 @@ final class SmeltWorkflowTests:XCTestCase {
         XCTAssertEqual(flow.state,.completed); XCTAssertEqual(flow.skipped,1)
         XCTAssertNil(flow.next(world:world,position:position,time:10))
     }
-    func testLossStopsRatherThanBurningTheRemainingOre()throws {
+    func testConfirmedLossRetriesRemainingOreAfterDelay()throws {
         var (world,flow)=try setup()
         _=flow.next(world:world,position:position,time:0)
         _=flow.receive(try cursor(),world:world,position:position,time:0.1)
         try world.apply(item(amount:2))
         flow.observe(speech:say("You burn away the impurities but are left with less useable metal."),world:world,time:1)
-        XCTAssertEqual(flow.state,.stopped(.noProgress))
+        XCTAssertEqual(flow.state,.coolingDown); XCTAssertEqual(flow.losses,1)
         XCTAssertNil(flow.next(world:world,position:position,time:2))
+        XCTAssertEqual(flow.next(world:world,position:position,time:3),.useItem(0x40000004))
     }
     func testSourceAndForgeMustStillMatchAndBeInReach()throws {
         var (world,flow)=try setup()
@@ -66,4 +67,55 @@ final class SmeltWorkflowTests:XCTestCase {
         XCTAssertEqual(flow.receive(try cursor(),world:world,position:position,time:1),.cancelTarget(try cursor()))
         XCTAssertNil(flow.next(world:world,position:position,time:20))
     }
+    func testCombineWaitsForBothInventoryUpdatesInEitherOrder()throws {
+        for removalFirst in [false,true] {
+            var (world,_)=try setup()
+            var flow=SmeltWorkflow()
+            try flow.start(backpack:2,forge:world.items[0x40000009]!,world:world)
+            XCTAssertEqual(flow.next(world:world,position:position,time:0),.useItem(0x40000004))
+            let request=try cursor()
+            XCTAssertEqual(flow.receive(request,world:world,position:position,time:0.1),
+                .target(request,.init(serial:0x40000005,x:0,y:0,z:0,graphic:0x19B9)))
+            let removed=Data([0x1D,0x40,0,0,4]),grown=item(5,amount:10)
+            try world.apply(removalFirst ? removed:grown)
+            flow.observe(world:world,time:0.2)
+            XCTAssertEqual(flow.state,.working)
+            try world.apply(removalFirst ? grown:removed)
+            flow.observe(world:world,time:0.3)
+            XCTAssertEqual(flow.combined,1)
+            XCTAssertNil(flow.next(world:world,position:position,time:1))
+            XCTAssertEqual(flow.next(world:world,position:position,time:1.4),.useItem(0x40000005))
+            XCTAssertFalse(flow.combining)
+            XCTAssertEqual(flow.receive(request,world:world,position:position,time:1.5),
+                .target(request,.init(serial:0x40000009,x:11,y:10,z:0,graphic:0xFB1)))
+        }
+    }
+    func testDifferentMetalDoesNotCombineAndMissingConfirmationStops()throws {
+        var (world,_)=try setup()
+        var colored=item(5); colored[colored.count-1]=1; try world.apply(colored)
+        var flow=SmeltWorkflow(); try flow.start(backpack:2,forge:world.items[0x40000009]!,world:world)
+        _=flow.next(world:world,position:position,time:0)
+        XCTAssertFalse(flow.combining)
+        (world,_)=try setup()
+        flow=SmeltWorkflow(); try flow.start(backpack:2,forge:world.items[0x40000009]!,world:world)
+        _=flow.next(world:world,position:position,time:0)
+        _=flow.receive(try cursor(),world:world,position:position,time:0.1)
+        try world.apply(item(5,amount:10))
+        _=flow.next(world:world,position:position,time:11)
+        XCTAssertEqual(flow.state,.stopped(.timeout))
+        XCTAssertEqual(flow.combined,0)
+    }
+    func testRepeatedConfirmedLossAdvancesAfterThreeAttempts()throws {
+        var (world,flow)=try setup()
+        for (attempt,amount) in [4,3,2].enumerated() {
+            let time=Double(attempt*4)
+            XCTAssertEqual(flow.next(world:world,position:position,time:time),.useItem(0x40000004))
+            _=flow.receive(try cursor(),world:world,position:position,time:time+0.1)
+            try world.apply(item(amount:UInt8(amount)))
+            flow.observe(speech:say("You burn away the impurities but are left with less useable metal."),world:world,time:time+0.2)
+        }
+        XCTAssertEqual(flow.losses,3); XCTAssertEqual(flow.skipped,1)
+        XCTAssertEqual(flow.next(world:world,position:position,time:12),.useItem(0x40000005))
+    }
+
 }
