@@ -4,7 +4,7 @@ import Foundation
 /// checked routes, authoritative positions, owned-tool checks and correlated
 /// results. This type never interprets arbitrary speech as harvesting success.
 public struct HarvestWorkflow {
-    public struct Zone:Equatable {
+    public struct Zone:Equatable, Sendable {
         public let minX:Int, minY:Int, maxX:Int, maxY:Int
         public init(x1:Int,y1:Int,x2:Int,y2:Int) throws {
             guard (0..<6144).contains(x1),(0..<6144).contains(x2),
@@ -14,7 +14,7 @@ public struct HarvestWorkflow {
         }
         public func contains(x:Int,y:Int)->Bool { (minX...maxX).contains(x) && (minY...maxY).contains(y) }
     }
-    public struct Site:Equatable {
+    public struct Site:Equatable, Sendable {
         public let target:TargetSelection
         public let standing:WalkPoint
         public init(target:TargetSelection,standing:WalkPoint) { self.target=target; self.standing=standing }
@@ -30,6 +30,9 @@ public struct HarvestWorkflow {
     private var zone:Zone?
     private var sites:[Site]=[]
     private var index=0
+    private var selectNearest=true
+    public var remainingSites:[Site] { index<sites.count ? Array(sites[index...]) : [] }
+    public var workZone:Zone? { zone }
     private var tool:UInt32=0
     private var limit=0
     private var emptyAttempts=0
@@ -70,7 +73,7 @@ public struct HarvestWorkflow {
     /// A confirmed unusable site or failed approach does not revoke the zone.
     public mutating func skipCurrentSite(time:TimeInterval) {
         guard state == .travelling || state == .working || state == .ready else { return }
-        action.stop(.unreachable); emptyAttempts=0; index += 1
+        action.stop(.unreachable); emptyAttempts=0; index += 1; selectNearest=true
         if index>=sites.count { state = .completed; currentSite=nil; return }
         currentSite=sites[index]; readyAt=time+1
         state = pauseRequested ? .paused : .coolingDown
@@ -99,6 +102,32 @@ public struct HarvestWorkflow {
             state = .ready
         }
         guard state == .ready else { return nil }
+        var chosenRoute:[WalkPoint]?
+        if selectNearest,index<sites.count {
+            // Chebyshev distance is a lower bound for 8-way walking. Evaluate
+            // shortest lower bounds first, then prune candidates that cannot
+            // improve the best actual collision-checked route.
+            func distance(_ point:WalkPoint)->Int { max(abs(position.x-point.x),abs(position.y-point.y)) }
+            let candidates=(index..<sites.count).sorted {
+                let a=distance(sites[$0].standing),b=distance(sites[$1].standing)
+                return a == b ? $0<$1 : a<b
+            }
+            var best:Int?,bestCost=Int.max
+            for candidate in candidates {
+                let goal=sites[candidate].standing
+                if distance(goal)>=bestCost { break }
+                let path=position==goal ? [] : route(position,goal)
+                guard let path,path.count<=512,(path.last ?? position)==goal else { continue }
+                var previous=position
+                guard path.allSatisfy({ next in
+                    defer { previous=next }
+                    return zone.contains(x:next.x,y:next.y) && max(abs(next.x-previous.x),abs(next.y-previous.y))==1
+                }) else { continue }
+                if path.count<bestCost { best=candidate; bestCost=path.count; chosenRoute=path }
+            }
+            guard let best else { currentSite=nil; stop(.unreachable); return nil }
+            sites.swapAt(index,best); selectNearest=false
+        }
         while index<sites.count {
             let site=sites[index]; currentSite=site
             if position==site.standing {
@@ -108,7 +137,7 @@ public struct HarvestWorkflow {
                     state = .working; return .tool(command)
                 } catch { stop(.invalidSelection); return nil }
             }
-            if let steps=route(position,site.standing),!steps.isEmpty,steps.count<=512,steps.last==site.standing {
+            if let steps=chosenRoute ?? route(position,site.standing),!steps.isEmpty,steps.count<=512,steps.last==site.standing {
                 var previous=position
                 let valid=steps.allSatisfy { step in
                     defer { previous=step }
@@ -153,7 +182,7 @@ public struct HarvestWorkflow {
         case .stopped(.unreachable):
             skipCurrentSite(time:time); return
         case .stopped(.depleted):
-            emptyAttempts=0; index += 1
+            emptyAttempts=0; index += 1; selectNearest=true
             if index>=sites.count { state = .completed; currentSite=nil; return }
             currentSite=sites[index]
         case .stopped(let reason): stop(reason); return

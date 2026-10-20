@@ -1189,6 +1189,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let view = self?.worldView else { return }
                 self?.tickSpawnMusic()
                 panel?.tickMovement(allowRoute:view.window?.isKeyWindow == true && view.window?.firstResponder === view && !view.chatting)
+                self?.tickMiningNavigation()
             }
             worldView?.onMove = { [weak self, weak panel] direction in
                 if let view = self?.worldView, !view.followPlayer, let player = view.player {
@@ -1210,12 +1211,102 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let worldView { loginOverlay?.show(in: worldView) }
     }
+    private var miningArrival:(generation:Int,point:WalkPoint,completion:(Bool)->Void)?
+    private var miningNavigationTask:Task<Void,Never>?
+    private func tickMiningNavigation() {
+        guard let arrival=miningArrival,let login=loginOverlay,let player=worldView?.player else { return }
+        if login.navigationGeneration != arrival.generation {
+            miningArrival=nil; arrival.completion(false); return
+        }
+        guard !login.navigationBusy else { return }
+        miningArrival=nil
+        arrival.completion(player.x==arrival.point.x && player.y==arrival.point.y && abs(player.z-arrival.point.z)<=16)
+    }
+    private func miningNavigate(to destination:WalkPoint,adjacent:Bool,completion:@escaping(Bool)->Void) {
+        guard let login=loginOverlay,let player=worldView?.player else { completion(false); return }
+        let start=WalkPoint(x:player.x,y:player.y,z:player.z),generation=login.navigationGeneration
+        let directory=URL(fileURLWithPath:options.client)
+        miningNavigationTask?.cancel()
+        let worker=Task.detached(priority:.userInitiated) { ()->[WalkPoint]? in
+            guard let assets=try? ClientAssets(directory:directory) else { return nil }
+            return try? WorldTravelPlanner(assets:assets).find(from:start,x:destination.x,y:destination.y,adjacent:adjacent,cancelled:{Task.isCancelled})
+        }
+        miningNavigationTask=Task { [weak self,weak login] in
+            let route=await withTaskCancellationHandler(operation:{ await worker.value },onCancel:{ worker.cancel() })
+            guard let self,let login,!Task.isCancelled,login.navigationGeneration==generation,
+                  let view=self.worldView,let current=view.player,current.serial==player.serial,
+                  current.x==start.x,current.y==start.y,current.z==start.z,let route else { completion(false); return }
+            let endpoint=route.last ?? start
+            if route.isEmpty { completion(true); return }
+            guard self.beginWorldTravel(route,start:start,x:endpoint.x,y:endpoint.y,panel:login,view:view) else { completion(false); return }
+            self.miningArrival=(login.navigationGeneration,endpoint,completion)
+        }
+    }
+    private func miningRelocate(zone:HarvestWorkflow.Zone,visited:Set<String>,used:Set<String>,completion:@escaping(HarvestWorkflow.Zone,[HarvestWorkflow.Site])->Void) {
+        guard let login=loginOverlay,let player=worldView?.player,visited.count<16 else { completion(zone,[]); return }
+        let start=WalkPoint(x:player.x,y:player.y,z:player.z),generation=login.navigationGeneration
+        let directory=URL(fileURLWithPath:options.client)
+        let worker=Task.detached(priority:.userInitiated) { ()->(HarvestWorkflow.Zone,[HarvestWorkflow.Site],WalkPoint)? in
+            guard let assets=try? ClientAssets(directory:directory) else { return nil }
+            let radius=(zone.maxX-zone.minX)/2,cx=(zone.minX+zone.maxX)/2,cy=(zone.minY+zone.maxY)/2
+            let stride=max(2,radius)
+            for (dx,dy) in [(1,0),(-1,0),(0,1),(0,-1),(1,1),(-1,1),(1,-1),(-1,-1)] {
+                if Task.isCancelled { return nil }
+                guard let candidate=try? HarvestWorkflow.Zone(x1:cx+dx*stride-radius,y1:cy+dy*stride-radius,x2:cx+dx*stride+radius,y2:cy+dy*stride+radius),
+                      !visited.contains("\(candidate.minX),\(candidate.minY)"),
+                      let nav=try? NavigationMap(assets:assets,center:.init(x:cx+dx*stride,y:cy+dy*stride,z:start.z),additional:[],radius:radius) else { continue }
+                var entries:[WalkPoint]=[]
+                for x in candidate.minX...candidate.maxX { for y in candidate.minY...candidate.maxY {
+                    if let point=nav.standingPoint(x:x,y:y,fromZ:start.z) { entries.append(point) }
+                } }
+                entries.sort { max(abs($0.x-start.x),abs($0.y-start.y)) < max(abs($1.x-start.x),abs($1.y-start.y)) }
+                for entry in entries.prefix(3) {
+                    guard let route=try? WorldTravelPlanner(assets:assets).find(from:start,x:entry.x,y:entry.y,cancelled:{Task.isCancelled}),
+                          let plan=try? HarvestSitePlanner.discover(assets:assets,zone:candidate,kind:.mining,start:route.last ?? start) else { continue }
+                    let fresh=plan.sites.filter { !used.contains("\($0.target.x),\($0.target.y),\($0.target.z),\($0.target.graphic)") }
+                    if !fresh.isEmpty { return (candidate,fresh,route.last ?? start) }
+                }
+            }
+            return nil
+        }
+        miningNavigationTask=Task { [weak self,weak login] in
+            let result=await withTaskCancellationHandler(operation:{ await worker.value },onCancel:{ worker.cancel() })
+            guard let self,let login,!Task.isCancelled,login.navigationGeneration==generation,
+                  let (newZone,sites,entry)=result else { completion(zone,[]); return }
+            self.miningNavigate(to:entry,adjacent:false) { [weak self] arrived in
+                if arrived { self?.harvestPanel?.showWorkZone(newZone); self?.worldView?.harvestSites=sites; self?.worldView?.harvestBoundary=[] }
+                completion(newZone,arrived ? sites:[])
+            }
+        }
+    }
+    private func rememberedMiningForge()->WalkPoint? {
+        guard let login=loginOverlay else { return nil }
+        let defaults=UserDefaults(suiteName:"com.ultimaxb.UltimaMac")!
+        guard let point=defaults.array(forKey:"mining.forge."+login.assistantScope) as? [Int],point.count==3 else { return nil }
+        return WalkPoint(x:point[0],y:point[1],z:point[2])
+    }
+    @discardableResult private func rememberMiningForge()->WalkPoint? {
+        guard let login=loginOverlay,let player=worldView?.player,
+              let forge=login.routeItems.filter({SmeltOutcome.isForge($0.graphic)}).min(by:{max(abs($0.x-player.x),abs($0.y-player.y))<max(abs($1.x-player.x),abs($1.y-player.y))}) else { return nil }
+        UserDefaults(suiteName:"com.ultimaxb.UltimaMac")!.set([forge.x,forge.y,forge.z],forKey:"mining.forge."+login.assistantScope)
+        return WalkPoint(x:forge.x,y:forge.y,z:forge.z)
+    }
     private func showHarvest() {
         guard let view=worldView,let login=loginOverlay,let player=view.player else { return }
         harvestPanel?.closePanel()
         let panel=HarvestPanel(assets:assets,scope:login.assistantScope,position:.init(x:player.x,y:player.y,z:player.z)); harvestPanel=panel
         panel.onPlayerPosition={ [weak view] in view?.player.map { WalkPoint(x:$0.x,y:$0.y,z:$0.z) } }
         panel.onStop={ [weak login] in login?.stopHarvest() }
+        panel.onRememberForge={ [weak self,weak panel] in
+            if let point=self?.rememberMiningForge() { panel?.showResult("Forge remembered at \(point.x), \(point.y). Mining can return here to smelt.") }
+            else { panel?.showResult("Visit a smithy so its forge is visible, then remember it.") }
+        }
+        login.onMiningTravel={ [weak self] point,adjacent,done in self?.miningNavigate(to:point,adjacent:adjacent,completion:done) }
+        login.onMiningRelocate={ [weak self] zone,visited,used,done in self?.miningRelocate(zone:zone,visited:visited,used:used,completion:done) }
+        login.miningRoute={ [weak self,weak view] zone,start,goal in
+            guard let self,let view else { return nil }
+            return HarvestSitePlanner.route(assets:self.assets,zone:zone,from:start,to:goal,additional:view.groundItems)
+        }
         panel.onSmelt={ [weak self,weak login,weak panel,weak view] in
             guard let self,let login,let view,let player=view.player else { return }
             let start=WalkPoint(x:player.x,y:player.y,z:player.z)
@@ -1236,7 +1327,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             panel?.showResult("No reachable visible forge nearby. Move closer to a smithy, then try again.")
         }
-        panel.isHarvesting={ [weak login] in login?.harvestActive ?? false }
+        panel.isHarvesting={ [weak login] in login?.harvestingSessionActive ?? false }
         login.onHarvestStatus={ [weak panel] text in panel?.showResult(text) }
         panel.onStart={ [weak self,weak view,weak login,weak panel] zone,kind in
             guard let self,let view,let login,let player=view.player,
@@ -1245,10 +1336,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let plan=try HarvestSitePlanner.discover(assets:self.assets,zone:zone,kind:kind,
                     start:.init(x:player.x,y:player.y,z:player.z),additional:view.groundItems)
                 guard !plan.sites.isEmpty else { panel?.showResult("No reachable harvest sites in this zone."); return }
-                _=login.startHarvest(zone:zone,sites:plan.sites,kind:kind) { [weak self,weak view] start,goal in
+                let forge=(kind == .mining && panel?.loopEnabled == true) ? (self.rememberMiningForge() ?? self.rememberedMiningForge()) : nil
+                if kind == .mining,panel?.loopEnabled == true,forge==nil { panel?.showResult("Remember a visible forge first, or switch Forge round trips off to mine only."); return }
+                let started=login.startHarvest(zone:zone,sites:plan.sites,kind:kind) { [weak self,weak view] start,goal in
                     guard let self,let view else { return nil }
                     return HarvestSitePlanner.route(assets:self.assets,zone:zone,from:start,to:goal,additional:view.groundItems)
                 }
+                if started,let forge { login.enableMiningCircuit(forge:forge,zone:zone,sites:plan.sites,relocate:panel?.relocateEnabled ?? false) }
             } catch { panel?.showResult("Could not prepare the harvest zone.") }
         }
         panel.onClear={ [weak view] in view?.harvestBoundary=[]; view?.harvestSites=[]; view?.needsDisplay=true }

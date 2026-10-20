@@ -44,7 +44,7 @@ import UOCore
         panel.isHarvesting={false}; panel.smeltOre(); precondition(smelted)
         panel.stopHarvesting(); precondition(stopped)
         panel.showResult("23 reachable work sites. Gold lines mark the zone; dots mark targets. Start runs up to 100 successes; Stop cancels.")
-        let window=NSWindow(contentRect:NSRect(x:0,y:0,width:420,height:480),styleMask:[.borderless],backing:.buffered,defer:false)
+        let window=NSWindow(contentRect:NSRect(x:0,y:0,width:420,height:600),styleMask:[.borderless],backing:.buffered,defer:false)
         window.contentView=panel; ClassicNativeFont.apply(to:panel); panel.layoutSubtreeIfNeeded()
         precondition(panel.x.font?.fontName == "UltimaXB-ClassicBitmap")
         precondition(panel.x.nextKeyView === panel.y && panel.y.nextKeyView === panel.radius)

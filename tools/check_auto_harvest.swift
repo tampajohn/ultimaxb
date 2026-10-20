@@ -100,6 +100,45 @@ import UOCore
         precondition(login.harvestActive)
         login.stopHarvest(); login.tickMovement()
         precondition(!login.harvestActive && messages.last!.contains("approach cancelled"))
+
+        now += 10.1
+        // A lost held pickaxe is replaced only after the server confirms equipping.
+        send(Data([0x25,0x40,0,0,7,0x0E,0x85,0,0,1,0,0,0,0,0x40,0,0,2,0,0]))
+        precondition(login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}))
+        login.enableMiningCircuit(forge:.init(x:11,y:10,z:0),zone:zone,sites:[site],relocate:false)
+        send(Data([0x1D,0x40,0,0,3]))
+        login.tickMovement(); login.tickMovement()
+        precondition(messages.last!.contains("Equipping") && login.harvestingSessionActive)
+        send(Data([0x2E,0x40,0,0,7,0x0E,0x85,0,2,0,0,0,1,0,0]))
+        login.tickMovement()
+        precondition(messages.last!.contains("Using tool") && login.harvestingSessionActive)
+        target(30); speech("There is no metal here to mine.")
+        login.tickMovement()
+        precondition(messages.last!.contains("Work zone finished"),"Replacement must preserve the circuit")
+        precondition(!login.harvestingSessionActive)
+
+        var trips:[WalkPoint]=[]
+        var arrival:((Bool)->Void)?
+        login.onMiningTravel={ point,_,done in trips.append(point); arrival=done }
+        login.miningRoute={_,_,_ in []}
+        precondition(login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}))
+        login.enableMiningCircuit(forge:.init(x:11,y:10,z:0),zone:zone,sites:[site],relocate:false)
+        var heavy=status; heavy[64]=0; heavy[65]=140
+        send(heavy); login.tickMovement()
+        precondition(trips.count == 1 && trips[0].x == 11 && login.harvestingSessionActive)
+        arrival?(true); login.tickMovement()
+        precondition(messages.last!.contains("Smelting ore"))
+        target(31)
+        speech("You smelt the ore removing the impurities and put the metal in your backpack.")
+        login.tickMovement()
+        precondition(trips.count == 1,"Wait for authoritative ingots before returning")
+        send(Data([0x25,0x40,0,0,6,0x1B,0xF2,0,0,4,0,0,0,0,0x40,0,0,2,0,0]))
+        send(status); login.tickMovement()
+        precondition(trips.count == 2 && trips[1].x == 10)
+        arrival?(true); login.tickMovement()
+        precondition(messages.last!.contains("Using tool"),"Return resumes the saved mining site")
+        login.stopHarvest()
+        precondition(!login.harvestingSessionActive)
         print("Harvest adapter confirms resources, advances depleted sites, cancels late cursors and stops for manual actions/danger")
     }
 }

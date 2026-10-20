@@ -1,6 +1,6 @@
 import Foundation
 
-public struct TargetSelection: Equatable {
+public struct TargetSelection: Equatable, Sendable {
     public let serial: UInt32
     public let x: Int, y: Int, z: Int, graphic: Int
     public init(serial: UInt32 = 0, x: Int, y: Int, z: Int, graphic: Int) {

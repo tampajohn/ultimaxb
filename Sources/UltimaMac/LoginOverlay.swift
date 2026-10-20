@@ -8,6 +8,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     private let loginDefaults:UserDefaults
     private let localLoginButton:ClassicButton
     private let primaryLoginButton:ClassicButton
+    private let spacetimeLoginButton:ClassicButton
     private let characterSelection: CharacterSelectionPanel
     private let characterCreation: CharacterCreationPanel
     private let card:NSView = FlippedLoginControls()
@@ -101,6 +102,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     var predictedElevation: ((Int, Int, Int) -> Int)?
     var onWalkRoute: (([WalkPoint])->Void)?
     private var walkRoute:[WalkPoint]?
+    private(set) var navigationGeneration=0
+    var navigationBusy:Bool { walkRoute != nil || movement.pendingCount>0 || movement.awaitingPosition }
     enum ArrivalAction {
         case use(UInt32), pickup(UInt32, Int), attack(UInt32), smelt(UInt32)
         case toolTarget(TargetRequest,TargetSelection,UInt32)
@@ -166,7 +169,8 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         }
     }
     func cancelRoute(preservingHarvest:Bool = false) {
-        if !preservingHarvest && harvestActive { stopHarvest(); return }
+        navigationGeneration += 1
+        if !preservingHarvest && (harvestActive || (!miningInternal && miningCircuit != nil)) { stopHarvest(); return }
         dropGatheredDuringTravel=false; bankGatheredOnArrival=false; bankingRequested=false
         bankingCancelled=true
         onRouteCancelled?()
@@ -197,6 +201,98 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     var harvestNow:()->TimeInterval = { ProcessInfo.processInfo.systemUptime }
     private var harvestRestartAfter:TimeInterval=0
     private var harvestKnownContents=Set<UInt32>()
+    private final class MiningCircuit {
+        enum Phase { case mining, travelling, smelting }
+        let id=UUID(),forge:WalkPoint
+        var zone:HarvestWorkflow.Zone,sites:[HarvestWorkflow.Site],anchor:WalkPoint
+        let relocate:Bool
+        var phase:Phase = .mining
+        var visitedZones:Set<String>=[]
+        var usedTargets:Set<String>=[]
+        var zoneSites:[HarvestWorkflow.Site]
+        init(forge:WalkPoint,zone:HarvestWorkflow.Zone,sites:[HarvestWorkflow.Site],anchor:WalkPoint,relocate:Bool) {
+            self.zoneSites=sites; self.forge=forge; self.zone=zone; self.sites=sites; self.anchor=anchor; self.relocate=relocate
+            visitedZones.insert("\(zone.minX),\(zone.minY)")
+        }
+    }
+    private var miningCircuit:MiningCircuit?
+    private var miningInternal=false
+    var harvestingSessionActive:Bool { harvestActive || miningCircuit != nil }
+    var onMiningTravel:((WalkPoint,Bool,@escaping (Bool)->Void)->Void)?
+    var onMiningRelocate:((HarvestWorkflow.Zone,Set<String>,Set<String>,@escaping (HarvestWorkflow.Zone,[HarvestWorkflow.Site]) -> Void)->Void)?
+    var miningRoute:((HarvestWorkflow.Zone,WalkPoint,WalkPoint)->[WalkPoint]?)?
+    func enableMiningCircuit(forge:WalkPoint,zone:HarvestWorkflow.Zone,sites:[HarvestWorkflow.Site],relocate:Bool) {
+        guard let playerSerial,let player=world.mobiles[playerSerial] else {
+            onHarvestStatus?("Start mining before enabling the forge circuit."); return
+        }
+        miningCircuit=MiningCircuit(forge:forge,zone:zone,sites:sites,anchor:.init(x:player.x,y:player.y,z:player.z),relocate:relocate)
+    }
+    private func endMiningCircuit(_ message:String) {
+        miningCircuit=nil; stopHarvest(); cancelRoute(preservingHarvest:true); onHarvestStatus?(message)
+        Telemetry.shared.record("mining_circuit_stopped")
+    }
+    private func miningTravel(_ destination:WalkPoint,adjacent:Bool,arrived:@escaping ()->Void) {
+        guard let circuit=miningCircuit,let travel=onMiningTravel else { endMiningCircuit("Mining circuit cannot plan this trip."); return }
+        circuit.phase = .travelling
+        onHarvestStatus?("Mining circuit: travelling to \(destination.x), \(destination.y).")
+        Telemetry.shared.record("mining_circuit_travel",["x":destination.x,"y":destination.y,"forge":adjacent])
+        travel(destination,adjacent) { [weak self,weak circuit] success in
+            guard let self,let circuit,self.miningCircuit === circuit else { return }
+            guard success else { self.endMiningCircuit("Mining circuit stopped: no usable route. Your remaining work is unchanged."); return }
+            self.miningInternal=true; defer { self.miningInternal=false }
+            arrived()
+        }
+    }
+    private func resumeCircuitMining() {
+        guard let circuit=miningCircuit,let planner=miningRoute else { return }
+        circuit.phase = .mining
+        miningInternal=true; defer { miningInternal=false }
+        guard startHarvest(zone:circuit.zone,sites:circuit.sites,kind:.mining,route:{ planner(circuit.zone,$0,$1) }) else {
+            endMiningCircuit("Unable to resume mining. Check the tool, backpack and carrying weight."); return
+        }
+    }
+    private func tickMiningCircuit() {
+        guard let circuit=miningCircuit else { return }
+        guard loginComplete,let serial=playerSerial,let player=world.mobiles[serial],!player.isGhost,trade == nil else { endMiningCircuit("Mining circuit stopped for your current state."); return }
+        if circuit.phase == .travelling { return }
+        if circuit.phase == .smelting {
+            guard !smeltActive else { return }
+            guard smelt?.state == .completed,(smelt?.successes ?? 0)>0 else { endMiningCircuit("Mining circuit stopped because smelting did not complete."); return }
+            miningTravel(circuit.anchor,adjacent:false) { [weak self] in self?.resumeCircuitMining() }
+            return
+        }
+        guard harvestReplacement==nil,harvestAfterEquip==nil,let harvest else { return }
+        switch harvest.state {
+        case .stopped(.overweight):
+            guard let playerSerial,let player=world.mobiles[playerSerial],
+                  let bag=world.equipment.values.first(where:{$0.owner==playerSerial && $0.layer==21}),
+                  world.containerItems.values.contains(where:{$0.container==bag.serial && (0x19B7...0x19BA).contains($0.graphic)}) else {
+                endMiningCircuit("No backpack ore to smelt. Bank carried goods before mining again."); return
+            }
+            circuit.sites=harvest.remainingSites; circuit.anchor = .init(x:player.x,y:player.y,z:player.z)
+            miningTravel(circuit.forge,adjacent:true) { [weak self,weak circuit] in
+                guard let self,let circuit,let forge=self.world.items.values.first(where:{SmeltOutcome.isForge($0.graphic) && $0.x==circuit.forge.x && $0.y==circuit.forge.y}) else {
+                    self?.endMiningCircuit("The remembered forge is no longer visible here."); return
+                }
+                circuit.phase = .smelting
+                if !self.startSmelting(forge:forge.serial) { self.endMiningCircuit("Could not begin smelting at the remembered forge.") }
+            }
+        case .completed where harvest.currentSite != nil:
+            circuit.sites=harvest.remainingSites; resumeCircuitMining()
+        case .completed,.stopped(.unreachable):
+            guard circuit.relocate,let relocate=onMiningRelocate else { endMiningCircuit("Work zone finished. Choose another zone to continue."); return }
+            for site in circuit.zoneSites { circuit.usedTargets.insert("\(site.target.x),\(site.target.y),\(site.target.z),\(site.target.graphic)") }
+            circuit.phase = .travelling
+            relocate(circuit.zone,circuit.visitedZones,circuit.usedTargets) { [weak self,weak circuit] zone,sites in
+                guard let self,let circuit,self.miningCircuit === circuit else { return }
+                guard !sites.isEmpty else { self.endMiningCircuit("No reachable fresh mining zone was found nearby."); return }
+                circuit.zone=zone; circuit.sites=sites; circuit.zoneSites=sites; circuit.visitedZones.insert("\(zone.minX),\(zone.minY)")
+                self.resumeCircuitMining()
+            }
+        case .stopped: endMiningCircuit("Mining circuit stopped. Check the last tool or server response before restarting.")
+        default: break
+        }
+    }
     private var smelt:SmeltWorkflow?
     private var smeltLastState:SmeltWorkflow.State?
     private var smeltActive:Bool {
@@ -258,6 +354,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     }
     private var harvest:HarvestWorkflow?
     private var harvestAfterEquip:(()->Void)?
+    private var harvestReplacement:(at:TimeInterval,resume:()->Void)?
     private var harvestOutcome:HarvestOutcome?
     private var harvestKind:HarvestOutcome.Kind = .mining
     private var harvestTool:UInt32=0
@@ -268,7 +365,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     var harvestActive:Bool {
         if smeltActive { return true }
         if case .smelt = routeAction { return true }
-        if harvestAfterEquip != nil { return true }
+        if harvestAfterEquip != nil || harvestReplacement != nil { return true }
         guard let harvest else { return false }
         switch harvest.state { case .idle,.completed,.stopped: return false; default: return true }
     }
@@ -303,7 +400,9 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             equipItem(serial:carried,layer:layer)
             guard manualTransfer.serial == carried else { return false }
             harvestAfterEquip={ [weak self] in
-                _=self?.startHarvest(zone:zone,sites:sites,kind:kind,route:route)
+                guard let self else { return }
+                self.miningInternal=true; defer { self.miningInternal=false }
+                _=self.startHarvest(zone:zone,sites:sites,kind:kind,route:route)
             }
             onHarvestStatus?("Equipping the harvesting tool; waiting for the server.")
             Telemetry.shared.record("harvest_equipping",["serial":carried,"layer":layer])
@@ -325,7 +424,11 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         return true
     }
     func stopHarvest() {
+        if !miningInternal,miningCircuit != nil { miningCircuit=nil; cancelRoute(preservingHarvest:true) }
         guard harvestActive else { return }
+        if harvestReplacement != nil {
+            harvestReplacement=nil; onHarvestStatus?("Tool replacement cancelled."); return
+        }
         if case .smelt = routeAction {
             cancelRoute(preservingHarvest:true)
             onHarvestStatus?("Forge approach cancelled."); return
@@ -439,6 +542,10 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             world.mobiles.values.contains(where:{$0.serial != playerSerial && $0.isEnemy && max(abs($0.x-player.x),abs($0.y-player.y))<=6}) {
             stopHarvest(); onHarvestStatus?("Harvesting stopped: danger or another interaction nearby."); return
         }
+        if let replacement=harvestReplacement {
+            guard harvestNow()>=replacement.at else { return }
+            harvestReplacement=nil; replacement.resume(); return
+        }
         if smeltActive {
             guard movement.pendingCount==0,!movement.awaitingPosition else { return }
             if let command=smelt?.next(world:world,position:.init(x:player.x,y:player.y,z:player.z),time:harvestNow()) { smeltCommand(command) }
@@ -461,7 +568,22 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         }
         if let command { harvestCommand(command) }
         publishHarvestStatus()
-        if !harvestActive { harvestOutcome=nil; harvestRoute=nil; cancelRoute() }
+        if harvest?.state == .stopped(.missingTool),let zone=harvest?.workZone,
+           let sites=harvest?.remainingSites,!sites.isEmpty,let route=harvestRoute {
+            let kind=harvestKind
+            let delay:TimeInterval=previousHarvestState == .working ? 10:0
+            harvestRestartAfter=max(harvestRestartAfter,harvestNow()+delay)
+            harvestCursorUntil=harvestNow()+delay
+            harvestOutcome=nil; harvestRoute=nil; cancelRoute(preservingHarvest:true)
+            harvestReplacement=(harvestNow()+delay,{ [weak self] in
+                guard let self else { return }
+                self.miningInternal=true; defer { self.miningInternal=false }
+                _=self.startHarvest(zone:zone,sites:sites,kind:kind,route:route)
+            })
+            onHarvestStatus?("Tool is no longer available. Checking the backpack for a spare before continuing.")
+            return
+        }
+        if !harvestActive { harvestOutcome=nil; harvestRoute=nil; cancelRoute(preservingHarvest:true) }
     }
     private var banking:GatheredBanking?
     private var bankingCancelled=false
@@ -640,7 +762,9 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             Telemetry.shared.record("movement_position_sync_timeout")
         } else if !movement.positionSyncTimedOut { reportedMovementSyncTimeout=false }
         tickHarvest()
-        if !harvestActive { tickAutoPickup(allowed:allowRoute || walkRoute != nil) }
+        tickMiningCircuit()
+        if miningCircuit?.phase == .travelling && walkRoute == nil { return }
+        if !harvestActive && miningCircuit==nil { tickAutoPickup(allowed:allowRoute || walkRoute != nil) }
         if tickGatheredRecovery() { return }
         if tickGatheredBanking() { return }
         // Opportunistic lifts do not stop escape/travel while inventory replies
@@ -720,7 +844,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                     return
                 }
             }
-            if routeContinues,routeAction == nil,detourItem == nil,
+            if miningCircuit == nil,routeContinues,routeAction == nil,detourItem == nil,
                autoPickup.pending == nil,!inventoryRecoveryBusy,manualTransfer.serial == nil,
                trade == nil,targetRequest == nil,combatTarget.serial == nil,
                routeNow >= nextDetourAt,routeNow-manualInventoryAt>2,
@@ -1243,6 +1367,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             action.needsDisplay = true
             localLoginButton.isEnabled = phase == .login
             primaryLoginButton.isEnabled = phase == .login
+            spacetimeLoginButton.isEnabled = phase == .login
         }
     }
     var onWorldEntry: ((WorldEntry) -> Void)?
@@ -1256,6 +1381,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         choices=ClassicChoice(fonts:assets.fonts); cityChoice=ClassicChoice(fonts:assets.fonts)
         settings=ClassicPanel(assets:assets)
         localLoginButton=ClassicButton("Local Test Center",fonts:assets.fonts,target:nil,action:nil)
+        spacetimeLoginButton=ClassicButton("Local SpacetimeDB",fonts:assets.fonts,target:nil,action:nil)
         primaryLoginButton=ClassicButton("Saved Server",fonts:assets.fonts,target:nil,action:nil)
         bankStackable = { (try? assets.isStackable(graphic:$0)) == true }
         artwork = LoginArtwork(assets:assets)
@@ -1298,7 +1424,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         let settingsButton=ClassicButton("Server & saved login",fonts:assets.fonts,target:self,action:#selector(toggleSettings))
         settingsButton.gemBackground=ClassicButton.sapphireGem
         settingsButton.frame=NSRect(x:140,y:372,width:230,height:42); card.addSubview(settingsButton)
-        settings.frame=NSRect(x:105,y:100,width:430,height:250)
+        settings.frame=NSRect(x:105,y:100,width:430,height:300)
         settings.isHidden=true; card.addSubview(settings)
         localLoginButton.target=self; localLoginButton.action=#selector(quickLocalLogin)
         primaryLoginButton.target=self; primaryLoginButton.action=#selector(selectPrimaryLogin)
@@ -1307,7 +1433,11 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         primaryLoginButton.gemBackground=ClassicButton.sapphireGem
         localLoginButton.gemBackground=ClassicButton.sapphireGem
         settings.addSubview(primaryLoginButton); settings.addSubview(localLoginButton)
-        for (label,field,y) in [("Server",host,80),("Port",port,125)] {
+        spacetimeLoginButton.target=self; spacetimeLoginButton.action=#selector(selectSpacetimeLogin)
+        spacetimeLoginButton.frame=NSRect(x:12,y:60,width:403,height:44)
+        spacetimeLoginButton.gemBackground=ClassicButton.sapphireGem
+        settings.addSubview(spacetimeLoginButton)
+        for (label,field,y) in [("Server",host,125),("Port",port,170)] {
             let title=ClassicLabel(label,fonts:assets.fonts); title.frame=NSRect(x:16,y:y+6,width:65,height:24); settings.addSubview(title)
             field.frame=NSRect(x:80,y:y,width:335,height:30)
             field.isBezeled=false; field.isBordered=false; field.drawsBackground=true
@@ -1316,10 +1446,10 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         }
         let forget=ClassicButton("Forget saved password",fonts:assets.fonts,target:self,action:#selector(forgetPassword))
         forget.gemBackground=ClassicButton.sapphireGem
-        forget.frame=NSRect(x:12,y:188,width:260,height:44); settings.addSubview(forget)
+        forget.frame=NSRect(x:12,y:238,width:260,height:44); settings.addSubview(forget)
         let done=ClassicButton("Done",fonts:assets.fonts,target:self,action:#selector(toggleSettings))
         done.gemBackground=ClassicButton.sapphireGem
-        done.frame=NSRect(x:295,y:188,width:120,height:44); settings.addSubview(done)
+        done.frame=NSRect(x:295,y:238,width:120,height:44); settings.addSubview(done)
         choices.isHidden=true; choices.frame=NSRect(x:155,y:170,width:330,height:30); card.addSubview(choices)
         for control in [characterName,female,cityChoice] as [NSView] { control.isHidden=true; card.addSubview(control) }
         status.frame=NSRect(x:115,y:418,width:420,height:54); status.font=ClassicNativeFont.uiFont
@@ -1414,7 +1544,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         account.stringValue = savedLogin.account; password.stringValue = savedLogin.password() ?? ""
         rememberPassword.state = savedLogin.remembersPassword ? .on : .off
         host.isEditable = profile == .primary; port.isEditable = profile == .primary
-        status.stringValue = profile == .local
+        status.stringValue = profile == .spacetime ? "Local SpacetimeDB: local / local. Single-avatar movement sandbox; start its server first." : profile == .local
             ? "Local Test Center · separate account and saved settings. New accounts are created on first login."
             : "Connect using your saved server settings."
         updateTabOrder(); view.window?.makeFirstResponder(account)
@@ -1424,6 +1554,11 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         if savedLogin.profile != .local { loadLoginProfile(.local) }
         Telemetry.shared.record("login_profile_selected",["profile":"local"])
         if !account.stringValue.isEmpty && !password.stringValue.isEmpty { performAction() }
+    }
+    @objc private func selectSpacetimeLogin() {
+        guard phase == .login else { return }
+        loadLoginProfile(.spacetime)
+        Telemetry.shared.record("login_profile_selected",["profile":"spacetime"])
     }
     @objc private func selectPrimaryLogin() {
         guard phase == .login else { return }

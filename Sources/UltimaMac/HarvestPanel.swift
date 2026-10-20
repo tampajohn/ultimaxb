@@ -16,6 +16,9 @@ import UOCore
     var onStart:((HarvestWorkflow.Zone,HarvestOutcome.Kind)->Void)?
     var onStop:(()->Void)?
     var onSmelt:(()->Void)?
+    var onRememberForge:(()->Void)?
+    private(set) var loopEnabled=true,relocateEnabled=true
+    private var loopButton:ClassicButton?,relocateButton:ClassicButton?
     var isHarvesting:(()->Bool)?
     private var validatedZone:HarvestWorkflow.Zone?
     init(assets:ClientAssets,scope:String,position:WalkPoint,defaults:UserDefaults = UserDefaults(suiteName:"com.ultimaxb.UltimaMac")!) {
@@ -24,7 +27,7 @@ import UOCore
         mining=ClassicButton("Mining",fonts:assets.fonts,target:nil,action:nil)
         wood=ClassicButton("Lumberjacking",fonts:assets.fonts,target:nil,action:nil)
         super.init(assets:assets)
-        frame=NSRect(x:310,y:30,width:420,height:480)
+        frame=NSRect(x:310,y:30,width:420,height:600)
         let title=ClassicLabel("Harvest planning",fonts:assets.fonts); title.frame=NSRect(x:20,y:16,width:340,height:25); addSubview(title)
         let close=ClassicButton("X",fonts:assets.fonts,target:self,action:#selector(closePanel)); close.frame=NSRect(x:380,y:12,width:26,height:26); addSubview(close)
         mining.target=self; mining.action=#selector(selectMining); mining.frame=NSRect(x:20,y:52,width:180,height:30); addSubview(mining)
@@ -52,7 +55,16 @@ import UOCore
         stop.frame=NSRect(x:265,y:252,width:135,height:32); addSubview(stop)
         let smelt=ClassicButton("Smelt backpack ore",fonts:assets.fonts,target:self,action:#selector(smeltOre))
         smelt.frame=NSRect(x:20,y:296,width:380,height:32); addSubview(smelt)
-        message.frame=NSRect(x:20,y:344,width:380,height:116); addSubview(message)
+        loopEnabled=defaults.object(forKey:key+".loop") as? Bool ?? true
+        relocateEnabled=defaults.object(forKey:key+".relocate") as? Bool ?? true
+        let loop=ClassicButton("",fonts:assets.fonts,target:self,action:#selector(toggleLoop))
+        loop.frame=NSRect(x:20,y:338,width:380,height:30); addSubview(loop); loopButton=loop
+        let relocate=ClassicButton("",fonts:assets.fonts,target:self,action:#selector(toggleRelocate))
+        relocate.frame=NSRect(x:20,y:374,width:380,height:30); addSubview(relocate); relocateButton=relocate
+        let remember=ClassicButton("Remember nearby forge",fonts:assets.fonts,target:self,action:#selector(rememberForge))
+        remember.frame=NSRect(x:20,y:410,width:380,height:30); addSubview(remember)
+        updateLoopButtons()
+        message.frame=NSRect(x:20,y:458,width:380,height:122); addSubview(message)
         updateKind()
     }
     required init?(coder:NSCoder) { fatalError() }
@@ -75,6 +87,14 @@ import UOCore
         preview()
         if let zone=validatedZone { onStart?(zone,kind) }
     }
+    private func updateLoopButtons() {
+        loopButton?.title="Forge round trips: " + (loopEnabled ? "on":"off")
+        relocateButton?.title="Move exhausted zone: " + (relocateEnabled ? "on":"off")
+        loopButton?.needsDisplay=true; relocateButton?.needsDisplay=true
+    }
+    @objc func toggleLoop() { onStop?(); loopEnabled.toggle(); defaults.set(loopEnabled,forKey:key+".loop"); updateLoopButtons() }
+    @objc func toggleRelocate() { onStop?(); relocateEnabled.toggle(); defaults.set(relocateEnabled,forKey:key+".relocate"); updateLoopButtons() }
+    @objc func rememberForge() { onRememberForge?() }
     @objc func smeltOre() {
         guard isHarvesting?() != true else { showResult("Choose Stop before starting another activity."); return }
         onSmelt?()
@@ -91,6 +111,10 @@ import UOCore
         defaults.set([cx,cy,r,kind == .mining ? 0 : 1],forKey:key)
         validatedZone=zone
         onPreview?(zone,kind)
+    }
+    func showWorkZone(_ zone:HarvestWorkflow.Zone) {
+        x.stringValue=String((zone.minX+zone.maxX)/2); y.stringValue=String((zone.minY+zone.maxY)/2)
+        radius.stringValue=String((zone.maxX-zone.minX)/2)
     }
     func showResult(_ text:String) { message.stringValue=text }
     @objc func closePanel() { let parent=superview; let host=window; onStop?(); onClear?(); removeFromSuperview(); host?.makeFirstResponder(parent) }

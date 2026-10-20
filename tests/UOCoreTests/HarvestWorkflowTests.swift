@@ -114,6 +114,23 @@ final class HarvestWorkflowTests:XCTestCase {
         XCTAssertEqual(w.state,.stopped(.unexpectedTarget))
         XCTAssertEqual(w.successfulActions,1)
     }
+    func testSelectsNearestRemainingSiteInsteadOfOriginalOrder()throws {
+        var w=try runner([site(12),site(11),site()])
+        XCTAssertEqual(next(&w,0),.tool(.useItem(22)))
+        XCTAssertEqual(w.currentSite,site())
+        _=w.receive(cursor(),time:0.1); w.receive(.depleted,time:0.2)
+        XCTAssertEqual(next(&w,1.3),.route([site(11).standing]))
+        XCTAssertEqual(w.currentSite,site(11))
+    }
+    func testNearestUsesRouteLengthNotJustStraightLineDistance()throws {
+        var w=try runner([site(11),site(12)])
+        let command=w.next(position:position,ownsTool:true,overweight:false,time:0) { _,goal in
+            if goal.x==11 { return [.init(x:10,y:11,z:0),.init(x:11,y:12,z:0),.init(x:12,y:11,z:0),goal] }
+            return [.init(x:11,y:10,z:0),goal]
+        }
+        XCTAssertEqual(command,.route([site(11).standing,site(12).standing]))
+        XCTAssertEqual(w.currentSite,site(12))
+    }
     func testInvalidConfigurationAndLeavingZone()throws {
         XCTAssertThrowsError(try HarvestWorkflow.Zone(x1:0,y1:0,x2:200,y2:0))
         XCTAssertThrowsError(try runner([site(14)]))

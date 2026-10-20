@@ -3,17 +3,18 @@ import Security
 
 @MainActor
 struct SavedLogin {
-    enum Profile { case primary, local }
+    enum Profile { case primary, local, spacetime }
     let profile:Profile
     private let defaults:UserDefaults
     init(profile:Profile = .primary, defaults:UserDefaults = UserDefaults(suiteName:"com.ultimaxb.UltimaMac")!) {
         self.profile = profile; self.defaults = defaults
     }
-    private var service:String { "com.ultimaxb.UltimaMac.login" + (profile == .local ? ".local" : "") }
-    private func key(_ name:String)->String { (profile == .local ? "localTestCenter." : "") + name }
-    var host: String { defaults.string(forKey: key("server")) ?? (profile == .local ? "127.0.0.1" : "login.uo1998.com") }
-    var port: String { defaults.string(forKey: key("port")) ?? (profile == .local ? "2593" : "5000") }
-    var account: String { defaults.string(forKey: key("account")) ?? "" }
+    private var suffix:String { switch profile { case .primary: return ""; case .local: return "localTestCenter."; case .spacetime: return "localSpacetime." } }
+    private var service:String { "com.ultimaxb.UltimaMac.login" + (profile == .local ? ".local" : profile == .spacetime ? ".spacetime" : "") }
+    private func key(_ name:String)->String { suffix + name }
+    var host: String { defaults.string(forKey: key("server")) ?? (profile != .primary ? "127.0.0.1" : "login.uo1998.com") }
+    var port: String { defaults.string(forKey: key("port")) ?? (profile == .spacetime ? "2594" : profile == .local ? "2593" : "5000") }
+    var account: String { defaults.string(forKey: key("account")) ?? (profile == .spacetime ? "local" : "") }
     var remembersPassword: Bool { defaults.bool(forKey: key("rememberPassword")) }
     private func query(host: String, port: String, account: String) -> [String: Any] {
         let key = String(data: try! JSONSerialization.data(withJSONObject: [host.lowercased(), port, account]), encoding: .utf8)!
@@ -21,6 +22,7 @@ struct SavedLogin {
                 kSecAttrService as String: service, kSecAttrAccount as String: key]
     }
     func password() -> String? {
+        if profile == .spacetime,host == "127.0.0.1",port == "2594",account == "local",defaults.object(forKey:key("rememberPassword")) == nil { return "local" }
         guard remembersPassword else { return nil }
         var q = query(host: host, port: port, account: account)
         q[kSecReturnData as String] = true
