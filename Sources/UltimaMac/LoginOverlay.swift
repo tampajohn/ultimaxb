@@ -1378,6 +1378,25 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         connection.send(packet); onDeath?(death)
         Telemetry.shared.record("death_response",["resurrect":resurrect])
     }
+    private var books:[UInt32:ClassicBook]=[:]
+    var onBook:((UInt32,ClassicBook?)->Void)?
+    func closeBook(_ serial:UInt32) { books.removeValue(forKey:serial); onBook?(serial,nil) }
+    func requestBookPage(_ serial:UInt32,page:Int) {
+        guard loginComplete,let book=books[serial],let packet=try? book.request(page:page) else { return }
+        connection.send(packet)
+        Telemetry.shared.record("book_page_requested",["serial":serial,"page":page])
+    }
+    func saveBook(_ serial:UInt32,title:String,author:String,pages:[Int:[String]]) throws {
+        guard loginComplete,var book=books[serial] else { throw AssetError("Book is no longer connected.") }
+        var packets:[Data]=[]
+        // Validate the whole edit before submitting any of it. The protocol has no save ACK.
+        let header=try book.writeHeader(title:title,author:author)
+        if title != book.title || author != book.author { packets.append(header) }
+        for page in pages.keys.sorted() { packets.append(try book.writePage(page,lines:pages[page]!)) }
+        for packet in packets { connection.send(packet) }
+        book.title=title; book.author=author; book.pages.merge(pages,uniquingKeysWith:{_,new in new}); books[serial]=book
+        Telemetry.shared.record("book_edits_sent",["serial":serial,"pages":pages.count,"packets":packets.count])
+    }
     private var textPrompt:TextPrompt?
     var onTextPrompt:((TextPrompt?)->Void)?
     func respondToPrompt(_ request:TextPrompt,text:String,accepted:Bool) {
@@ -2036,6 +2055,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         onEquipment?([])
         awaitingSpellbook = false
         equippedTargetTool = nil
+        for serial in books.keys { onBook?(serial,nil) }; books.removeAll()
         textPrompt = nil; onTextPrompt?(nil)
         trade = nil; tradeTransfer = nil; onTrade?(nil)
         huePicker = nil; onHuePicker?(nil)
@@ -2189,6 +2209,17 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                         }
                         onDeath?(death)
                         Telemetry.shared.record("death_state",["alive":death.phase == .alive])
+                    case 0x93:
+                        let book=try ClassicBook.decodeHeader(packet)
+                        if books[book.serial] == nil,books.count>=16,let oldest=books.keys.min() { closeBook(oldest) }
+                        books[book.serial]=book; cancelRoute(); onBook?(book.serial,book)
+                        Telemetry.shared.record("book_opened",["serial":book.serial,"pages":book.pageCount,"writable":book.writable])
+                    case 0x66:
+                        let serial=try ClassicBook.pageSerial(packet)
+                        if var book=books[serial] {
+                            try book.receivePages(packet); books[serial]=book; onBook?(serial,book)
+                            Telemetry.shared.record("book_pages_received",["serial":serial,"known_pages":book.pages.count])
+                        }
                     case 0x9A,0xAB:
                         let request = try TextPrompt.decode(packet)
                         textPrompt = request; cancelRoute(); onTextPrompt?(request)

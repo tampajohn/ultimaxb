@@ -738,6 +738,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var textPromptPanel:TextPromptPanel?
     private var tradePanel:TradePanel?
     private var huePickerPanel:HuePickerPanel?
+    private var bookPanels:[UInt32:BookPanel]=[:]
     private var serverGumpPanels:[UInt64:ServerGumpPanel] = [:]
     private var serverMenuPanel:ServerMenuPanel?
     private var spellShortcuts:[UInt64:SpellShortcut] = [:]
@@ -1032,6 +1033,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 display.frame.origin = NSPoint(x:max(0,(view.bounds.width-display.frame.width)/2),y:max(0,(view.bounds.height-display.frame.height)/2))
                 display.onChoose = { [weak panel] hue in panel?.chooseHue(hue,request:request) }
                 self.huePickerPanel = display; view.addSubview(display)
+            }
+            panel.onBook = { [weak self,weak panel] serial,book in
+                guard let self else { return }
+                guard let book,let view=self.worldView else { self.bookPanels.removeValue(forKey:serial)?.removeFromSuperview(); return }
+                if let display=self.bookPanels[serial] { display.update(book); return }
+                let display=BookPanel(book:book,assets:self.assets)
+                display.onRequest={ [weak panel] page in panel?.requestBookPage(serial,page:page) }
+                display.onSave={ [weak panel] title,author,pages in
+                    guard let panel else { throw AssetError("Book is no longer connected.") }
+                    try panel.saveBook(serial,title:title,author:author,pages:pages)
+                }
+                display.onClose={ [weak panel] in panel?.closeBook(serial) }
+                self.bookPanels[serial]=display; view.addSubview(display); display.showPages()
             }
             panel.onServerGump = { [weak self, weak panel] key,definition in
                 guard let self else { return }
