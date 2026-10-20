@@ -443,6 +443,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         Telemetry.shared.record("smelt_state",["state":String(describing:smelt.state),"successes":smelt.successes,"skipped":smelt.skipped,"losses":smelt.losses,"combined":smelt.combined,"observation":smelt.lastObservation])
     }
     private var harvest:HarvestWorkflow?
+    private var harvestInventoryWait:(bag:UInt32,deadline:TimeInterval,resume:()->Bool)?
     private var harvestAfterEquip:(()->Void)?
     private var harvestPauseRequested=false
     private var harvestReplacement:(at:TimeInterval,resume:()->Void)?
@@ -456,7 +457,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     var harvestActive:Bool {
         if smeltActive || harvestPauseRequested { return true }
         if case .smelt = routeAction { return true }
-        if harvestAfterEquip != nil || harvestReplacement != nil { return true }
+        if harvestAfterEquip != nil || harvestReplacement != nil || harvestInventoryWait != nil { return true }
         guard let harvest else { return false }
         switch harvest.state { case .idle,.completed,.stopped: return false; default: return true }
     }
@@ -467,9 +468,21 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             [0xF43,0xF44,0xF45,0xF46,0xF47,0xF48,0xF49,0xF4A,0xF4B,0xF4C,0xF5E,0xF5F,0x13FA,0x13FB]
         let equipped=world.equipment.values.filter { $0.owner==playerSerial && [1,2].contains($0.layer) && graphics.contains($0.graphic) }.sorted { $0.serial<$1.serial }.first?.serial
         let bag=world.equipment.values.first { $0.owner==playerSerial && $0.layer==21 }?.serial
-        guard let bag,harvestKnownContents.contains(bag) else {
-            if let bag { connection.send(InteractionPackets.use(serial:bag)) }
-            onHarvestStatus?("Opening your backpack to establish inventory. Press Start once its contents arrive."); return false
+        guard let bag else {
+            return rejectWorkStart("harvest","missing_backpack","Waiting for your backpack from the server before harvesting.")
+        }
+        guard harvestKnownContents.contains(bag) else {
+            cancelRoute(); harvest=nil; harvestOutcome=nil; harvestLastState=nil
+            smelt=nil; smeltLastState=nil
+            harvestInventoryWait=(bag,harvestNow()+10,{ [weak self] in
+                guard let self else { return false }
+                self.miningInternal=true; defer { self.miningInternal=false }
+                return self.startHarvest(zone:zone,sites:sites,kind:kind,route:route)
+            })
+            connection.send(InteractionPackets.use(serial:bag))
+            Telemetry.shared.record("harvest_inventory_requested",["bag":bag])
+            onHarvestStatus?("Opening your backpack before harvesting. Waiting for its contents.")
+            return true
         }
         let carried=world.containerItems.values.filter { graphics.contains($0.graphic) && world.isContained($0.serial,in:bag) }.sorted {
             let a=$0.container==bag,b=$1.container==bag
@@ -535,6 +548,12 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         harvestPauseRequested=false
         if !miningInternal,miningCircuit != nil { miningCircuit=nil; cancelRoute(preservingHarvest:true) }
         guard harvestActive else { return }
+        if harvestInventoryWait != nil {
+            harvestInventoryWait=nil
+            onHarvestStatus?("Harvesting inventory request cancelled.")
+            Telemetry.shared.record("harvest_inventory_cancelled")
+            return
+        }
         if harvestReplacement != nil {
             harvestReplacement=nil; onHarvestStatus?("Tool replacement cancelled."); return
         }
@@ -655,6 +674,23 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         if player.isGhost || trade != nil || harvestCombatThreat ||
             world.mobiles.values.contains(where:{$0.serial != playerSerial && $0.isEnemy && max(abs($0.x-player.x),abs($0.y-player.y))<=6}) {
             stopHarvest(); onHarvestStatus?("Harvesting stopped: danger or another interaction nearby."); return
+        }
+        if let pending=harvestInventoryWait {
+            let ownsBag=world.equipment[pending.bag].map { $0.owner==playerSerial && $0.layer==21 } == true
+            guard ownsBag,harvestNow()<pending.deadline else {
+                stopHarvest()
+                onHarvestStatus?("Harvesting stopped: backpack contents were not confirmed in time.")
+                Telemetry.shared.record("harvest_inventory_unavailable",["reason":ownsBag ? "timeout":"ownership_changed"])
+                return
+            }
+            guard harvestKnownContents.contains(pending.bag) else { return }
+            harvestInventoryWait=nil
+            Telemetry.shared.record("harvest_inventory_ready",["bag":pending.bag])
+            if !pending.resume() {
+                miningCircuit=nil
+                Telemetry.shared.record("harvest_inventory_resume_failed")
+            }
+            return
         }
         if let pending=smeltInventoryWait {
             let ownsBag=world.equipment[pending.bag].map { $0.owner==playerSerial && $0.layer==21 } == true

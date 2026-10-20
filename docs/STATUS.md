@@ -1195,3 +1195,8 @@ Validation: release build passed; `tools/check_login_flow.swift` injects offline
 ### Shared panel pointer containment (2026-10-20)
 - Applied the harvest panel's input boundary to ClassicPanel, covering travel, skills, the sidebar and saved-login settings as well. Blank background mouse down/drag/up and wheel events are consumed instead of forwarding into the world responder. Child controls retain their existing event handling.
 - Removed the redundant HarvestPanel overrides. All 20 offline UI fixtures pass in both runs; explicit responder probes cover the base panel and harvest/travel/skills/sidebar subclasses, while existing controls, editing and scrolling fixtures remain green. The running client is untouched; this shared fix awaits the next launch.
+
+### Mining waits for first backpack contents (2026-10-20)
+- Start harvesting now opens an unknown backpack and waits up to ten seconds for its contents, then revalidates readiness and resumes the same requested zone automatically. It no longer requires a second Start click. Forge-circuit setup survives the inventory preparation phase.
+- Repeated Start cannot replace the request. Stop, disconnect, danger, timeout or loss of the owned backpack cancels it, and late contents cannot reactivate the session. Metadata records requested/ready/cancelled/unavailable transitions without item names or payloads.
+- All 20 offline UI fixtures pass in both runs, including successful first-start continuation, the retained circuit, and late contents after explicit cancellation, timeout, disconnect and backpack removal. Client 79949 remains untouched; this behavior awaits its next launch.

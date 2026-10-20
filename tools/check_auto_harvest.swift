@@ -31,13 +31,15 @@ import UOCore
         let site=HarvestWorkflow.Site(target:.init(x:11,y:10,z:0,graphic:0x53B),standing:.init(x:10,y:10,z:0))
         var messages:[String]=[]
         login.onHarvestStatus={ messages.append($0) }
-        precondition(!login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}),"Require a known backpack baseline")
+        precondition(login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}))
+        login.tickMovement()
+        precondition(login.harvestActive && messages.last!.contains("Waiting for its contents"),"Unknown inventory waits without using the tool")
         send(Data([0x24,0x40,0,0,2,0,0x3C])); send(Data([0x3C,0,5,0,0]))
         // A remembered server attack object outside the work area is not
         // current nearby combat and must not permanently lock out harvesting.
         send(Data([0x77,0,0,0,9,0,0xD9,0,100,0,100,0,0,0,0,0,1]))
         send(Data([0xAA,0,0,0,9]))
-        precondition(login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}))
+        login.tickMovement() // Confirmed contents resume the accepted Start request.
         login.tickMovement()
         precondition(login.harvestActive && messages.last!.contains("Using tool"))
         precondition(!login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}),"A second Start cannot replace an outstanding tool request")
@@ -330,6 +332,32 @@ import UOCore
                 precondition(!fresh.harvestActive && result.contains("timeout"),"Pause must not suppress a tool response timeout")
             } else {
                 precondition(!fresh.harvestActive,"Late inventory cannot restart a cancelled or expired request")
+            }
+            fresh.stopHarvest()
+        }
+        for scenario in ["ready","cancelled","timeout","disconnected","bagRemoved"] {
+            let transport=GameConnection()
+            let fresh=LoginOverlay(assets:assets,loginDefaults:defaults,connection:transport)
+            fresh.harvestNow={now}
+            func packet(_ data:Data) { transport.onEvent?(.gameData(data)) }
+            packet(entry+Data([0x55]));packet(status)
+            packet(Data([0x2E,0x40,0,0,2,0x0E,0x75,0,21,0,0,0,1,0,0]))
+            packet(Data([0x2E,0x40,0,0,3,0x0E,0x85,0,1,0,0,0,1,0,0]))
+            var result=""
+            fresh.onHarvestStatus={result=$0}
+            precondition(fresh.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}))
+            fresh.enableMiningCircuit(forge:.init(x:11,y:10,z:0),zone:zone,sites:[site],relocate:false)
+            precondition(!fresh.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}),"Repeated Start cannot replace the pending inventory request")
+            if scenario=="cancelled" { fresh.stopHarvest() }
+            if scenario=="timeout" { now += 10.1;fresh.tickMovement() }
+            if scenario=="disconnected" { transport.onEvent?(.disconnected) }
+            if scenario=="bagRemoved" { packet(Data([0x1D,0x40,0,0,2]));fresh.tickMovement() }
+            packet(Data([0x24,0x40,0,0,2,0,0x3C]));packet(Data([0x3C,0,5,0,0]))
+            fresh.tickMovement();fresh.tickMovement()
+            if scenario=="ready" {
+                precondition(fresh.harvestingSessionActive && result.contains("Using tool"),"Confirmed inventory must resume mining and preserve its circuit")
+            } else {
+                precondition(!fresh.harvestingSessionActive,"Late inventory must not resurrect stopped mining")
             }
             fresh.stopHarvest()
         }
