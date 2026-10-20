@@ -139,6 +139,17 @@ def serve_locked(args, data):
             else:
                 subprocess.run([sys.executable, str(HERE / 'provision.py'), '--config', str(config),
                                 '--port', str(db_port)], cwd=ROOT, check=True)
+            if getattr(args, 'verify_merge', False):
+                from accounts import ensure_local_accounts
+                navigation = Navigation(args.client)
+                try:
+                    backend = load_backend(config)
+                    backend.navigation = navigation
+                    backend.prepare()
+                    ensure_local_accounts(backend, config)
+                finally:
+                    navigation.close()
+                return
             if args.verify_shared:
                 env=dict(os.environ,ULTIMA_SPACETIME_CONFIG=str(config),ULTIMA_CLIENT_ASSETS=args.client)
                 env['PYTHONPATH']=str(HERE/'tests')+os.pathsep+env.get('PYTHONPATH','')
@@ -290,6 +301,8 @@ sys.exit(not result.wasSuccessful())
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--verify-merge', action='store_true',
+                        help='exercise read-only three-way previews using real disposable forks')
     parser.add_argument('--verify-checkpoint', action='store_true',
                         help='populate a disposable shared world, fork it, and verify isolation/restarts')
     parser.add_argument('--verify-shared',action='store_true',help='test two-player gameplay in a fresh disposable world')
@@ -302,7 +315,7 @@ def main():
     parser.add_argument('--standalone', default=str(ROOT / 'build/spacetime-tools/spacetimedb-standalone'))
     args = parser.parse_args()
     args.verify_shared = args.verify_shared or args.verify_checkpoint
-    args.verify = args.verify or args.verify_shared
+    args.verify = args.verify or args.verify_shared or args.verify_merge
     args.client = str(Path(args.client).resolve())
     if not Path(args.standalone).is_file():
         args.standalone = shutil.which('spacetimedb-standalone') or args.standalone
@@ -334,12 +347,15 @@ def main():
     if args.verify:
         subprocess.run([str(tools / 'navigation-checks'), args.client], check=True)
         with tempfile.TemporaryDirectory(prefix='spacetime-verify-', dir=ROOT / 'build') as temporary:
-            if args.verify_checkpoint:
+            if args.verify_checkpoint or args.verify_merge:
                 sys.path.insert(0, str(HERE / 'tests'))
             expected = serve(args, Path(temporary))
             if args.verify_checkpoint:
                 from checkpoint_checks import check
                 check(Path(temporary), args.standalone, expected, args.client)
+            if args.verify_merge:
+                from merge_checks import check
+                check(Path(temporary), args.standalone, args.client)
     else:
         serve(args, args.data_dir.resolve())
 

@@ -16,11 +16,14 @@ on October 20, 2026. The running shared world was not stopped or copied.
    exclude credentials and runtime internals from the shareable artifact.
    Validate references, ownership, quantities, and schema migrations in one
    atomic import into a new world.
-3. **Merge preview.** Assign stable branch-qualified identities to new entities
-   and operations. Find the common ancestor and compare both descendants.
+3. **Merge preview (implemented and verified).** Assign
+   branch-qualified identities to new items and operations. Verify an explicit
+   common ancestor and compare both descendants.
    Classify independent changes, mutually exclusive transfers/consumption,
    shared quest/resource outcomes, and conflicting character progression.
    Show the consequences before writing anything.
+   See [MERGE_PREVIEW.md](MERGE_PREVIEW.md) for the read-only comparison contract
+   and CLI. Stable identities in a future import still require phase 2.
 4. **Reconciled child worlds.** Apply an explicit policy to the preview, create a
    new child with both parents recorded, and validate conservation/provenance.
    Keep both source branches intact. Rebase is another explicit reconciliation,
