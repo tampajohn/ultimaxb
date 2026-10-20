@@ -54,7 +54,7 @@ The repository also includes an experimental **SpacetimeDB-backed UO 1.25.32
 server**. It runs on loopback and uses the installed game assets for authoritative
 terrain checks. The single-player sandbox persists movement, doors, containers,
 equipment, ground items, stack transfers, food, lumberjacking, mining, forge
-smelting, basic equipment recipes, skill progression, neutral-creature hunting, and a merchant with finite stock.
+smelting, basic equipment recipes, skill progression, neutral-creature hunting, cooking, and a merchant with finite stock.
 
 After installing the server prerequisites:
 

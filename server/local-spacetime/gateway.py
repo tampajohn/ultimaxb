@@ -284,7 +284,7 @@ class Gateway:
                         if opcode == 0x09:
                             await self.send(writer, wire.speech(dict(item, name=name), name), True)
                         elif serial==FORGE:
-                            await self.send(writer,wire.system_message('Use backpack ore and target this forge to smelt. Use a worn smith hammer on five ingots to make a helm.'),True)
+                            await self.send(writer,wire.system_message('Use backpack ore or raw ribs and target this forge to smelt or cook. Use a worn smith hammer on five ingots to make a helm.'),True)
                         else:
                             try:
                                 await asyncio.to_thread(self.backend.use_door, serial)
@@ -301,7 +301,7 @@ class Gateway:
                                 await self.send(writer,wire.speech(dict(item,name=name),name),True)
                             elif lifted is not None:
                                 raise BackendError('Finish the current drag first')
-                            elif (item['container']==1 and item['graphic'] in (0xf43,0xf51,0xe86,0x13e3)) or (item['container']==BACKPACK and item['graphic']==0x19b8):
+                            elif (item['container']==1 and item['graphic'] in (0xf43,0xf51,0xe86,0x13e3)) or (item['container']==BACKPACK and item['graphic'] in (0x19b8,0x9f1)):
                                 context = await asyncio.to_thread(self.backend.begin_tool,serial)
                                 cursor = secrets.randbelow(0xffffffff)+1
                                 pending_target = dict(context=context,cursor=cursor,expires=time.monotonic()+30)
@@ -309,6 +309,7 @@ class Gateway:
                                           0xf51:'Target five backpack logs to carve a wooden shield.',
                                           0xe86:'Target nearby rock or mountain terrain to mine.',
                                           0x13e3:'Beside a forge, target five backpack ingots to make a nose helm.',
+                                          0x9f1:'Target a nearby forge to cook these ribs.',
                                           0x19b8:'Target a nearby forge to smelt this ore.'}[item['graphic']]
                                 await self.send(writer,wire.system_message(prompt)+wire.target_request(cursor),True)
                             elif layer:
@@ -317,9 +318,9 @@ class Gateway:
                                 else:
                                     await asyncio.to_thread(self.backend.equip,item_lift,serial,layer,1)
                                 await self.send(writer,await inventory_updates(),True)
-                            elif item['graphic'] == 0x9d0:
+                            elif item['graphic'] in (0x9d0,0x9f2):
                                 await asyncio.to_thread(self.backend.eat,item_lift)
-                                await self.send(writer,wire.system_message('You eat an apple.') + await inventory_updates(),True)
+                                await self.send(writer,wire.system_message('You eat an apple.' if item['graphic']==0x9d0 else 'You eat some cooked ribs.') + await inventory_updates(),True)
                             else:
                                 await self.send(writer,wire.system_message('That item has no use yet.'),True)
                         except BackendError:

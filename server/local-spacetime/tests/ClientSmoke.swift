@@ -271,6 +271,12 @@ struct ClientSmoke {
                   offers.count==1,offers[0].price==3,offers[0].item.graphic==0x9d0,
                   offers[0].item.amount==18 else { throw AssetError("Merchant stock or mobile decode failed") }
             let assets=try ClientAssets(directory:URL(fileURLWithPath:CommandLine.arguments[2]))
+            for graphic in [0x9f1,0x9f2] {
+                guard try assets.sprite(0x4000+graphic) != nil,
+                      try assets.itemName(graphic:graphic).contains("ribs") else {
+                    throw AssetError("Original rib art or tile name missing")
+                }
+            }
             guard sawCreatureHealth,sawDeath,combat.serial==nil,
                   try assets.animations?.frame(body:216,direction:3,action:2,frame:0) != nil,
                   try CorpseArt.frame(body:216,direction:3,assets:assets) != nil else {

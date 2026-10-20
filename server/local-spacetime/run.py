@@ -150,8 +150,11 @@ sys.exit(not result.wasSuccessful())
                 merchant_before = load_backend(config).merchant_state()
                 skills_before = load_backend(config).skill_state()
                 hunting_before = load_backend(config).hunting_state()
+                cooking_before = load_backend(config).cooking_state()
                 stop(db)
                 db = start_db()
+                if load_backend(config).cooking_state()!=cooking_before:
+                    raise RuntimeError('Database restart changed cooking history')
                 if load_backend(config).hunting_state()!=hunting_before:
                     raise RuntimeError('Database restart changed creature or hunting history')
                 if load_backend(config).skill_state() != skills_before:

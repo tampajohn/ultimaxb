@@ -314,7 +314,7 @@ peace mode, or disconnecting stops the attack. Reconnecting always starts in pea
 
 Death commits once with two raw ribs dropped on the ground, a loot journal entry,
 and the creature's life/death history. Pick up the ribs through normal drag/drop;
-they can be stacked but are not yet cookable or edible. A classic death packet
+they can be stacked and cooked at a forge as described below. A classic death packet
 plays the installed cow animation; no persistent corpse container is created.
 After sixty seconds, entry/movement/item interactions may lazily respawn the cow
 at its saved location. Occupied or unstandable spawn tiles postpone respawn,
@@ -328,6 +328,26 @@ disconnect and peace-mode cancellation, exactly one loot stack per death, actual
 respawn timing and occupied-site rejection, and database restart persistence
 both while dead and after respawning.
 Swift checks decode target health/death and load original standing/death art.
+
+### Cooking hunted food
+
+Double-click raw ribs in your backpack, then target a nearby forge. The selected
+stack cooks one-for-one into cooked ribs using the installed original item art.
+The forge must be within two tiles, at a reachable height, and unobstructed;
+the gateway validates static forge art or the exact persistent forge object.
+The cursor expires after thirty seconds and is consumed even on cancellation or
+rejection. Inventory changes invalidate it. Cooking is immediate and guaranteed;
+there is no fire building, burning, or Cooking skill progression in this slice.
+
+Cooking atomically transforms the stack in place, or merges it into an existing
+backpack stack when the combined quantity fits. The private cooking journal
+records source, output, quantity, and forge location. A stale or repeated request
+cannot cook the same ingredients twice. Raw ribs cannot be eaten.
+
+Double-click cooked ribs to eat one. Like apples, each adds four fullness up to
+twenty; a full avatar refuses food without consuming it. Fullness decreases with
+movement revisions under the existing sandbox rules. Food does not heal damage.
+Cooking history, food quantities, and fullness persist across database restarts.
 
 Hosting and distributed execution follow the shared-world phase: measure idle
 costs, checkpoint durability, wake-up behavior, and authority handoff first.

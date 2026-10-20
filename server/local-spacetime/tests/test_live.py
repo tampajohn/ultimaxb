@@ -818,6 +818,86 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(sum(e[4]==0 for e in self.backend.hunting_state()['hunting_event']),1)
         finally:await asyncio.to_thread(self.relocate_fixture,start)
 
+    async def test_zzzzzzz_cooking_hunted_food(self):
+        start=self.backend.avatar()
+        forge=next(o for o in self.backend.world()[1] if o['serial']==FORGE)
+        spot=next(p for dx,dy in [(0,1),(1,0),(0,-1),(-1,0)] if
+            (p:=self.navigation.query('stand',dict(x=forge['x']+dx,y=forge['y']+dy,z=forge['z']),objects=self.backend.world()[1])))
+        try:
+            await asyncio.to_thread(self.relocate_fixture,spot)
+            raw=next(i for i in self.backend.inventory()[1] if i['graphic']==0x9f1)
+            self.assertEqual(raw['amount'],2)
+            before=self.backend.inventory()
+            with self.assertRaises(BackendError):self.backend.eat(self.backend.lift(raw['serial'],1))
+            def args():
+                return [self.backend.inventory()[0],self.backend.avatar()['revision'],self.backend.world()[0],
+                    raw['serial'],forge['x'],forge['y'],forge['z']]
+            identity=json.loads(self.backend.request('/v1/identity',b''))
+            outsider=Backend(self.backend.endpoint,self.backend.database,identity['token'])
+            with self.assertRaises(BackendError):
+                outsider.request(outsider.path+'/call/cook_ribs',json.dumps(args()).encode())
+            for wrong in (dict(forge,graphic=0xe77),dict(forge,serial=BARREL),dict(forge,x=forge['x']+1)):
+                with self.assertRaises(BackendError):
+                    self.backend.perform_tool(self.backend.begin_tool(raw['serial']),wrong)
+            await asyncio.to_thread(self.relocate_fixture,dict(spot,x=spot['x']+8))
+            with self.assertRaises(BackendError):
+                self.backend.request(self.backend.path+'/call/cook_ribs',json.dumps(args()).encode())
+            with self.assertRaises(BackendError):
+                self.backend.perform_tool(self.backend.begin_tool(raw['serial']),forge)
+            self.assertEqual(self.backend.inventory(),before)
+            self.assertEqual(self.backend.cooking_state(),[])
+            await asyncio.to_thread(self.relocate_fixture,spot)
+            # Split the hunted stack to exercise both transform and merge.
+            old_context=self.backend.begin_tool(raw['serial'])
+            self.backend.transfer(self.backend.lift(raw['serial'],1),raw['serial'],BACKPACK,85,85)
+            with self.assertRaises(BackendError):self.backend.perform_tool(old_context,forge)
+            raw_stacks=[i for i in self.backend.inventory()[1] if i['graphic']==0x9f1]
+            self.assertEqual(sorted(i['amount'] for i in raw_stacks),[1,1])
+            reader,writer,cipher=await self.game(await self.relay());await block(reader)
+            writer.write(cipher.transform(b'\x5d'+bytes.fromhex('edededed')+wire.fixed(start['name'],30)+bytes(38)))
+            await block(reader)
+            async def cursor(serial):
+                writer.write(cipher.transform(b'\x06'+struct.pack('>I',serial)))
+                response=await block(reader)
+                self.assertEqual(response[-19],0x6c)
+                return struct.unpack_from('>I',response,-17)[0]
+            def target(token,cancel=False):
+                return struct.pack('>BBIBIHHhH',0x6c,0,token,0,0 if cancel else FORGE,
+                    0xffff if cancel else forge['x'],0xffff if cancel else forge['y'],forge['z'],forge['graphic'])
+            token=await cursor(raw_stacks[0]['serial'])
+            writer.write(cipher.transform(target(token,True)))
+            writer.write(cipher.transform(target(token)))
+            self.assertIn(b'no longer active',await block(reader))
+            self.assertEqual(self.backend.cooking_state(),[])
+            for stack in raw_stacks:
+                token=await cursor(stack['serial'])
+                stale=[self.backend.inventory()[0],self.backend.avatar()['revision'],self.backend.world()[0],
+                    stack['serial'],forge['x'],forge['y'],forge['z']]
+                writer.write(cipher.transform(target(token)))
+                self.assertIn(b'You cook the ribs',await block(reader))
+                saved=self.backend.inventory()
+                writer.write(cipher.transform(target(token)))
+                self.assertIn(b'no longer active',await block(reader))
+                with self.assertRaises(BackendError):
+                    self.backend.request(self.backend.path+'/call/cook_ribs',json.dumps(stale).encode())
+                self.assertEqual(self.backend.inventory(),saved)
+            self.assertFalse(any(i['graphic']==0x9f1 for i in self.backend.inventory()[1]))
+            cooked=[i for i in self.backend.inventory()[1] if i['graphic']==0x9f2]
+            self.assertEqual(len(cooked),1);self.assertEqual(cooked[0]['amount'],2)
+            self.assertEqual(sum(e[3] for e in self.backend.cooking_state()),2)
+            # Appetite decays with movement; use the same effective value as the reducer.
+            nutrition=self.backend.nutrition()
+            n=nutrition[0]
+            fullness=max(0,n[1]-min(20,(self.backend.avatar()['revision']-n[2])//100))
+            self.assertLess(fullness,20)
+            held=self.backend.lift(cooked[0]['serial'],1)
+            writer.write(cipher.transform(b'\x06'+struct.pack('>I',cooked[0]['serial'])))
+            self.assertIn(b'You eat some cooked ribs.',await block(reader))
+            with self.assertRaises(BackendError):self.backend.eat(held)
+            self.assertEqual(self.backend.nutrition()[0][1],min(20,fullness+4))
+            self.assertEqual(sum(i['amount'] for i in self.backend.inventory()[1] if i['graphic']==0x9f2),1)
+        finally:await asyncio.to_thread(self.relocate_fixture,start)
+
     async def test_z_food_consumption_is_atomic_and_persistent(self):
         before = self.backend.inventory()
         food = next(i for i in before[1] if i['graphic']==0x9d0 and i['container']==BACKPACK)

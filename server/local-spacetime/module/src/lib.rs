@@ -2,6 +2,7 @@ use spacetimedb::{Identity, ReducerContext, Table};
 mod gathering;
 mod skills;
 mod hunting;
+mod cooking;
 mod merchant;
 
 // Private tables: only the publishing gateway identity can read or mutate them.
@@ -177,7 +178,7 @@ pub fn eat_item(ctx: &ReducerContext, expected_inventory: u64, expected_avatar: 
     if avatar.revision != expected_avatar { return Err("stale avatar".into()); }
     let mut item = ctx.db.inventory_item().serial().find(serial).ok_or("unknown item")?;
     check_source(ctx,&avatar,&item)?;
-    if item.graphic != 0x9d0 || item.amount == 0 { return Err("not edible".into()); }
+    if ![0x9d0,0x9f2].contains(&item.graphic) || item.amount == 0 { return Err("not edible".into()); }
     // Simple travel-based appetite, not a simulation of the original UO rules.
     let current = ctx.db.nutrition().serial().find(1);
     let fullness = current.as_ref().map_or(0,|n|
@@ -362,7 +363,7 @@ pub fn place_item(ctx: &ReducerContext, expected_inventory: u64, expected_avatar
         let mut target = ctx.db.inventory_item().serial().find(container).ok_or("unknown stack")?;
         check_source(ctx,&avatar,&target)?;
         if serial == target.serial || item.graphic != target.graphic ||
-            ![0xeed,0x9d0,0x9f1,0x1bdd,0x19b8,0x1bf2].contains(&item.graphic) { return Err("incompatible stack".into()); }
+            ![0xeed,0x9d0,0x9f1,0x9f2,0x1bdd,0x19b8,0x1bf2].contains(&item.graphic) { return Err("incompatible stack".into()); }
         target.amount = target.amount.checked_add(amount).ok_or("stack full")?;
         let target_container = target.container;
         let target_z = ctx.db.ground_location().serial().find(target.serial).map_or(0,|l| l.z);
