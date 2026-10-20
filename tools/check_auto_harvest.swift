@@ -116,8 +116,11 @@ import UOCore
         login.stopHarvest(); now += 10.1
         carriedAxe()
         precondition(login.startHarvest(zone:zone,sites:[site],kind:.lumberjacking,route:{_,_ in []}))
+        login.enableMiningCircuit(forge:.init(x:11,y:10,z:0),zone:zone,sites:[site],relocate:false)
         send(Data([0x27,0]))
-        precondition(!login.harvestActive && messages.last!.contains("not confirmed"),"Refused equipment cannot start harvesting")
+        precondition(!login.harvestingSessionActive && messages.last!.contains("not confirmed"),"Refused equipment must end both harvesting and its forge circuit")
+        login.tickMovement()
+        precondition(!login.harvestingSessionActive && messages.last!.contains("not confirmed"),"The circuit must not replace the equip refusal with a stale workflow state")
         precondition(login.startHarvest(zone:zone,sites:[site],kind:.lumberjacking,route:{_,_ in []}))
         login.stopHarvest(); equipAxe(); login.tickMovement()
         precondition(!login.harvestActive,"Late equip confirmation after Stop must not restart harvesting")

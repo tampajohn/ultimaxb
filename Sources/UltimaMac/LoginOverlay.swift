@@ -498,7 +498,10 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             harvestAfterEquip={ [weak self] in
                 guard let self else { return }
                 self.miningInternal=true; defer { self.miningInternal=false }
-                _=self.startHarvest(zone:zone,sites:sites,kind:kind,route:route)
+                if !self.startHarvest(zone:zone,sites:sites,kind:kind,route:route) {
+                    self.miningCircuit=nil
+                    Telemetry.shared.record("harvest_equip_resume_failed")
+                }
             }
             onHarvestStatus?("Equipping the harvesting tool; waiting for the server.")
             Telemetry.shared.record("harvest_equipping",["serial":carried,"layer":layer])
@@ -1433,7 +1436,14 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         if let resume=harvestAfterEquip {
             harvestAfterEquip=nil
             if result == .placed { resume() }
-            else { onHarvestStatus?("Tool equip was not confirmed. Check your equipment before starting again.") }
+            else {
+                // No workflow may remain active after its prerequisite failed.
+                // In particular, a first-start equip has no harvest runner for
+                // tickMiningCircuit to inspect and would otherwise wait forever.
+                miningCircuit=nil
+                onHarvestStatus?("Tool equip was not confirmed. Check your equipment before starting again.")
+                Telemetry.shared.record("harvest_equip_failed",["outcome":result.rawValue])
+            }
         }
         if result == .timedOut { onInventoryMessage?("Item move was not confirmed. Check its location before trying again.") }
     }
