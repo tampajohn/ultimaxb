@@ -1210,3 +1210,8 @@ Validation: release build passed; `tools/check_login_flow.swift` injects offline
 - A refused or timed-out automatic tool equip now clears the mining/forge circuit as well as the equip continuation. Previously an initial equip failure could leave a circuit with no runner to advance, or let an old runner replace the useful equip error.
 - If the confirmed equip cannot resume harvesting after readiness revalidation, the circuit is cleared and a metadata-only failure event is recorded. No failed inventory action is blindly replayed.
 - All 20 offline UI fixtures pass. The adapter regression enables a forge circuit before an equip refusal and verifies both activities are inactive and the original error survives the next tick. The current client remains running; this additional fix is queued for the next launch.
+
+### Mining circuit resume failures (2026-10-20)
+- Missing route-planner configuration now terminates a pending zone/forge return with a specific recovery message instead of retaining an active circuit indefinitely.
+- Failed mining resumes, spare-tool searches and smelting starts retain the precise prerequisite failure already reported by the adapter, rather than replacing it with a generic circuit error. No blocked operation is replayed.
+- All 20 offline UI fixtures pass, including fresh-zone continuation with the planner removed or the held pickaxe removed. Both cases release the circuit and retain a stable actionable error on subsequent ticks. Live client is unchanged; these fixes await its next launch.

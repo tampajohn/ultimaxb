@@ -225,6 +225,28 @@ import UOCore
         login.stopHarvest(); relocate?(zone,[site]); now += 2; login.tickMovement()
         precondition(!login.harvestingSessionActive,"Neither pending cooldown nor late zone result can restart mining after Stop")
 
+        // Returning from a fresh-zone search must either resume or explain why.
+        // No planner and a missing tool must not leave a live, idle circuit.
+        for missingPlanner in [true,false] {
+            precondition(login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}))
+            login.enableMiningCircuit(forge:.init(x:11,y:10,z:0),zone:zone,sites:[site],relocate:true)
+            relocate=nil
+            login.tickMovement(); target(132); speech("There is no metal here to mine.")
+            login.tickMovement()
+            precondition(relocate != nil)
+            relocate?(zone,[site])
+            if missingPlanner { login.miningRoute=nil }
+            else { send(Data([0x1D,0x40,0,0,7])) }
+            now += 1.1; login.tickMovement()
+            precondition(!login.harvestingSessionActive,"Failed zone resume must release the circuit")
+            precondition(messages.last!.contains(missingPlanner ? "route planner is unavailable" : "No known pickaxe"),"Preserve the actionable cause instead of a generic resume failure")
+            let failure=messages.last
+            login.tickMovement()
+            precondition(messages.last == failure,"A failed resume cannot repeat every tick")
+            login.miningRoute={_,_,_ in []}
+            if !missingPlanner { send(Data([0x2E,0x40,0,0,7,0x0E,0x85,0,2,0,0,0,1,0,0])) }
+        }
+
         precondition(login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}))
         login.enableMiningCircuit(forge:.init(x:11,y:10,z:0),zone:zone,sites:[site],relocate:true)
         relocate=nil

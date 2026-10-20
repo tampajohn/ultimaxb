@@ -231,8 +231,9 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         }
         miningCircuit=MiningCircuit(forge:forge,zone:zone,sites:sites,anchor:.init(x:player.x,y:player.y,z:player.z),relocate:relocate)
     }
-    private func endMiningCircuit(_ message:String) {
-        miningCircuit=nil; stopHarvest(); cancelRoute(preservingHarvest:true); onHarvestStatus?(message)
+    private func endMiningCircuit(_ message:String? = nil) {
+        miningCircuit=nil; stopHarvest(); cancelRoute(preservingHarvest:true)
+        if let message { onHarvestStatus?(message) }
         Telemetry.shared.record("mining_circuit_stopped")
     }
     private func miningTravel(_ destination:WalkPoint,adjacent:Bool,arrived:@escaping ()->Void) {
@@ -255,12 +256,17 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         Telemetry.shared.record("mining_resume_wait",["delay_ms":1000])
     }
     private func beginCircuitMining() {
-        guard let circuit=miningCircuit,let planner=miningRoute else { return }
+        guard let circuit=miningCircuit else { return }
+        guard let planner=miningRoute else {
+            endMiningCircuit("Mining circuit stopped: the route planner is unavailable. Reopen Harvest planning before restarting.")
+            return
+        }
         circuit.resumeReadyAt=nil
         circuit.phase = .mining
         miningInternal=true; defer { miningInternal=false }
         guard startHarvest(zone:circuit.zone,sites:circuit.sites,kind:.mining,route:{ planner(circuit.zone,$0,$1) }) else {
-            endMiningCircuit("Unable to resume mining. Check the tool, backpack and carrying weight."); return
+            // startHarvest has already reported the specific failed prerequisite.
+            endMiningCircuit(); return
         }
     }
     private func tickMiningCircuit() {
@@ -302,7 +308,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
                     self?.endMiningCircuit("The remembered forge is no longer visible here."); return
                 }
                 circuit.phase = .smelting
-                if !self.startSmelting(forge:forge.serial) { self.endMiningCircuit("Could not begin smelting at the remembered forge.") }
+                if !self.startSmelting(forge:forge.serial) { self.endMiningCircuit() }
             }
         case .completed where harvest.currentSite != nil:
             circuit.sites=harvest.remainingSites; resumeCircuitMining()
@@ -752,7 +758,9 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
             harvestReplacement=(harvestNow()+delay,{ [weak self] in
                 guard let self else { return }
                 self.miningInternal=true; defer { self.miningInternal=false }
-                _=self.startHarvest(zone:zone,sites:sites,kind:kind,route:route)
+                if !self.startHarvest(zone:zone,sites:sites,kind:kind,route:route) {
+                    self.endMiningCircuit()
+                }
             })
             onHarvestStatus?("Tool is no longer available. Checking the backpack for a spare before continuing.")
             return
