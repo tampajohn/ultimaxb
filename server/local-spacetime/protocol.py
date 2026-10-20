@@ -146,6 +146,31 @@ def target_request(cursor, cancel=False):
     return struct.pack('>BBIBIHHhH',0x6c,1,cursor,3 if cancel else 0,0,0,0,0,0)
 
 
+MERCHANT = 2
+MERCHANT_BAG = 0x7e000100
+MERCHANT_APPLES = 0x7e000101
+
+
+def merchant_mobile(vendor):
+    payload=struct.pack('>IHHHbBHBB',MERCHANT,400,vendor['x'],vendor['y'],vendor['z'],3,0x83ea,0,1)
+    for serial,graphic,layer in [(0x7e000001,0x170b,3),(0x7e000002,0x152e,4),(0x7e000003,0x1517,5)]:
+        payload+=struct.pack('>IHB',serial,graphic,layer)
+    payload+=bytes(4)
+    return struct.pack('>BH',0x78,len(payload)+3)+payload
+
+
+def merchant_offers(vendor):
+    items=[] if vendor['stock']==0 else [dict(serial=MERCHANT_APPLES,graphic=0x9d0,
+        amount=vendor['stock'],container=MERCHANT_BAG,x=0,y=0)]
+    payload=struct.pack('>IB',MERCHANT_BAG,len(items))
+    if items: payload+=struct.pack('>IB',3,6)+b'Apple\0'
+    return container_contents(items)+struct.pack('>BH',0x74,len(payload)+3)+payload+struct.pack('>BIH',0x24,MERCHANT,0x30)
+
+
+def close_merchant():
+    return struct.pack('>BHIB',0x3b,8,MERCHANT,0)
+
+
 # Only explicitly supported inbound packets are accepted. Unknown lengths are
 # never guessed, and large variable packets are never buffered by this slice.
 LENGTHS = {0x80: 62, 0xa0: 3, 0x91: 65, 0x5d: 73, 0x02: 3,
@@ -155,6 +180,11 @@ LENGTHS = {0x80: 62, 0xa0: 3, 0x91: 65, 0x5d: 73, 0x02: 3,
 
 async def read_packet(reader, cipher):
     opcode = cipher.transform(await reader.readexactly(1))[0]
+    if opcode == 0x3b:
+        header=cipher.transform(await reader.readexactly(2))
+        length=struct.unpack('>H',header)[0]
+        if length not in (8,15): raise ProtocolError('invalid purchase packet size')
+        return bytes([opcode])+header+cipher.transform(await reader.readexactly(length-3))
     if opcode not in LENGTHS:
         raise ProtocolError(f'unsupported opcode 0x{opcode:02x}')
     return bytes([opcode]) + cipher.transform(await reader.readexactly(LENGTHS[opcode] - 1))

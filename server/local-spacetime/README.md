@@ -203,7 +203,7 @@ For codec-only tests without services:
 python3 -m unittest discover -s server/local-spacetime/tests -v
 ```
 
-The twelve live tests skip unless `ULTIMA_SPACETIME_CONFIG` names a gateway config.
+The thirteen live tests skip unless `ULTIMA_SPACETIME_CONFIG` names a gateway config.
 Live tests deliberately move the demo avatar and append history if pointed at
 an existing database. Prefer `run.py --verify` for an isolated test world.
 
@@ -215,7 +215,7 @@ an existing database. Prefer `run.py --verify` for an isolated test world.
 | --- | --- | --- |
 | 1 — Gathering and a useful recipe (implemented) | Equip the hatchet, target an actual map tree, collect logs, then use the dagger on five backpack logs to carve a wooden shield. | Single-use expiring target cursors; server-validated tree identity and reach; durable cooldown/depletion; lazy resource recovery after idle time; atomic ingredient consumption/output creation; crafted shield equips and persists; real-client target/result decoding. |
 | 2 — Mining, smithing, and progression (core loop implemented) | Mine ore, smelt at a forge, craft or repair basic metal equipment. | Asset-validated ore/forge targets; explicit recipes and material costs; durable tool wear and skill progression; no skill/loot gains on rejected or replayed requests; original target/gump protocols. Decide era-faithful rules before expanding the recipe catalogue. |
-| 3 — A small inhabited adventure | Trade with one vendor and fight one creature type near a safe starting area. | Finite vendor stock and money, atomic purchases/sales, deterministic attack cadence and range checks, damage/death/loot/recovery, NPC persistence, pause/resume rules for an empty world, no duplicate loot after reconnect. |
+| 3 — A small inhabited adventure (merchant purchases implemented) | Trade with one vendor and fight one creature type near a safe starting area. | Finite vendor stock and money, atomic purchases/sales, deterministic attack cadence and range checks, damage/death/loot/recovery, NPC persistence, pause/resume rules for an empty world, no duplicate loot after reconnect. |
 | 4 — Shared local world | Two distinct players gather, trade, and fight together. | Real accounts and character ownership, subscription-driven visibility, per-player sessions, contested resource/equipment tests, secure LAN discovery and explicit host selection. Replace proof-of-concept HTTP polling before scaling. |
 | 5 — World branches and reconciliation | Fork a checkpoint, explore independently, preview a merge, and create a new reconciled world. | Stable cross-world entity/event IDs, ancestry/checkpoints, explicit item creation/transfer/consumption history, three-way merge preview, conservation checks, deterministic conflict policies, provenance for overrides, reversible import into a new branch. Never merge solely by timestamps or local revision numbers. |
 
@@ -251,13 +251,29 @@ Resource banks, metal journals, equipment, and remaining materials are checked
 across database restart. Test-only relocation uses owner-authorized reducers in a
 disposable database and never changes the saved play world.
 
+Mara the provisioner is placed once on reachable terrain within two tiles of the
+saved avatar when this upgrade first starts. Single-click for her name; stand
+within two tiles and double-click to open the original vendor window. She starts
+with twenty apples at three gold each. Carry gold in your backpack (move it from
+the nearby barrel first), choose a quantity, and buy. Her stock decreases and her
+purse increases atomically with your inventory; reconnecting never replenishes
+stock. Quotes last thirty seconds, are invalidated by inventory changes, and may
+be submitted only once. A refusal requires reopening the vendor window.
+
+The merchant and purchase journal persist across restarts. She currently buys
+nothing, never restocks, and has no wandering, combat, or mobile collision logic.
+These are explicit next steps; no idle AI timer runs. Merchant tests exercise real
+encrypted vendor packets, insufficient carried gold, expiry/cancellation/replay,
+quantity/range/authorization checks, and conservation of both goods and currency.
+The Swift verifier decodes her stock prices and original clothing through UOCore.
+
 Hosting and distributed execution follow the shared-world phase: measure idle
 costs, checkpoint durability, wake-up behavior, and authority handoff first.
 Consensus within an active shared world and reconciliation between independently
 played branches are separate problems. A merge must account for spent resources
 and item ownership; choosing a preferred player cannot silently duplicate items.
 
-- One precreated avatar; no character creation/deletion, NPCs,
+- One precreated avatar and one stationary merchant; no character creation/deletion,
   combat, speech input, or multiplayer visibility.
 - Movement uses the client's conservative collision rules, not a claim of exact
   original-server parity. Mobile blockers, placed houses/boats, mounts, ghost
@@ -288,7 +304,7 @@ and item ownership; choosing a preferred player cannot silently duplicate items.
 - Protocol and movement decisions use explicit code. No model is in the gameplay
   path. Model-assisted merge proposals can be explored separately later.
 
-Next: rendered-client playtesting, tool wear/skills, and a small NPC/vendor/combat
+Next: rendered-client playtesting, tool wear/skills, vendor sales/restocking, and a small creature/combat
 loop. Fork/merge work will need stable cross-world identities and explicit rules
 for item ownership and consumption; the current local journals are not sufficient.
 

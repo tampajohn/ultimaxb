@@ -497,6 +497,79 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await asyncio.to_thread(relocate,start)
 
+    async def test_zz_merchant_purchases_quotes_and_conservation(self):
+        start=self.backend.avatar()
+        vendor=self.backend.merchant()
+        def relocate(point):
+            current=self.backend.avatar(); scene=self.backend.world()[0]
+            while any(current[k]!=point[k] for k in ('x','y','z')):
+                x=current['x']+max(-8,min(8,point['x']-current['x']))
+                y=current['y']+max(-8,min(8,point['y']-current['y']))
+                self.backend.request(self.backend.path+'/call/settle',json.dumps([
+                    current['revision'],x,y,point['z'],scene]).encode())
+                current=dict(current,x=x,y=y,z=point['z'],revision=current['revision']+1)
+        try:
+            # Standing on an adjacent valid terrain cell gives an unobstructed quote.
+            spot=next(p for dx,dy in [(0,1),(1,0),(0,-1),(-1,0)]
+                      if (p:=self.navigation.query('stand',dict(x=vendor['x']+dx,y=vendor['y']+dy,z=vendor['z']),objects=self.backend.world()[1])))
+            await asyncio.to_thread(relocate,spot)
+            reader,writer,cipher=await self.game(await self.relay()); await block(reader)
+            writer.write(cipher.transform(b'\x5d'+bytes.fromhex('edededed')+wire.fixed(start['name'],30)+bytes(38)))
+            self.assertIn(wire.merchant_mobile(vendor),await block(reader))
+            async def quote():
+                writer.write(cipher.transform(b'\x06'+struct.pack('>I',2)))
+                response=await block(reader)
+                self.assertEqual(response,wire.merchant_offers(self.backend.merchant()))
+            purchase=struct.pack('>BHIBBIH',0x3b,15,2,2,0x1a,wire.MERCHANT_APPLES,2)
+            async def buy():
+                writer.write(cipher.transform(purchase)); return await block(reader)
+            before=self.backend.inventory(),self.backend.merchant_state()
+            await quote()
+            self.assertIn(b'Purchase refused',await buy()) # barrel gold is not carried
+            self.assertEqual((self.backend.inventory(),self.backend.merchant_state()),before)
+            barrel=next(i for i in self.backend.world()[1] if i['serial']==BARREL)
+            await asyncio.to_thread(relocate,dict(x=barrel['x'],y=barrel['y']+1,z=barrel['z']))
+            gold=next(i for i in self.backend.inventory()[1] if i['graphic']==0xeed and i['container']==BARREL)
+            self.backend.transfer(self.backend.lift(gold['serial'],gold['amount']),gold['serial'],BACKPACK,65,65)
+            await asyncio.to_thread(relocate,spot)
+            initial=self.backend.inventory(),self.backend.merchant_state()
+            await quote()
+            with patch('gateway.time',SimpleNamespace(monotonic=lambda:time.monotonic()+31)):
+                self.assertIn(b'Purchase refused',await buy())
+            self.assertEqual((self.backend.inventory(),self.backend.merchant_state()),initial)
+            raw=[initial[0][0],self.backend.avatar()['revision'],self.backend.world()[0],vendor['revision'],2]
+            identity=json.loads(self.backend.request('/v1/identity',b''))
+            outsider=Backend(self.backend.endpoint,self.backend.database,identity['token'])
+            with self.assertRaises(BackendError): outsider.request(outsider.path+'/call/buy_apples',json.dumps(raw).encode())
+            await quote()
+            self.assertIn(b'Thank you.',await buy())
+            after=self.backend.inventory(),self.backend.merchant_state()
+            self.assertIn(b'Purchase refused',await buy())
+            self.assertEqual((self.backend.inventory(),self.backend.merchant_state()),after)
+            for graphic,delta in [(0xeed,-6),(0x9d0,2)]:
+                total=lambda state:sum(i['amount'] for i in state[0][1] if i['graphic']==graphic)
+                self.assertEqual(total(after)-total(initial),delta)
+            updated=self.backend.merchant()
+            self.assertEqual((updated['stock'],updated['gold']),(18,6))
+            with self.assertRaises(BackendError): self.backend.buy_apples(self.backend.merchant_quote(),19)
+            self.assertEqual((self.backend.inventory(),self.backend.merchant_state()),after)
+            await quote()
+            writer.write(cipher.transform(struct.pack('>BHIB',0x3b,8,2,0)))
+            self.assertEqual(await block(reader),wire.close_merchant())
+            self.assertEqual((self.backend.inventory(),self.backend.merchant_state()),after)
+            stale=self.backend.merchant_quote()
+            await asyncio.to_thread(relocate,dict(x=spot['x']+8,y=spot['y'],z=spot['z']))
+            with self.assertRaises(BackendError): self.backend.buy_apples(stale,1)
+            self.assertEqual((self.backend.inventory(),self.backend.merchant_state()),after)
+            await asyncio.to_thread(relocate,spot)
+            with self.assertRaises(BackendError):
+                self.backend.request(self.backend.path+'/call/buy_apples',json.dumps(raw).encode())
+            self.assertEqual((self.backend.inventory(),self.backend.merchant_state()),after)
+            self.backend.prepare()
+            self.assertEqual(self.backend.merchant(),updated)
+        finally:
+            await asyncio.to_thread(relocate,start)
+
     async def test_z_food_consumption_is_atomic_and_persistent(self):
         before = self.backend.inventory()
         food = next(i for i in before[1] if i['graphic']==0x9d0 and i['container']==BACKPACK)

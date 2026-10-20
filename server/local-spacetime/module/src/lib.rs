@@ -1,5 +1,6 @@
 use spacetimedb::{Identity, ReducerContext, Table};
 mod gathering;
+mod merchant;
 
 // Private tables: only the publishing gateway identity can read or mutate them.
 #[spacetimedb::table(accessor = gateway)]

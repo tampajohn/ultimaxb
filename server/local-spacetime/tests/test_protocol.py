@@ -55,6 +55,21 @@ class FramingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await task, plain[:62])
             self.assertEqual(await wire.read_packet(reader, cipher), plain[62:])
 
+    async def test_purchase_framing_bounds_and_fragmentation(self):
+        plain=bytes.fromhex('3b000f00000002021a7e0001010002')+b'\x73\x09'
+        encrypted=wire.Cipher(9).transform(plain)
+        for split in range(len(encrypted)+1):
+            reader=asyncio.StreamReader(); cipher=wire.Cipher(9)
+            reader.feed_data(encrypted[:split])
+            task=asyncio.create_task(wire.read_packet(reader,cipher))
+            await asyncio.sleep(0); reader.feed_data(encrypted[split:])
+            self.assertEqual(await task,plain[:15])
+            self.assertEqual(await wire.read_packet(reader,cipher),plain[15:])
+        for length in (0,7,9,14,16,65535):
+            reader=asyncio.StreamReader()
+            reader.feed_data(wire.Cipher(9).transform(bytes([0x3b,length>>8,length&255])))
+            with self.assertRaises(wire.ProtocolError): await wire.read_packet(reader,wire.Cipher(9))
+
     async def test_unknown_and_truncated_packets(self):
         for data, exception in [(b'\xff', wire.ProtocolError), (b'\x02\x01', asyncio.IncompleteReadError)]:
             reader = asyncio.StreamReader()

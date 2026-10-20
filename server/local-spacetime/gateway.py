@@ -40,6 +40,7 @@ class Gateway:
         known_inventory = set()
         lifted = None
         pending_target = None
+        pending_purchase = None
 
         async def inventory_updates():
             _, items = await asyncio.to_thread(self.backend.inventory)
@@ -64,8 +65,11 @@ class Gateway:
             nearby = {item['serial']: item for item in objects
                       if max(abs(item['x']-avatar['x']),abs(item['y']-avatar['y'])) <= 18
                       and (lifted is None or item['serial'] != lifted['item']['serial'])}
+            vendor = await asyncio.to_thread(self.backend.merchant)
+            if vendor and max(abs(vendor['x']-avatar['x']),abs(vendor['y']-avatar['y']))<=18:
+                nearby[vendor['serial']] = dict(vendor,mobile=True)
             changes = b''.join(wire.remove_item(serial) for serial in visible.keys() - nearby.keys())
-            changes += b''.join(wire.ground_item(item) for serial, item in nearby.items()
+            changes += b''.join((wire.merchant_mobile(item) if item.get('mobile') else wire.ground_item(item)) for serial, item in nearby.items()
                                 if visible.get(serial) != item)
             visible.clear()
             visible.update(nearby)
@@ -142,8 +146,40 @@ class Gateway:
                         await self.send(writer, wire.status(await asyncio.to_thread(self.backend.player_status)), True)
                     elif packet[5] == 5:
                         await self.send(writer, b'\x3a\0\x06\0\0\0', True)
+                elif opcode == 0x3b:
+                    quote,pending_purchase=pending_purchase,None
+                    try:
+                        vendor=struct.unpack_from('>I',packet,3)[0]
+                        if vendor!=wire.MERCHANT: raise BackendError('Unknown merchant.')
+                        if len(packet)==8 and packet[7]==0:
+                            await self.send(writer,wire.close_merchant(),True)
+                            continue
+                        if quote is None or time.monotonic()>quote['expires'] or lifted is not None:
+                            raise BackendError('Ask the merchant for fresh stock.')
+                        if len(packet)!=15 or packet[7:9]!=b'\x02\x1a' or struct.unpack_from('>I',packet,9)[0]!=wire.MERCHANT_APPLES:
+                            raise BackendError('Invalid purchase.')
+                        quantity=struct.unpack_from('>H',packet,13)[0]
+                        await asyncio.to_thread(self.backend.buy_apples,quote['quote'],quantity)
+                        message='Thank you. Your apples are in your backpack.'
+                    except BackendError:
+                        message='Purchase refused. Check your gold, stock, and reach; ask for a fresh quote.'
+                    await self.send(writer,wire.close_merchant()+wire.system_message(message)+await inventory_updates(),True)
                 elif opcode in (0x09, 0x06):
                     serial = struct.unpack_from('>I', packet, 1)[0]
+                    if serial==wire.MERCHANT:
+                        if serial not in visible: continue
+                        if opcode==0x09:
+                            await self.send(writer,wire.speech(dict(serial=2,name='Mara the provisioner'),'Mara the provisioner'),True)
+                        else:
+                            pending_purchase=None
+                            try:
+                                if lifted is not None: raise BackendError('Finish the current drag first.')
+                                quote=await asyncio.to_thread(self.backend.merchant_quote)
+                                pending_purchase=dict(quote=quote,expires=time.monotonic()+30)
+                                await self.send(writer,wire.merchant_offers(quote['vendor']),True)
+                            except BackendError:
+                                await self.send(writer,wire.system_message('Come closer and finish any item drag first.'),True)
+                        continue
                     if opcode == 0x09 and serial == BACKPACK:
                         await self.send(writer,wire.speech(dict(serial=BACKPACK,graphic=0xe75,name='Backpack'),'Backpack'),True)
                         continue

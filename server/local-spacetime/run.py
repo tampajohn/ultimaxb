@@ -87,8 +87,11 @@ def serve(args, data):
                 equipment_before = load_backend(config).equipment()
                 nutrition_before = load_backend(config).nutrition()
                 gathering_before = load_backend(config).gathering_state()
+                merchant_before = load_backend(config).merchant_state()
                 stop(db)
                 db = start_db()
+                if load_backend(config).merchant_state() != merchant_before:
+                    raise RuntimeError('Database restart changed merchant or purchases')
                 after = load_backend(config).avatar()
                 if before != after:
                     raise RuntimeError('Database restart changed persisted avatar')
@@ -114,7 +117,11 @@ def serve(args, data):
                             break
                     except OSError:
                         time.sleep(0.05)
-                subprocess.run([str(ROOT / 'build/spacetime-tools/client-smoke'), str(game_port), args.client],
+                import protocol as wire
+                vendor=load_backend(config).merchant()
+                fixture=data/'merchant-packets.bin'
+                fixture.write_bytes(wire.merchant_mobile(vendor)+wire.merchant_offers(vendor))
+                subprocess.run([str(ROOT / 'build/spacetime-tools/client-smoke'), str(game_port), args.client,str(fixture)],
                                cwd=ROOT, check=True, timeout=30)
                 items = load_backend(config).inventory()[1]
                 if any(i['graphic']==0x1bdd for i in items) or sum(i['amount'] for i in items if i['graphic']==0x1b7a) != 2:

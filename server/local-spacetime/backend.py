@@ -129,6 +129,56 @@ class Backend:
         self.request(self.path + '/call/seed_inventory', b'[]')
         self.request(self.path + '/call/seed_starter_kit', b'[]')
         self.request(self.path + '/call/seed_mining_kit', b'[]')
+        self.prepare_merchant()
+
+    def merchant(self):
+        rows=json.loads(self.request(self.path+'/sql',b'SELECT * FROM merchant',content_type='text/plain'))[0]['rows']
+        return dict(zip(('serial','x','y','z','stock','gold','revision'),rows[0])) if rows else None
+
+    def merchant_state(self):
+        return {table:json.loads(self.request(self.path+'/sql',('SELECT * FROM '+table).encode(),
+                content_type='text/plain'))[0]['rows'] for table in ('merchant','purchase_event')}
+
+    def prepare_merchant(self):
+        if self.merchant() is not None: return
+        if self.navigation is None: raise BackendError('Merchant placement requires world assets.')
+        avatar=self.avatar()
+        _,objects=self.world()
+        start=self.navigation.query('settle',avatar,objects=objects)
+        if start is None: raise BackendError('No safe merchant site.')
+        queue,seen=deque([start]),set()
+        for _ in range(80):
+            if not queue: break
+            point=queue.popleft()
+            key=tuple(point[k] for k in ('x','y','z'))
+            if key in seen: continue
+            seen.add(key)
+            distance=max(abs(point['x']-avatar['x']),abs(point['y']-avatar['y']))
+            reserved={(o['x'],o['y']) for o in objects}
+            reserved.update((o['home_x'],o['home_y']) for o in objects)
+            reserved.update((o['home_x']-1,o['home_y']+1) for o in objects if o['is_door'])
+            if distance==2 and (point['x'],point['y']) not in reserved and abs(point['z']-avatar['z'])<=16:
+                self.request(self.path+'/call/seed_merchant',json.dumps(list(key)).encode())
+                return
+            for direction in range(8):
+                next_point=self.navigation.query('step',point,direction,objects=objects)
+                if next_point and max(abs(next_point['x']-avatar['x']),abs(next_point['y']-avatar['y']))<=2:
+                    queue.append(next_point)
+        raise BackendError('No safe merchant site within reach.')
+
+    def merchant_quote(self):
+        revision,_=self.inventory()
+        vendor=self.merchant()
+        if vendor is None: raise BackendError('Merchant unavailable.')
+        self.check_reach(vendor,self.avatar(),self.world()[1])
+        return dict(inventory=revision,vendor=vendor)
+
+    def buy_apples(self,quote,quantity):
+        avatar=self.avatar()
+        scene,objects=self.world()
+        self.check_reach(quote['vendor'],avatar,objects)
+        self.request(self.path+'/call/buy_apples',json.dumps([quote['inventory'],avatar['revision'],scene,
+            quote['vendor']['revision'],quantity]).encode())
 
     def prepare_objects(self):
         _, objects = self.world()

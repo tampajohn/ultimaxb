@@ -56,7 +56,7 @@ struct ClientSmoke {
                             var status = CharacterStatus(serial: 1)
                             try status.apply(packet)
                             guard status.health == 50 else { throw NSError(domain: "bad status", code: 1) }
-                        case 0x1a, 0x1d, 0x2e, 0x24, 0x25, 0x3c:
+                        case 0x78, 0x1a, 0x1d, 0x2e, 0x24, 0x25, 0x3c:
                             try world.apply(packet)
                             if packet[0] == 0x3c && inventoryStage == 0 {
                                 guard let dagger = world.containerItems.values.first(where: { $0.container == 0x40000100 && $0.graphic == 0xf51 && $0.amount == 1 }),
@@ -193,6 +193,29 @@ struct ClientSmoke {
 
     @MainActor
     static func main() async throws {
+        if CommandLine.arguments.count > 3 {
+            let bytes = try Data(contentsOf:URL(fileURLWithPath:CommandLine.arguments[3]))
+            var framer=GamePacketFramer(), world=WorldState()
+            var contents:[ContainerItem]=[], offers:[VendorOffer]=[]
+            for packet in try framer.receive(bytes) {
+                switch packet[0] {
+                case 0x78,0x24,0x3c:
+                    try world.apply(packet)
+                    if packet[0]==0x3c { contents=try ContainerItem.decode(packet) }
+                case 0x74: offers=try VendorPackets.offers(packet,contents:contents)
+                default: throw AssetError("Unexpected merchant packet")
+                }
+            }
+            guard world.mobiles[2]?.body==400,world.openContainer?.graphic==0x30,
+                  offers.count==1,offers[0].price==3,offers[0].item.graphic==0x9d0,
+                  offers[0].item.amount==18 else { throw AssetError("Merchant stock or mobile decode failed") }
+            let assets=try ClientAssets(directory:URL(fileURLWithPath:CommandLine.arguments[2]))
+            let layers=try Paperdoll.layers(assets:assets,body:400,hue:0x83ea,owner:2,equipment:Array(world.equipment.values))
+            guard layers.filter({$0.item != nil}).count==3 else { throw AssetError("Merchant clothes missing original art") }
+            let buy=try VendorPackets.buy(vendor:2,offers:offers,quantities:[offers[0].item.serial:2])
+            guard buy.count==15,buy[0]==0x3b else { throw AssetError("Merchant purchase encoding failed") }
+            print("PASS: real UOCore merchant, original clothing art, stock/price window, purchase encoding")
+        }
         let port = UInt16(CommandLine.arguments.dropFirst().first ?? "2594")!
         let moved = try await session(port: port, move: true)
         try await Task.sleep(for: .milliseconds(100))
