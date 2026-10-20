@@ -21,14 +21,21 @@ final class ServerMenuPanel:NSView {
         title.toolTip = menu.title; addSubview(title)
         let scroll = NSScrollView(frame:menu.usesIcons ? NSRect(x:40,y:42,width:217,height:49) : NSRect(x:20,y:65,width:360,height:240))
         scroll.drawsBackground = false; scroll.hasHorizontalScroller = menu.usesIcons && menu.options.count*62>217; scroll.hasVerticalScroller = !menu.usesIcons && menu.options.count*30>240
-        let content = MenuContent(frame:NSRect(x:0,y:0,width:menu.usesIcons ? max(217,menu.options.count*62) : 340,height:menu.usesIcons ? 49 : max(240,menu.options.count*30)))
+        scroll.horizontalScrollElasticity = .none
+        scroll.verticalScrollElasticity = .none
+        ClassicControlArt.apply(to:scroll)
+        scroll.tile()
+        // Legacy game scrollers consume part of the viewport. Size the document
+        // against the remaining area so an icon row cannot also scroll vertically.
+        let viewport=scroll.contentSize
+        let content = MenuContent(frame:NSRect(x:0,y:0,width:menu.usesIcons ? max(viewport.width,CGFloat(menu.options.count*62)) : viewport.width,height:menu.usesIcons ? viewport.height : max(viewport.height,CGFloat(menu.options.count*30))))
         for option in menu.options {
             let button = MenuOptionButton(option.title.isEmpty ? "Choice \(option.index)" : option.title,fonts:assets.fonts,target:self,action:#selector(choose(_:)))
             button.tag = option.index; button.toolTip = option.title
             button.onHover = { [weak self] inside in
                 self?.detail.stringValue = inside ? option.title : "Choose an item"
             }
-            button.frame = menu.usesIcons ? NSRect(x:(option.index-1)*62,y:0,width:60,height:38) : NSRect(x:0,y:(option.index-1)*30,width:335,height:28)
+            button.frame = menu.usesIcons ? NSRect(x:CGFloat((option.index-1)*62),y:0,width:60,height:min(38,viewport.height)) : NSRect(x:0,y:CGFloat((option.index-1)*30),width:viewport.width,height:28)
             if menu.usesIcons, let sprite = try? assets.sprite(option.graphic+0x4000) {
                 button.image = Self.image(sprite,palette:try? assets.huePalette(option.hue,art:option.graphic+0x4000))
                 button.isBordered = false; button.imagePosition = .imageOnly; button.imageScaling = .scaleProportionallyDown
@@ -36,7 +43,6 @@ final class ServerMenuPanel:NSView {
             button.setAccessibilityLabel(option.title); content.addSubview(button)
         }
         scroll.documentView = content
-        ClassicControlArt.apply(to:scroll)
         scroll.tile()
         addSubview(scroll)
         detail.stringValue = menu.usesIcons ? "Choose an item" : "Right-click cancels"

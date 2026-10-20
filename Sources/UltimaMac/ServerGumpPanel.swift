@@ -31,8 +31,8 @@ import UOCore
                 frame.size.width = max(frame.width,min(2048,view.frame.maxX))
                 frame.size.height = max(frame.height,min(2048,view.frame.maxY))
             }
-            func art(_ id:Int,_ x:Int,_ y:Int) {
-                guard let image = image(id) else { return }
+            func art(_ id:Int,_ x:Int,_ y:Int,hue:Int=0) {
+                guard let image = image(id,hue:hue) else { return }
                 let view = GumpArtwork(frame:rect(x,y,Int(image.size.width),Int(image.size.height)))
                 view.image = image; add(view)
             }
@@ -44,7 +44,21 @@ import UOCore
             case "noclose": closable = false
             case "nodispose": break // Disposal is controlled by replies and connection lifecycle.
             case "gumppic":
-                if valid(3) { art(a[2],a[0],a[1]) } else { unsupported += 1 }
+                let tokens=command.arguments
+                let position=tokens.prefix(3).compactMap(Int.init)
+                guard position.count==3,position.allSatisfy({Int32(exactly:$0) != nil}) else {
+                    unsupported += 1; continue
+                }
+                var hue=0
+                if tokens.count>3 {
+                    let option=tokens[3].split(separator:"=",omittingEmptySubsequences:false)
+                    let value=option.count==1 ? Int(option[0]) :
+                        (option.count==2 && option[0].lowercased()=="hue" ? Int(option[1]):nil)
+                    if let value,(0...65535).contains(value) { hue=value }
+                    else { unsupported += 1 }
+                }
+                if tokens.count>4 { unsupported += 1 }
+                art(position[2],position[0],position[1],hue:hue)
             case "tilepic", "tilepichue":
                 guard valid(command.name == "tilepichue" ? 4 : 3), (0..<0x4000).contains(a[2]),
                       let sprite = try? assets.sprite(a[2]+0x4000) else { continue }
@@ -136,9 +150,9 @@ import UOCore
         let c = palette.color(red:255,green:255,blue:255)
         return NSColor(srgbRed:CGFloat(c.0)/255,green:CGFloat(c.1)/255,blue:CGFloat(c.2)/255,alpha:1)
     }
-    private func image(_ id:Int)->NSImage? {
+    private func image(_ id:Int,hue:Int=0)->NSImage? {
         guard id >= 0, id <= 65535, let sprite = try? assets.gumps?.sprite(id) else { return nil }
-        return Self.spriteImage(sprite)
+        return Self.spriteImage(sprite,palette:try? assets.huePalette(hue))
     }
     private static func spriteImage(_ sprite:Sprite,palette:HuePalette? = nil)->NSImage? {
         var pixels = sprite.rgba

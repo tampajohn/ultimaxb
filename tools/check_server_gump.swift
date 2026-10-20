@@ -42,6 +42,32 @@ import UOCore
    samples.insert(first.description)
   }
   precondition(samples.count>1,"The texture check must cover actual pattern detail")
+  // Optional hue syntax must retain the picture, including on malformed
+  // optional metadata. Compare rendered output, not merely parsed arguments.
+  func renderPicture(_ suffix:String)throws->Data {
+   let commands=Array("{ gumppic 0 0 2600\(suffix) }".utf8)
+   var packet:[UInt8]=[0xB0,0,0]+Array(bytes[3..<19])
+   packet += [UInt8(commands.count>>8),UInt8(commands.count&255)]+commands+[0,0]
+   packet[1]=UInt8(packet.count>>8);packet[2]=UInt8(packet.count&255)
+   let picture=ServerGumpPanel(definition:try ServerGump.decode(Data(packet)),assets:assets)
+   precondition(picture.subviews.count==1,"Optional hue must not discard valid art")
+   let host=NSWindow(contentRect:picture.frame,styleMask:[.borderless],backing:.buffered,defer:false)
+   host.contentView=picture
+   let pixels=picture.bitmapImageRepForCachingDisplay(in:picture.bounds)!
+   picture.cacheDisplay(in:picture.bounds,to:pixels)
+   return pixels.representation(using:.png,properties:[:])!
+  }
+  let plain=try renderPicture("")
+  let tinted=try renderPicture(" hue=33")
+  let numeric=try renderPicture(" 33")
+  precondition(numeric==tinted,"Numeric and named hue syntax must render identically")
+  precondition(plain != tinted,"A requested hue must visibly recolor the gump")
+  let zeroHue=try renderPicture(" hue=0")
+  precondition(zeroHue==plain,"Hue zero preserves original pixels")
+  for malformed in [" hue=-1"," hue=65536"," hue=oops"," hue=33=44"," other=33"] {
+   let fallback=try renderPicture(malformed)
+   precondition(fallback==plain,"Malformed optional hue must preserve the base picture")
+  }
   var replies = 0
   panel.onReply = { button,switches,entries in
    precondition(button == 7 && switches == [9] && entries.count == 2 && entries[0].0 == 4 && entries[0].1 == "Updated 😀" && entries[1].0 == 5 && entries[1].1 == "AB")
