@@ -48,6 +48,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
     func toggleWarMode() {
         guard loginComplete, let serial = playerSerial, let player = world.mobiles[serial] else { return }
         let enabled = player.flags & 0x40 == 0
+        cancelRoute()
         connection.send(CombatPackets.mode(enabled))
         Telemetry.shared.record("war_mode_requested",["enabled":enabled])
     }
@@ -55,6 +56,7 @@ final class LoginOverlay: NSViewController, NSTextFieldDelegate {
         guard loginComplete, let playerSerial, serial != playerSerial,
               (world.mobiles[playerSerial]?.flags ?? 0) & 0x40 != 0,
               world.mobiles[serial] != nil, let packet = try? CombatPackets.attack(serial) else { return }
+        cancelRoute()
         connection.send(packet)
         Telemetry.shared.record("attack_requested",["serial":serial])
     }

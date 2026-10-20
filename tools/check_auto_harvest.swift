@@ -198,6 +198,20 @@ import UOCore
         arrival?(true); login.tickMovement()
         precondition(messages.last!.contains("Using tool"))
         login.stopHarvest()
+
+        now += 10.1
+        precondition(login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}))
+        login.tickMovement(); login.toggleWarMode()
+        precondition(!login.harvestingSessionActive,"Manual war-mode toggle interrupts the tool workflow immediately")
+        target(35)
+        precondition(!login.targeting,"Late harvest cursor remains cancelled after a war-mode toggle")
+        now += 10.1
+        send(Data([0x77,0,0,0,1,1,0x90,0,10,0,10,0,2,0,0,0x40,1]))
+        send(Data([0x77,0,0,0,9,0,0xD9,0,11,0,11,0,0,0,0,0,1]))
+        precondition(login.startHarvest(zone:zone,sites:[site],kind:.mining,route:{_,_ in []}))
+        login.tickMovement(); login.attack(serial:9)
+        precondition(!login.harvestingSessionActive,"Manual attack must not wait for a server combat-target response to stop harvesting")
+        target(36); precondition(!login.targeting)
         print("Harvest adapter confirms resources, advances depleted sites, cancels late cursors and stops for manual actions/danger")
     }
 }
